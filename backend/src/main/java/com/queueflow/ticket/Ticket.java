@@ -1,11 +1,14 @@
 package com.queueflow.ticket;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
+import com.queueflow.label.Label;
 import com.queueflow.project.Project;
 import com.queueflow.user.User;
 
@@ -18,6 +21,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
+import jakarta.persistence.JoinTable;
+import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
@@ -59,6 +64,19 @@ public class Ticket {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "assignee_id", updatable = true)
     private User assignee;
+
+    // Ticket owns the association: labels are managed from the ticket side
+    // ("attach/detach a label on this ticket"), so only Ticket declares the
+    // @JoinTable and Label carries no inverse @ManyToMany back-reference.
+    // No cascade: labels are independent workspace resources that must
+    // already exist before being attached, and detaching or deleting a
+    // ticket must never delete the Label itself.
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+            name = "ticket_labels",
+            joinColumns = @JoinColumn(name = "ticket_id"),
+            inverseJoinColumns = @JoinColumn(name = "label_id"))
+    private Set<Label> labels = new LinkedHashSet<>();
 
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false, nullable = false)
@@ -138,6 +156,10 @@ public class Ticket {
 
     public void setAssignee(User assignee) {
         this.assignee = assignee;
+    }
+
+    public Set<Label> getLabels() {
+        return labels;
     }
 
     public OffsetDateTime getCreatedAt() {
