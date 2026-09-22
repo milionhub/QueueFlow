@@ -41,6 +41,10 @@ public class Project {
     private Workspace workspace;
 
     @Generated(event = EventType.INSERT)
+    @Column(name = "next_ticket_number", insertable = false, nullable = false)
+    private long nextTicketNumber;
+
+    @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false, nullable = false)
     private OffsetDateTime createdAt;
 
@@ -89,6 +93,10 @@ public class Project {
 
     public Workspace getWorkspace() {
         return workspace;
+    }
+
+    public long getNextTicketNumber() {
+        return nextTicketNumber;
     }
 
     public OffsetDateTime getCreatedAt() {

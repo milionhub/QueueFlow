@@ -49,6 +49,15 @@ class ProjectRepositoryTest {
     }
 
     @Test
+    void newProjectDefaultsNextTicketNumberToOne() {
+        Workspace workspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
+
+        Project saved = projectRepository.saveAndFlush(new Project("E-Commerce", "ECOM", null, workspace));
+
+        assertThat(saved.getNextTicketNumber()).isEqualTo(1L);
+    }
+
+    @Test
     void descriptionCanBeNull() {
         Workspace workspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
 
