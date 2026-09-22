@@ -58,7 +58,7 @@ class TicketLabelAssociationTest {
         Ticket ticket = newTicket(project, creator, 1L);
         Label label = labelRepository.saveAndFlush(new Label("bug", workspace));
 
-        ticket.getLabels().add(label);
+        ticket.addLabel(label);
         ticketRepository.saveAndFlush(ticket);
         entityManager.clear();
 
@@ -75,8 +75,8 @@ class TicketLabelAssociationTest {
         Label bug = labelRepository.saveAndFlush(new Label("bug", workspace));
         Label urgent = labelRepository.saveAndFlush(new Label("urgent", workspace));
 
-        ticket.getLabels().add(bug);
-        ticket.getLabels().add(urgent);
+        ticket.addLabel(bug);
+        ticket.addLabel(urgent);
         ticketRepository.saveAndFlush(ticket);
         entityManager.clear();
 
@@ -93,14 +93,14 @@ class TicketLabelAssociationTest {
         Ticket ticket = newTicket(project, creator, 1L);
         Label label = labelRepository.saveAndFlush(new Label("bug", workspace));
 
-        ticket.getLabels().add(label);
+        ticket.addLabel(label);
         ticketRepository.saveAndFlush(ticket);
 
-        // The Java Set already prevents adding the very same reference twice
-        // in-memory; the real guarantee this proves is the composite primary
-        // key on ticket_labels rejecting a duplicate (ticket_id, label_id)
-        // row even when attempted directly, independent of ORM collection
-        // semantics.
+        // Ticket.addLabel() already prevents adding the same label twice
+        // in-memory (id-based check); the real guarantee this proves is the
+        // composite primary key on ticket_labels rejecting a duplicate
+        // (ticket_id, label_id) row even when attempted directly, bypassing
+        // the ORM entirely.
         assertThatThrownBy(() -> entityManager.getEntityManager()
                 .createNativeQuery("INSERT INTO ticket_labels (ticket_id, label_id) VALUES (?1, ?2)")
                 .setParameter(1, ticket.getId())
@@ -117,10 +117,10 @@ class TicketLabelAssociationTest {
         Ticket ticket = newTicket(project, creator, 1L);
         Label label = labelRepository.saveAndFlush(new Label("bug", workspace));
 
-        ticket.getLabels().add(label);
+        ticket.addLabel(label);
         ticketRepository.saveAndFlush(ticket);
 
-        ticket.getLabels().remove(label);
+        ticket.removeLabel(label);
         ticketRepository.saveAndFlush(ticket);
 
         assertThat(ticket.getLabels()).isEmpty();
@@ -135,7 +135,7 @@ class TicketLabelAssociationTest {
         Ticket ticket = newTicket(project, creator, 1L);
         Label label = labelRepository.saveAndFlush(new Label("bug", workspace));
 
-        ticket.getLabels().add(label);
+        ticket.addLabel(label);
         ticketRepository.saveAndFlush(ticket);
         entityManager.flush();
         entityManager.clear();

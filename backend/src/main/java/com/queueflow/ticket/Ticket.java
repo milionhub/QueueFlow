@@ -1,6 +1,7 @@
 package com.queueflow.ticket;
 
 import java.time.OffsetDateTime;
+import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -166,8 +167,41 @@ public class Ticket {
         this.assignee = assignee;
     }
 
+    /**
+     * Read-only view: callers must go through addLabel/removeLabel to
+     * mutate the association, so those methods stay the single source of
+     * truth for idempotency and (later, in Phase 1.6F) change detection.
+     */
     public Set<Label> getLabels() {
-        return labels;
+        return Collections.unmodifiableSet(labels);
+    }
+
+    /**
+     * Attaches a label. Idempotent: attaching a label already present is a
+     * no-op. Membership is checked by id, not by Label.equals()/Set
+     * semantics - Label intentionally keeps default (identity) equality
+     * (see class-level design note below), and two Label instances
+     * representing the same row are not always the same Java object (e.g.
+     * one loaded fresh vs. one already present in this collection from an
+     * earlier lazy load). Returns whether the Set actually changed, so a
+     * later phase can decide whether to record a LABEL_ADDED activity.
+     */
+    public boolean addLabel(Label label) {
+        boolean alreadyPresent = labels.stream().anyMatch(existing -> existing.getId().equals(label.getId()));
+        if (alreadyPresent) {
+            return false;
+        }
+        labels.add(label);
+        return true;
+    }
+
+    /**
+     * Detaches a label. Idempotent: removing a label that isn't attached is
+     * a no-op. Same id-based comparison as addLabel, for the same reason.
+     * Returns whether the Set actually changed.
+     */
+    public boolean removeLabel(Label label) {
+        return labels.removeIf(existing -> existing.getId().equals(label.getId()));
     }
 
     public OffsetDateTime getCreatedAt() {
