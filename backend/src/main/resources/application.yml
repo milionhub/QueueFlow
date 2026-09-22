@@ -1,19 +1,17 @@
 spring:
   application:
     name: queueflow-backend
-  # TEMPORARY (Phase 0.5.4 only): Spring Data JPA and the PostgreSQL driver are on
-  # the classpath, but no database is configured yet. Without a datasource,
-  # Spring Boot's autoconfiguration would otherwise fail application startup.
-  # These autoconfiguration classes are excluded so the app can start for
-  # foundation verification. Remove this exclusion once PostgreSQL connection
-  # settings are introduced in a later phase.
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration
-      - org.springframework.boot.jdbc.autoconfigure.DataSourceTransactionManagerAutoConfiguration
-      - org.springframework.boot.jdbc.autoconfigure.JdbcClientAutoConfiguration
-      - org.springframework.boot.jdbc.autoconfigure.JdbcTemplateAutoConfiguration
-      - org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    hibernate:
+      # Safe for this stage: no entities exist yet, so there is nothing to
+      # validate against. This must stay "validate" (never "update"/"create"/
+      # "create-drop") until a migration tool (Flyway/Liquibase) owns the schema.
+      ddl-auto: validate
+    show-sql: false
 
 server:
   port: 8080
