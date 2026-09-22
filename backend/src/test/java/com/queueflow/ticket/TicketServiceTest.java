@@ -3,6 +3,8 @@ package com.queueflow.ticket;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -20,6 +22,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.queueflow.activity.ActivityService;
+import com.queueflow.activity.ActivityType;
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
@@ -36,7 +40,8 @@ import com.queueflow.workspace.Workspace;
  * Fast unit tests with mocked repositories - real DB row-locking and
  * concurrency behavior are covered separately by
  * TicketConcurrencyIntegrationTest and TicketCreationRollbackIntegrationTest
- * against the real database.
+ * against the real database, and real Activity persistence/atomicity by
+ * TicketActivityIntegrationTest.
  */
 @ExtendWith(MockitoExtension.class)
 class TicketServiceTest {
@@ -50,11 +55,14 @@ class TicketServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private ActivityService activityService;
+
     private TicketService ticketService;
 
     @BeforeEach
     void setUp() {
-        ticketService = new TicketService(ticketRepository, projectRepository, userRepository);
+        ticketService = new TicketService(ticketRepository, projectRepository, userRepository, activityService);
     }
 
     private static Workspace persistedWorkspace(UUID id) {
@@ -91,6 +99,26 @@ class TicketServiceTest {
         return ticket;
     }
 
+    /** Fixture bundle shared by most update tests: one workspace, project, creator/actor, and ticket. */
+    private record Fixture(Workspace workspace, Project project, User actor, Ticket ticket) {
+    }
+
+    private Fixture newFixture(String title, String description, TicketStatus status, TicketPriority priority,
+            User assignee) {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L);
+        User actor = persistedUser(UUID.randomUUID(), workspace);
+        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, title, description, status, priority, project,
+                actor, assignee, OffsetDateTime.now());
+        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        return new Fixture(workspace, project, actor, ticket);
+    }
+
+    // ---------------------------------------------------------------
+    // CREATE
+    // ---------------------------------------------------------------
+
     @Test
     void createLoadsProjectUsingLockingMethod() {
         UUID workspaceId = UUID.randomUUID();
@@ -121,6 +149,7 @@ class TicketServiceTest {
                 .hasMessageContaining(projectId.toString());
 
         verify(ticketRepository, never()).save(any());
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -140,6 +169,7 @@ class TicketServiceTest {
 
         verify(ticketRepository, never()).save(any());
         assertThat(project.getNextTicketNumber()).isEqualTo(1L);
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -311,6 +341,26 @@ class TicketServiceTest {
         verify(projectRepository, never()).save(any());
     }
 
+    @Test
+    void createRecordsTicketCreatedActivityWithCreatorAsActorAndNoOldNewValues() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        UUID projectId = UUID.randomUUID();
+        Project project = persistedProject(projectId, "ECOM", workspace, 1L);
+        UUID creatorId = UUID.randomUUID();
+        User creator = persistedUser(creatorId, workspace);
+
+        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        TicketResponse response = ticketService.create(requestFor(projectId, creatorId, null));
+
+        ArgumentCaptor<Ticket> ticketCaptor = ArgumentCaptor.forClass(Ticket.class);
+        verify(activityService).recordActivity(
+                eq(ActivityType.TICKET_CREATED), isNull(), isNull(), ticketCaptor.capture(), eq(creator));
+        assertThat(ticketCaptor.getValue().getId()).isEqualTo(response.id());
+    }
+
     // ---------------------------------------------------------------
     // READ
     // ---------------------------------------------------------------
@@ -377,15 +427,49 @@ class TicketServiceTest {
     @Test
     void updateThrowsResourceNotFoundExceptionWhenTicketMissing() {
         UUID ticketId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.update(ticketId, new UpdateTicketRequest()))
+        assertThatThrownBy(() -> ticketService.update(ticketId, actorId, new UpdateTicketRequest()))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
     }
 
     @Test
-    void emptyPatchChangesNothing() {
+    void updateThrowsResourceNotFoundExceptionWhenActorMissing() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L);
+        User creator = persistedUser(UUID.randomUUID(), workspace);
+        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
+                TicketPriority.LOW, project, creator, null, OffsetDateTime.now());
+        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        UUID missingActorId = UUID.randomUUID();
+        when(userRepository.findById(missingActorId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.update(ticket.getId(), missingActorId, new UpdateTicketRequest()))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(missingActorId.toString());
+    }
+
+    @Test
+    void updateThrowsBusinessRuleViolationExceptionWhenActorInDifferentWorkspace() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L);
+        User creator = persistedUser(UUID.randomUUID(), workspace);
+        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
+                TicketPriority.LOW, project, creator, null, OffsetDateTime.now());
+        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
+        User outsider = persistedUser(UUID.randomUUID(), otherWorkspace);
+        when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
+
+        assertThatThrownBy(() -> ticketService.update(ticket.getId(), outsider.getId(), new UpdateTicketRequest()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Actor");
+    }
+
+    @Test
+    void emptyPatchChangesNothingAndRecordsNoActivity() {
         Workspace workspace = persistedWorkspace(UUID.randomUUID());
         Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L);
         User creator = persistedUser(UUID.randomUUID(), workspace);
@@ -395,8 +479,9 @@ class TicketServiceTest {
                 TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, originalAssignee, OffsetDateTime.now());
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(userRepository.findById(creator.getId())).thenReturn(Optional.of(creator));
 
-        ticketService.update(ticketId, new UpdateTicketRequest());
+        ticketService.update(ticketId, creator.getId(), new UpdateTicketRequest());
 
         assertThat(ticket.getTitle()).isEqualTo("Original title");
         assertThat(ticket.getDescription()).isEqualTo("Original description");
@@ -404,152 +489,203 @@ class TicketServiceTest {
         assertThat(ticket.getPriority()).isEqualTo(TicketPriority.LOW);
         assertThat(ticket.getAssignee()).isSameAs(originalAssignee);
         verify(ticketRepository, never()).save(any());
-        verify(userRepository, never()).findById(any());
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
-    void updateChangesTitleWhenPresent() {
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Original title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", persistedWorkspace(UUID.randomUUID()), 2L),
-                persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID())), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void updateChangesTitleAndRecordsTitleChangedActivity() {
+        Fixture fixture = newFixture("Original title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Updated title");
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
 
-        assertThat(ticket.getTitle()).isEqualTo("Updated title");
+        assertThat(fixture.ticket().getTitle()).isEqualTo("Updated title");
+        verify(activityService).recordActivity(ActivityType.TITLE_CHANGED, "Original title", "Updated title",
+                fixture.ticket(), fixture.actor());
+    }
+
+    @Test
+    void updateSettingTitleToSameValueRecordsNoActivity() {
+        Fixture fixture = newFixture("Same title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
+
+        UpdateTicketRequest request = new UpdateTicketRequest();
+        request.setTitle("Same title");
+
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
     void updateRejectsBlankTitle() {
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Original title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", persistedWorkspace(UUID.randomUUID()), 2L),
-                persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID())), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        Fixture fixture = newFixture("Original title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("   ");
 
-        assertThatThrownBy(() -> ticketService.update(ticket.getId(), request))
+        assertThatThrownBy(() -> ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
-        assertThat(ticket.getTitle()).isEqualTo("Original title");
+        assertThat(fixture.ticket().getTitle()).isEqualTo("Original title");
         verify(ticketRepository, never()).save(any());
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
     void updateRejectsOverlongTitle() {
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Original title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", persistedWorkspace(UUID.randomUUID()), 2L),
-                persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID())), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        Fixture fixture = newFixture("Original title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("a".repeat(256));
 
-        assertThatThrownBy(() -> ticketService.update(ticket.getId(), request))
+        assertThatThrownBy(() -> ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
-        assertThat(ticket.getTitle()).isEqualTo("Original title");
+        assertThat(fixture.ticket().getTitle()).isEqualTo("Original title");
     }
 
     @Test
     void updateLeavesDescriptionUnchangedWhenOmitted() {
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", "Original description", TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", persistedWorkspace(UUID.randomUUID()), 2L),
-                persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID())), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        Fixture fixture = newFixture("Title", "Original description", TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
-        ticketService.update(ticket.getId(), new UpdateTicketRequest());
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), new UpdateTicketRequest());
 
-        assertThat(ticket.getDescription()).isEqualTo("Original description");
+        assertThat(fixture.ticket().getDescription()).isEqualTo("Original description");
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
-    void updateChangesDescriptionWhenValuePresent() {
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", "Original description", TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", persistedWorkspace(UUID.randomUUID()), 2L),
-                persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID())), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void updateChangesDescriptionAndRecordsDescriptionChangedActivity() {
+        Fixture fixture = newFixture("Title", "Original description", TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setDescription("Updated description");
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
 
-        assertThat(ticket.getDescription()).isEqualTo("Updated description");
+        assertThat(fixture.ticket().getDescription()).isEqualTo("Updated description");
+        verify(activityService).recordActivity(ActivityType.DESCRIPTION_CHANGED, "Original description",
+                "Updated description", fixture.ticket(), fixture.actor());
     }
 
     @Test
-    void updateClearsDescriptionWhenExplicitlyNull() {
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", "Original description", TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", persistedWorkspace(UUID.randomUUID()), 2L),
-                persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID())), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void updateClearingDescriptionRecordsActivityWithNullNewValue() {
+        Fixture fixture = newFixture("Title", "Original description", TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setDescription(null);
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
 
-        assertThat(ticket.getDescription()).isNull();
+        assertThat(fixture.ticket().getDescription()).isNull();
+        verify(activityService).recordActivity(ActivityType.DESCRIPTION_CHANGED, "Original description", null,
+                fixture.ticket(), fixture.actor());
     }
 
     @Test
-    void updateChangesStatusWhenPresent() {
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", persistedWorkspace(UUID.randomUUID()), 2L),
-                persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID())), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void updateSettingDescriptionToSameValueRecordsNoActivity() {
+        Fixture fixture = newFixture("Title", "Same description", TicketStatus.BACKLOG, TicketPriority.LOW, null);
+
+        UpdateTicketRequest request = new UpdateTicketRequest();
+        request.setDescription("Same description");
+
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void updateChangesStatusAndRecordsStatusChangedActivityWithEnumNames() {
+        Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setStatus(TicketStatus.IN_PROGRESS);
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
 
-        assertThat(ticket.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        assertThat(fixture.ticket().getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
+        verify(activityService).recordActivity(ActivityType.STATUS_CHANGED, "BACKLOG", "IN_PROGRESS",
+                fixture.ticket(), fixture.actor());
     }
 
     @Test
-    void updateChangesPriorityWhenPresent() {
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", persistedWorkspace(UUID.randomUUID()), 2L),
-                persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID())), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void updateSettingStatusToSameValueRecordsNoActivity() {
+        Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
+
+        UpdateTicketRequest request = new UpdateTicketRequest();
+        request.setStatus(TicketStatus.BACKLOG);
+
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void updateChangesPriorityAndRecordsPriorityChangedActivityWithEnumNames() {
+        Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setPriority(TicketPriority.CRITICAL);
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
 
-        assertThat(ticket.getPriority()).isEqualTo(TicketPriority.CRITICAL);
+        assertThat(fixture.ticket().getPriority()).isEqualTo(TicketPriority.CRITICAL);
+        verify(activityService).recordActivity(ActivityType.PRIORITY_CHANGED, "LOW", "CRITICAL",
+                fixture.ticket(), fixture.actor());
+    }
+
+    @Test
+    void updateSettingPriorityToSameValueRecordsNoActivity() {
+        Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
+
+        UpdateTicketRequest request = new UpdateTicketRequest();
+        request.setPriority(TicketPriority.LOW);
+
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
     void updateLeavesAssigneeUnchangedWhenOmitted() {
         Workspace workspace = persistedWorkspace(UUID.randomUUID());
         User originalAssignee = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L),
-                persistedUser(UUID.randomUUID(), workspace), originalAssignee, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        Fixture fixture = newFixtureInWorkspace(workspace, "Title", null, TicketStatus.BACKLOG, TicketPriority.LOW,
+                originalAssignee);
 
-        ticketService.update(ticket.getId(), new UpdateTicketRequest());
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), new UpdateTicketRequest());
 
-        assertThat(ticket.getAssignee()).isSameAs(originalAssignee);
-        verify(userRepository, never()).findById(any());
+        assertThat(fixture.ticket().getAssignee()).isSameAs(originalAssignee);
+        verify(userRepository, never()).findById(originalAssignee.getId());
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
-    void updateLoadsAndAssignsUserWhenAssigneeIdPresent() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L),
-                persistedUser(UUID.randomUUID(), workspace), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void updateLoadsAndAssignsUserAndRecordsAssigneeChangedActivityWithUuidStrings() {
+        Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
+        UUID newAssigneeId = UUID.randomUUID();
+        User newAssignee = persistedUser(newAssigneeId, fixture.workspace());
+        when(userRepository.findById(newAssigneeId)).thenReturn(Optional.of(newAssignee));
 
+        UpdateTicketRequest request = new UpdateTicketRequest();
+        request.setAssigneeId(newAssigneeId);
+
+        TicketResponse response = ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+
+        assertThat(fixture.ticket().getAssignee()).isSameAs(newAssignee);
+        assertThat(response.assigneeId()).isEqualTo(newAssigneeId);
+        verify(activityService).recordActivity(ActivityType.ASSIGNEE_CHANGED, null, newAssigneeId.toString(),
+                fixture.ticket(), fixture.actor());
+    }
+
+    @Test
+    void updateReassigningRecordsOldAndNewAssigneeUuidStrings() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        User originalAssignee = persistedUser(UUID.randomUUID(), workspace);
+        Fixture fixture = newFixtureInWorkspace(workspace, "Title", null, TicketStatus.BACKLOG, TicketPriority.LOW,
+                originalAssignee);
         UUID newAssigneeId = UUID.randomUUID();
         User newAssignee = persistedUser(newAssigneeId, workspace);
         when(userRepository.findById(newAssigneeId)).thenReturn(Optional.of(newAssignee));
@@ -557,60 +693,79 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(newAssigneeId);
 
-        TicketResponse response = ticketService.update(ticket.getId(), request);
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
 
-        assertThat(ticket.getAssignee()).isSameAs(newAssignee);
-        assertThat(response.assigneeId()).isEqualTo(newAssigneeId);
+        verify(activityService).recordActivity(ActivityType.ASSIGNEE_CHANGED,
+                originalAssignee.getId().toString(), newAssigneeId.toString(), fixture.ticket(), fixture.actor());
     }
 
     @Test
-    void updateUnassignsWhenAssigneeIdExplicitlyNull() {
+    void updateAssigningToSameCurrentAssigneeRecordsNoActivityAndDoesNotLookUpUser() {
         Workspace workspace = persistedWorkspace(UUID.randomUUID());
         User originalAssignee = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L),
-                persistedUser(UUID.randomUUID(), workspace), originalAssignee, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        Fixture fixture = newFixtureInWorkspace(workspace, "Title", null, TicketStatus.BACKLOG, TicketPriority.LOW,
+                originalAssignee);
+
+        UpdateTicketRequest request = new UpdateTicketRequest();
+        request.setAssigneeId(originalAssignee.getId());
+
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+
+        assertThat(fixture.ticket().getAssignee()).isSameAs(originalAssignee);
+        verify(userRepository, never()).findById(originalAssignee.getId());
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void updateUnassigningRecordsAssigneeChangedActivityWithNullNewValue() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        User originalAssignee = persistedUser(UUID.randomUUID(), workspace);
+        Fixture fixture = newFixtureInWorkspace(workspace, "Title", null, TicketStatus.BACKLOG, TicketPriority.LOW,
+                originalAssignee);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(null);
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
 
-        assertThat(ticket.getAssignee()).isNull();
-        verify(userRepository, never()).findById(any());
+        assertThat(fixture.ticket().getAssignee()).isNull();
+        verify(activityService).recordActivity(ActivityType.ASSIGNEE_CHANGED,
+                originalAssignee.getId().toString(), null, fixture.ticket(), fixture.actor());
+    }
+
+    @Test
+    void updateUnassigningAlreadyUnassignedTicketRecordsNoActivity() {
+        Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
+
+        UpdateTicketRequest request = new UpdateTicketRequest();
+        request.setAssigneeId(null);
+
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+
+        assertThat(fixture.ticket().getAssignee()).isNull();
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
     void updateThrowsResourceNotFoundExceptionWhenAssigneeMissing() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L),
-                persistedUser(UUID.randomUUID(), workspace), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-
+        Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
         UUID missingAssigneeId = UUID.randomUUID();
         when(userRepository.findById(missingAssigneeId)).thenReturn(Optional.empty());
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(missingAssigneeId);
 
-        assertThatThrownBy(() -> ticketService.update(ticket.getId(), request))
+        assertThatThrownBy(() -> ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(missingAssigneeId.toString());
 
-        assertThat(ticket.getAssignee()).isNull();
+        assertThat(fixture.ticket().getAssignee()).isNull();
     }
 
     @Test
     void updateThrowsBusinessRuleViolationExceptionWhenAssigneeInDifferentWorkspace() {
-        Workspace projectWorkspace = persistedWorkspace(UUID.randomUUID());
+        Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", projectWorkspace, 2L),
-                persistedUser(UUID.randomUUID(), projectWorkspace), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-
         UUID assigneeId = UUID.randomUUID();
         User assigneeFromOtherWorkspace = persistedUser(assigneeId, otherWorkspace);
         when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assigneeFromOtherWorkspace));
@@ -618,11 +773,11 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(assigneeId);
 
-        assertThatThrownBy(() -> ticketService.update(ticket.getId(), request))
+        assertThatThrownBy(() -> ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Assignee");
 
-        assertThat(ticket.getAssignee()).isNull();
+        assertThat(fixture.ticket().getAssignee()).isNull();
     }
 
     @Test
@@ -635,12 +790,13 @@ class TicketServiceTest {
                 TicketPriority.LOW, project, creator, null, createdAt);
         UUID originalId = ticket.getId();
         when(ticketRepository.findById(originalId)).thenReturn(Optional.of(ticket));
+        when(userRepository.findById(creator.getId())).thenReturn(Optional.of(creator));
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Changed title");
         request.setStatus(TicketStatus.DONE);
 
-        ticketService.update(originalId, request);
+        ticketService.update(originalId, creator.getId(), request);
 
         assertThat(ticket.getId()).isEqualTo(originalId);
         assertThat(ticket.getTicketNumber()).isEqualTo(5L);
@@ -651,16 +807,43 @@ class TicketServiceTest {
 
     @Test
     void updateDoesNotCallTicketRepositorySave() {
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, persistedProject(UUID.randomUUID(), "ECOM", persistedWorkspace(UUID.randomUUID()), 2L),
-                persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID())), null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Changed title");
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
 
         verify(ticketRepository, never()).save(any());
+    }
+
+    @Test
+    void updateWithMultipleChangedFieldsRecordsOneActivityPerActualChange() {
+        Fixture fixture = newFixture("Original title", "Original description", TicketStatus.BACKLOG,
+                TicketPriority.LOW, null);
+
+        UpdateTicketRequest request = new UpdateTicketRequest();
+        request.setTitle("Updated title");
+        request.setStatus(TicketStatus.IN_PROGRESS);
+        // priority and description intentionally left unset -> no activity for those
+
+        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+
+        verify(activityService).recordActivity(ActivityType.TITLE_CHANGED, "Original title", "Updated title",
+                fixture.ticket(), fixture.actor());
+        verify(activityService).recordActivity(ActivityType.STATUS_CHANGED, "BACKLOG", "IN_PROGRESS",
+                fixture.ticket(), fixture.actor());
+        verify(activityService, times(2)).recordActivity(any(), any(), any(), any(), any());
+    }
+
+    private Fixture newFixtureInWorkspace(Workspace workspace, String title, String description,
+            TicketStatus status, TicketPriority priority, User assignee) {
+        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L);
+        User actor = persistedUser(UUID.randomUUID(), workspace);
+        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, title, description, status, priority, project,
+                actor, assignee, OffsetDateTime.now());
+        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        return new Fixture(workspace, project, actor, ticket);
     }
 }

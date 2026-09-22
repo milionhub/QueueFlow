@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.dao.DataIntegrityViolationException;
 
+import com.queueflow.activity.ActivityRepository;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
 import com.queueflow.ticket.dto.CreateTicketRequest;
@@ -47,6 +48,9 @@ class TicketCreationRollbackIntegrationTest {
 
     @Autowired
     private UserRepository userRepository;
+
+    @Autowired
+    private ActivityRepository activityRepository;
 
     private Workspace workspace;
     private User creator;
@@ -104,5 +108,17 @@ class TicketCreationRollbackIntegrationTest {
         assertThat(ticketCountForProject)
                 .as("only the pre-existing ticket should remain - no partial/duplicate row")
                 .isEqualTo(1L);
+
+        // The failed create() never reached the recordActivity() call (the
+        // ticket insert itself threw first), and rollback discards any
+        // change that did happen - so no TICKET_CREATED activity should
+        // exist for this project's tickets at all. This is the closest
+        // realistic evidence available for "Activity insert failure rolls
+        // back the business change" (see report: forcing an Activity-
+        // specific constraint violation cleanly, without corrupting
+        // production code, isn't achievable - Activity has no unique/check
+        // constraint reachable through a legitimate flow the way
+        // tickets.ticket_number is).
+        assertThat(activityRepository.findByTicketIdOrderByCreatedAtAsc(preExistingTicket.getId())).isEmpty();
     }
 }

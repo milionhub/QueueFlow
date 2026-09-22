@@ -5,6 +5,8 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.queueflow.activity.ActivityService;
+import com.queueflow.activity.ActivityType;
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
@@ -13,6 +15,8 @@ import com.queueflow.label.dto.LabelResponse;
 import com.queueflow.ticket.Ticket;
 import com.queueflow.ticket.TicketRepository;
 import com.queueflow.ticket.dto.TicketResponse;
+import com.queueflow.user.User;
+import com.queueflow.user.UserRepository;
 import com.queueflow.workspace.Workspace;
 import com.queueflow.workspace.WorkspaceRepository;
 
@@ -22,12 +26,16 @@ public class LabelService {
     private final LabelRepository labelRepository;
     private final WorkspaceRepository workspaceRepository;
     private final TicketRepository ticketRepository;
+    private final UserRepository userRepository;
+    private final ActivityService activityService;
 
     public LabelService(LabelRepository labelRepository, WorkspaceRepository workspaceRepository,
-            TicketRepository ticketRepository) {
+            TicketRepository ticketRepository, UserRepository userRepository, ActivityService activityService) {
         this.labelRepository = labelRepository;
         this.workspaceRepository = workspaceRepository;
         this.ticketRepository = ticketRepository;
+        this.userRepository = userRepository;
+        this.activityService = activityService;
     }
 
     @Transactional
@@ -66,37 +74,49 @@ public class LabelService {
     }
 
     @Transactional
-    public TicketResponse addLabelToTicket(UUID ticketId, UUID labelId) {
+    public TicketResponse addLabelToTicket(UUID ticketId, UUID labelId, UUID actorUserId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
         Label label = labelRepository.findById(labelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Label not found: " + labelId));
+        User actor = userRepository.findById(actorUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorUserId));
 
         requireSameWorkspace(ticket, label);
+        requireActorSameWorkspace(ticket, actor);
 
         // Idempotent by design (see Ticket.addLabel): attaching an
-        // already-attached label is a no-op, not an error. The boolean
-        // result isn't used yet - Phase 1.6F will use it to decide whether
-        // to record a LABEL_ADDED activity.
-        ticket.addLabel(label);
+        // already-attached label is a no-op, not an error - and no
+        // Activity is recorded when nothing actually changed.
+        boolean changed = ticket.addLabel(label);
+        if (changed) {
+            activityService.recordActivity(ActivityType.LABEL_ADDED, null, label.getName(), ticket, actor);
+        }
 
         // No explicit ticketRepository.save(ticket): ticket is managed in
         // this transaction's persistence context, so Hibernate flushes the
         // ticket_labels join-table change via ordinary dirty checking on
-        // the collection.
+        // the collection. recordActivity() joins this same transaction.
         return TicketResponse.from(ticket);
     }
 
     @Transactional
-    public TicketResponse removeLabelFromTicket(UUID ticketId, UUID labelId) {
+    public TicketResponse removeLabelFromTicket(UUID ticketId, UUID labelId, UUID actorUserId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
         Label label = labelRepository.findById(labelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Label not found: " + labelId));
+        User actor = userRepository.findById(actorUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorUserId));
 
         requireSameWorkspace(ticket, label);
+        requireActorSameWorkspace(ticket, actor);
 
-        ticket.removeLabel(label);
+        boolean changed = ticket.removeLabel(label);
+        if (changed) {
+            activityService.recordActivity(ActivityType.LABEL_REMOVED, label.getName(), null, ticket, actor);
+        }
+
         return TicketResponse.from(ticket);
     }
 
@@ -105,6 +125,14 @@ public class LabelService {
         UUID labelWorkspaceId = label.getWorkspace().getId();
         if (!ticketWorkspaceId.equals(labelWorkspaceId)) {
             throw new BusinessRuleViolationException("Label must belong to the same workspace as the ticket");
+        }
+    }
+
+    private static void requireActorSameWorkspace(Ticket ticket, User actor) {
+        UUID ticketWorkspaceId = ticket.getProject().getWorkspace().getId();
+        UUID actorWorkspaceId = actor.getWorkspace().getId();
+        if (!ticketWorkspaceId.equals(actorWorkspaceId)) {
+            throw new BusinessRuleViolationException("Actor must belong to the same workspace as the ticket");
         }
     }
 

@@ -12,6 +12,7 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
 
+import com.queueflow.activity.ActivityService;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
 import com.queueflow.ticket.dto.TicketResponse;
@@ -42,7 +43,7 @@ import com.queueflow.workspace.WorkspaceRepository;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = Replace.NONE)
-@Import(TicketService.class)
+@Import({TicketService.class, ActivityService.class})
 class TicketUpdateIntegrationTest {
 
     @Autowired
@@ -85,7 +86,7 @@ class TicketUpdateIntegrationTest {
         request.setAssigneeId(assignee.getId());
         // description and priority intentionally omitted from the request
 
-        TicketResponse response = ticketService.update(ticket.getId(), request);
+        TicketResponse response = ticketService.update(ticket.getId(), creator.getId(), request);
         entityManager.flush();
         entityManager.clear();
 
@@ -115,7 +116,7 @@ class TicketUpdateIntegrationTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setDescription(null);
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(ticket.getId(), creator.getId(), request);
         entityManager.flush();
         entityManager.clear();
 
@@ -136,7 +137,7 @@ class TicketUpdateIntegrationTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(null);
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(ticket.getId(), creator.getId(), request);
         entityManager.flush();
         entityManager.clear();
 
@@ -157,7 +158,7 @@ class TicketUpdateIntegrationTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Updated title");
 
-        ticketService.update(ticket.getId(), request);
+        ticketService.update(ticket.getId(), creator.getId(), request);
         entityManager.flush();
         entityManager.clear();
 

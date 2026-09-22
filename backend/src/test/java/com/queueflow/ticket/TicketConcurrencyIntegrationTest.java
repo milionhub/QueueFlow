@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import com.queueflow.activity.ActivityRepository;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
 import com.queueflow.ticket.dto.CreateTicketRequest;
@@ -62,6 +63,9 @@ class TicketConcurrencyIntegrationTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private ActivityRepository activityRepository;
+
     private final List<UUID> createdTicketIds = new ArrayList<>();
     private Workspace workspace;
     private User creator;
@@ -69,6 +73,12 @@ class TicketConcurrencyIntegrationTest {
 
     @AfterEach
     void cleanUp() {
+        // Each successful create() now also inserts a TICKET_CREATED
+        // Activity row referencing the ticket via a FK with no cascade, so
+        // activities must be deleted before their ticket.
+        createdTicketIds.forEach(ticketId -> activityRepository
+                .findByTicketIdOrderByCreatedAtAsc(ticketId)
+                .forEach(activity -> activityRepository.deleteById(activity.getId())));
         createdTicketIds.forEach(ticketRepository::deleteById);
         if (project != null) {
             projectRepository.deleteById(project.getId());

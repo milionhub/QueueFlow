@@ -1,10 +1,13 @@
 package com.queueflow.ticket;
 
+import java.util.Objects;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.queueflow.activity.ActivityService;
+import com.queueflow.activity.ActivityType;
 import com.queueflow.common.PatchField;
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ResourceNotFoundException;
@@ -27,12 +30,14 @@ public class TicketService {
     private final TicketRepository ticketRepository;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final ActivityService activityService;
 
     public TicketService(TicketRepository ticketRepository, ProjectRepository projectRepository,
-            UserRepository userRepository) {
+            UserRepository userRepository, ActivityService activityService) {
         this.ticketRepository = ticketRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
+        this.activityService = activityService;
     }
 
     @Transactional
@@ -65,6 +70,12 @@ public class TicketService {
         // nextTicketNumber mutation from allocateNextTicketNumber() and
         // flushes it in the same transaction/commit as the ticket insert -
         // both succeed together or both roll back together.
+        //
+        // recordActivity() joins this same transaction (default REQUIRED
+        // propagation): if it fails, the ticket insert and the counter
+        // increment above roll back with it - no separate transaction.
+        activityService.recordActivity(ActivityType.TICKET_CREATED, null, null, saved, creator);
+
         return TicketResponse.from(saved);
     }
 
@@ -84,38 +95,75 @@ public class TicketService {
     }
 
     @Transactional
-    public TicketResponse update(UUID ticketId, UpdateTicketRequest request) {
+    public TicketResponse update(UUID ticketId, UUID actorUserId, UpdateTicketRequest request) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
 
+        User actor = userRepository.findById(actorUserId)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorUserId));
+        requireSameWorkspace(ticket.getProject(), actor, "Actor must belong to the same workspace as the ticket");
+
         if (request.getTitle() != null) {
-            ticket.changeTitle(validatedTitle(request.getTitle()));
+            String newTitle = validatedTitle(request.getTitle());
+            String oldTitle = ticket.getTitle();
+            if (!Objects.equals(oldTitle, newTitle)) {
+                ticket.changeTitle(newTitle);
+                activityService.recordActivity(ActivityType.TITLE_CHANGED, oldTitle, newTitle, ticket, actor);
+            }
         }
 
         PatchField<String> descriptionPatch = request.descriptionPatch();
         if (descriptionPatch.isPresent()) {
-            ticket.changeDescription(descriptionPatch.value());
+            String newDescription = descriptionPatch.value();
+            String oldDescription = ticket.getDescription();
+            if (!Objects.equals(oldDescription, newDescription)) {
+                ticket.changeDescription(newDescription);
+                activityService.recordActivity(
+                        ActivityType.DESCRIPTION_CHANGED, oldDescription, newDescription, ticket, actor);
+            }
         }
 
         if (request.getStatus() != null) {
-            ticket.changeStatus(request.getStatus());
+            TicketStatus newStatus = request.getStatus();
+            TicketStatus oldStatus = ticket.getStatus();
+            if (oldStatus != newStatus) {
+                ticket.changeStatus(newStatus);
+                activityService.recordActivity(
+                        ActivityType.STATUS_CHANGED, oldStatus.name(), newStatus.name(), ticket, actor);
+            }
         }
 
         if (request.getPriority() != null) {
-            ticket.changePriority(request.getPriority());
+            TicketPriority newPriority = request.getPriority();
+            TicketPriority oldPriority = ticket.getPriority();
+            if (oldPriority != newPriority) {
+                ticket.changePriority(newPriority);
+                activityService.recordActivity(
+                        ActivityType.PRIORITY_CHANGED, oldPriority.name(), newPriority.name(), ticket, actor);
+            }
         }
 
         PatchField<UUID> assigneeIdPatch = request.assigneeIdPatch();
         if (assigneeIdPatch.isPresent()) {
-            UUID assigneeId = assigneeIdPatch.value();
-            if (assigneeId == null) {
-                ticket.changeAssignee(null);
-            } else {
-                User assignee = userRepository.findById(assigneeId)
-                        .orElseThrow(() -> new ResourceNotFoundException("User not found: " + assigneeId));
-                requireSameWorkspace(ticket.getProject(), assignee,
-                        "Assignee must belong to the same workspace as the project");
-                ticket.changeAssignee(assignee);
+            UUID newAssigneeId = assigneeIdPatch.value();
+            User oldAssignee = ticket.getAssignee();
+            UUID oldAssigneeId = oldAssignee != null ? oldAssignee.getId() : null;
+
+            if (!Objects.equals(oldAssigneeId, newAssigneeId)) {
+                if (newAssigneeId == null) {
+                    ticket.changeAssignee(null);
+                    activityService.recordActivity(
+                            ActivityType.ASSIGNEE_CHANGED, oldAssigneeId.toString(), null, ticket, actor);
+                } else {
+                    User newAssignee = userRepository.findById(newAssigneeId)
+                            .orElseThrow(() -> new ResourceNotFoundException("User not found: " + newAssigneeId));
+                    requireSameWorkspace(ticket.getProject(), newAssignee,
+                            "Assignee must belong to the same workspace as the project");
+                    ticket.changeAssignee(newAssignee);
+                    activityService.recordActivity(ActivityType.ASSIGNEE_CHANGED,
+                            oldAssigneeId != null ? oldAssigneeId.toString() : null, newAssigneeId.toString(),
+                            ticket, actor);
+                }
             }
         }
 
@@ -124,7 +172,8 @@ public class TicketService {
         // dirty checking flushes any changed fields (firing the entity's
         // @PreUpdate to refresh updatedAt) automatically at commit. If
         // nothing above actually changed a field, no UPDATE is issued at
-        // all and updatedAt correctly stays untouched.
+        // all and updatedAt correctly stays untouched. Each recordActivity
+        // call joins this same transaction.
         return TicketResponse.from(ticket);
     }
 

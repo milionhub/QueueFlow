@@ -17,6 +17,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import com.queueflow.activity.ActivityService;
+import com.queueflow.activity.ActivityType;
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
@@ -29,6 +31,7 @@ import com.queueflow.ticket.TicketRepository;
 import com.queueflow.ticket.TicketStatus;
 import com.queueflow.ticket.dto.TicketResponse;
 import com.queueflow.user.User;
+import com.queueflow.user.UserRepository;
 import com.queueflow.user.UserRole;
 import com.queueflow.workspace.Workspace;
 import com.queueflow.workspace.WorkspaceRepository;
@@ -49,11 +52,18 @@ class LabelServiceTest {
     @Mock
     private TicketRepository ticketRepository;
 
+    @Mock
+    private UserRepository userRepository;
+
+    @Mock
+    private ActivityService activityService;
+
     private LabelService labelService;
 
     @BeforeEach
     void setUp() {
-        labelService = new LabelService(labelRepository, workspaceRepository, ticketRepository);
+        labelService = new LabelService(
+                labelRepository, workspaceRepository, ticketRepository, userRepository, activityService);
     }
 
     private static Workspace persistedWorkspace(UUID id) {
@@ -85,6 +95,24 @@ class LabelServiceTest {
                 project, creator, null);
         ReflectionTestUtils.setField(ticket, "id", id);
         return ticket;
+    }
+
+    /** Fixture bundle: one workspace, ticket (with its creator), and an actor also in that workspace. */
+    private record Fixture(Workspace workspace, Ticket ticket, User actor) {
+    }
+
+    private Fixture newFixture() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace);
+        User creator = persistedUser(UUID.randomUUID(), workspace);
+        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
+        User actor = persistedUser(UUID.randomUUID(), workspace);
+        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        // lenient: some tests using this shared fixture deliberately supply
+        // a different/missing actor id and never reach this lookup (e.g.
+        // label-missing short-circuits before the actor is loaded).
+        org.mockito.Mockito.lenient().when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        return new Fixture(workspace, ticket, actor);
     }
 
     // ---------------------------------------------------------------
@@ -189,87 +217,105 @@ class LabelServiceTest {
     void addLabelToTicketThrowsResourceNotFoundExceptionWhenTicketMissing() {
         UUID ticketId = UUID.randomUUID();
         UUID labelId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> labelService.addLabelToTicket(ticketId, labelId))
+        assertThatThrownBy(() -> labelService.addLabelToTicket(ticketId, labelId, actorId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
     }
 
     @Test
     void addLabelToTicketThrowsResourceNotFoundExceptionWhenLabelMissing() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace);
-        User creator = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
+        Fixture fixture = newFixture();
         UUID labelId = UUID.randomUUID();
-
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
         when(labelRepository.findById(labelId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> labelService.addLabelToTicket(ticket.getId(), labelId))
+        assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), labelId, fixture.actor().getId()))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(labelId.toString());
     }
 
     @Test
-    void addLabelToTicketThrowsBusinessRuleViolationExceptionWhenCrossWorkspace() {
-        Workspace ticketWorkspace = persistedWorkspace(UUID.randomUUID());
+    void addLabelToTicketThrowsResourceNotFoundExceptionWhenActorMissing() {
+        Fixture fixture = newFixture();
+        Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
+        UUID missingActorId = UUID.randomUUID();
+        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        when(userRepository.findById(missingActorId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), label.getId(), missingActorId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(missingActorId.toString());
+    }
+
+    @Test
+    void addLabelToTicketThrowsBusinessRuleViolationExceptionWhenActorInDifferentWorkspace() {
+        Fixture fixture = newFixture();
+        Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
+        Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
+        User outsider = persistedUser(UUID.randomUUID(), otherWorkspace);
+        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
+
+        assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), label.getId(), outsider.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Actor");
+
+        assertThat(fixture.ticket().getLabels()).isEmpty();
+    }
+
+    @Test
+    void addLabelToTicketThrowsBusinessRuleViolationExceptionWhenLabelCrossWorkspace() {
+        Fixture fixture = newFixture();
         Workspace labelWorkspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", ticketWorkspace);
-        User creator = persistedUser(UUID.randomUUID(), ticketWorkspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
         Label label = persistedLabel(UUID.randomUUID(), "backend", labelWorkspace);
 
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
-        assertThatThrownBy(() -> labelService.addLabelToTicket(ticket.getId(), label.getId()))
+        assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), label.getId(), fixture.actor().getId()))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Label");
 
-        assertThat(ticket.getLabels()).isEmpty();
+        assertThat(fixture.ticket().getLabels()).isEmpty();
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
-    void addLabelToTicketAttachesLabelAndReturnsMappedResponse() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace);
-        User creator = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
-        Label label = persistedLabel(UUID.randomUUID(), "backend", workspace);
-
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void addLabelToTicketAttachesLabelReturnsMappedResponseAndRecordsLabelAddedActivity() {
+        Fixture fixture = newFixture();
+        Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
-        TicketResponse response = labelService.addLabelToTicket(ticket.getId(), label.getId());
+        TicketResponse response = labelService.addLabelToTicket(
+                fixture.ticket().getId(), label.getId(), fixture.actor().getId());
 
-        assertThat(ticket.getLabels()).extracting(Label::getId).containsExactly(label.getId());
-        assertThat(response.id()).isEqualTo(ticket.getId());
+        assertThat(fixture.ticket().getLabels()).extracting(Label::getId).containsExactly(label.getId());
+        assertThat(response.id()).isEqualTo(fixture.ticket().getId());
         verify(ticketRepository, never()).save(any());
+        verify(activityService).recordActivity(ActivityType.LABEL_ADDED, null, "backend",
+                fixture.ticket(), fixture.actor());
     }
 
     @Test
-    void addingSameLabelTwiceIsIdempotentEvenAcrossDifferentLabelInstances() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace);
-        User creator = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
+    void addingSameLabelTwiceRecordsOnlyOneLabelAddedActivityEvenAcrossDifferentLabelInstances() {
+        Fixture fixture = newFixture();
         UUID labelId = UUID.randomUUID();
         // Two DISTINCT Label instances representing the same row (same id).
         // Membership must be detected by id, not by object/Set identity.
-        Label firstLoad = persistedLabel(labelId, "backend", workspace);
-        Label secondLoad = persistedLabel(labelId, "backend", workspace);
-
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        Label firstLoad = persistedLabel(labelId, "backend", fixture.workspace());
+        Label secondLoad = persistedLabel(labelId, "backend", fixture.workspace());
         when(labelRepository.findById(labelId)).thenReturn(Optional.of(firstLoad), Optional.of(secondLoad));
 
-        labelService.addLabelToTicket(ticket.getId(), labelId);
-        labelService.addLabelToTicket(ticket.getId(), labelId);
+        labelService.addLabelToTicket(fixture.ticket().getId(), labelId, fixture.actor().getId());
+        labelService.addLabelToTicket(fixture.ticket().getId(), labelId, fixture.actor().getId());
 
-        assertThat(ticket.getLabels()).hasSize(1);
-        assertThat(ticket.getLabels().iterator().next().getId()).isEqualTo(labelId);
+        assertThat(fixture.ticket().getLabels()).hasSize(1);
+        assertThat(fixture.ticket().getLabels().iterator().next().getId()).isEqualTo(labelId);
         verify(ticketRepository, never()).save(any());
+        // Only the first call actually changed the Set, so only one Activity.
+        verify(activityService, org.mockito.Mockito.times(1))
+                .recordActivity(any(), any(), any(), any(), any());
     }
 
     // ---------------------------------------------------------------
@@ -280,79 +326,91 @@ class LabelServiceTest {
     void removeLabelFromTicketThrowsResourceNotFoundExceptionWhenTicketMissing() {
         UUID ticketId = UUID.randomUUID();
         UUID labelId = UUID.randomUUID();
+        UUID actorId = UUID.randomUUID();
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> labelService.removeLabelFromTicket(ticketId, labelId))
+        assertThatThrownBy(() -> labelService.removeLabelFromTicket(ticketId, labelId, actorId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
     }
 
     @Test
     void removeLabelFromTicketThrowsResourceNotFoundExceptionWhenLabelMissing() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace);
-        User creator = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
+        Fixture fixture = newFixture();
         UUID labelId = UUID.randomUUID();
-
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
         when(labelRepository.findById(labelId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> labelService.removeLabelFromTicket(ticket.getId(), labelId))
+        assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), labelId, fixture.actor().getId()))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(labelId.toString());
     }
 
     @Test
-    void removeLabelFromTicketThrowsBusinessRuleViolationExceptionWhenCrossWorkspace() {
-        Workspace ticketWorkspace = persistedWorkspace(UUID.randomUUID());
-        Workspace labelWorkspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", ticketWorkspace);
-        User creator = persistedUser(UUID.randomUUID(), ticketWorkspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
-        Label label = persistedLabel(UUID.randomUUID(), "backend", labelWorkspace);
+    void removeLabelFromTicketThrowsResourceNotFoundExceptionWhenActorMissing() {
+        Fixture fixture = newFixture();
+        Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
+        UUID missingActorId = UUID.randomUUID();
+        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        when(userRepository.findById(missingActorId)).thenReturn(Optional.empty());
 
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), missingActorId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(missingActorId.toString());
+    }
+
+    @Test
+    void removeLabelFromTicketThrowsBusinessRuleViolationExceptionWhenActorInDifferentWorkspace() {
+        Fixture fixture = newFixture();
+        Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
+        Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
+        User outsider = persistedUser(UUID.randomUUID(), otherWorkspace);
+        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
+
+        assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), outsider.getId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("Actor");
+    }
+
+    @Test
+    void removeLabelFromTicketThrowsBusinessRuleViolationExceptionWhenLabelCrossWorkspace() {
+        Fixture fixture = newFixture();
+        Workspace labelWorkspace = persistedWorkspace(UUID.randomUUID());
+        Label label = persistedLabel(UUID.randomUUID(), "backend", labelWorkspace);
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
-        assertThatThrownBy(() -> labelService.removeLabelFromTicket(ticket.getId(), label.getId()))
+        assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), fixture.actor().getId()))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("Label");
     }
 
     @Test
-    void removeLabelFromTicketDetachesLabelAndReturnsMappedResponse() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace);
-        User creator = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
-        Label label = persistedLabel(UUID.randomUUID(), "backend", workspace);
-        ticket.addLabel(label);
-
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void removeLabelFromTicketDetachesLabelReturnsMappedResponseAndRecordsLabelRemovedActivity() {
+        Fixture fixture = newFixture();
+        Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
+        fixture.ticket().addLabel(label);
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
-        TicketResponse response = labelService.removeLabelFromTicket(ticket.getId(), label.getId());
+        TicketResponse response = labelService.removeLabelFromTicket(
+                fixture.ticket().getId(), label.getId(), fixture.actor().getId());
 
-        assertThat(ticket.getLabels()).isEmpty();
-        assertThat(response.id()).isEqualTo(ticket.getId());
+        assertThat(fixture.ticket().getLabels()).isEmpty();
+        assertThat(response.id()).isEqualTo(fixture.ticket().getId());
         verify(ticketRepository, never()).save(any());
+        verify(activityService).recordActivity(ActivityType.LABEL_REMOVED, "backend", null,
+                fixture.ticket(), fixture.actor());
     }
 
     @Test
-    void removingUnattachedLabelIsIdempotent() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace);
-        User creator = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
-        Label label = persistedLabel(UUID.randomUUID(), "backend", workspace);
-
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void removingUnattachedLabelIsIdempotentAndRecordsNoActivity() {
+        Fixture fixture = newFixture();
+        Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
-        labelService.removeLabelFromTicket(ticket.getId(), label.getId());
+        labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), fixture.actor().getId());
 
-        assertThat(ticket.getLabels()).isEmpty();
+        assertThat(fixture.ticket().getLabels()).isEmpty();
         verify(ticketRepository, never()).save(any());
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 }

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,10 @@ import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabas
 import org.springframework.boot.jpa.test.autoconfigure.TestEntityManager;
 import org.springframework.context.annotation.Import;
 
+import com.queueflow.activity.Activity;
+import com.queueflow.activity.ActivityRepository;
+import com.queueflow.activity.ActivityService;
+import com.queueflow.activity.ActivityType;
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.label.dto.CreateLabelRequest;
 import com.queueflow.label.dto.LabelResponse;
@@ -37,7 +42,7 @@ import com.queueflow.workspace.WorkspaceRepository;
  */
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = Replace.NONE)
-@Import(LabelService.class)
+@Import({LabelService.class, ActivityService.class})
 class LabelServiceIntegrationTest {
 
     @Autowired
@@ -48,6 +53,9 @@ class LabelServiceIntegrationTest {
 
     @Autowired
     private TicketRepository ticketRepository;
+
+    @Autowired
+    private ActivityRepository activityRepository;
 
     @Autowired
     private ProjectRepository projectRepository;
@@ -106,17 +114,21 @@ class LabelServiceIntegrationTest {
                 new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
         Label label = labelRepository.saveAndFlush(new Label("backend", workspace));
 
-        labelService.addLabelToTicket(ticket.getId(), label.getId());
+        labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
         entityManager.flush();
 
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(1L);
 
-        // Re-attaching the same label must not create a duplicate row.
-        TicketResponse response = labelService.addLabelToTicket(ticket.getId(), label.getId());
+        // Re-attaching the same label must not create a duplicate row, nor
+        // a second LABEL_ADDED activity.
+        TicketResponse response = labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
         entityManager.flush();
 
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(1L);
         assertThat(response.id()).isEqualTo(ticket.getId());
+
+        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId());
+        assertThat(activities).extracting(Activity::getType).containsExactly(ActivityType.LABEL_ADDED);
     }
 
     @Test
@@ -129,22 +141,27 @@ class LabelServiceIntegrationTest {
                 new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
         Label label = labelRepository.saveAndFlush(new Label("backend", workspace));
 
-        labelService.addLabelToTicket(ticket.getId(), label.getId());
+        labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
         entityManager.flush();
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(1L);
 
-        labelService.removeLabelFromTicket(ticket.getId(), label.getId());
+        labelService.removeLabelFromTicket(ticket.getId(), label.getId(), creator.getId());
         entityManager.flush();
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(0L);
 
-        // Removing again: no error, still zero rows.
-        labelService.removeLabelFromTicket(ticket.getId(), label.getId());
+        // Removing again: no error, still zero rows, and no second
+        // LABEL_REMOVED activity.
+        labelService.removeLabelFromTicket(ticket.getId(), label.getId(), creator.getId());
         entityManager.flush();
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(0L);
 
         // Neither the Ticket nor the Label was deleted by the association removal.
         assertThat(ticketRepository.findById(ticket.getId())).isPresent();
         assertThat(labelRepository.findById(label.getId())).isPresent();
+
+        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId());
+        assertThat(activities).extracting(Activity::getType)
+                .containsExactly(ActivityType.LABEL_ADDED, ActivityType.LABEL_REMOVED);
     }
 
     @Test
@@ -158,7 +175,7 @@ class LabelServiceIntegrationTest {
                 new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
         Label label = labelRepository.saveAndFlush(new Label("backend", labelWorkspace));
 
-        assertThatThrownBy(() -> labelService.addLabelToTicket(ticket.getId(), label.getId()))
+        assertThatThrownBy(() -> labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId()))
                 .isInstanceOf(BusinessRuleViolationException.class);
         entityManager.flush();
 
@@ -176,7 +193,7 @@ class LabelServiceIntegrationTest {
         Label label = labelRepository.saveAndFlush(new Label("backend", workspace));
         OffsetDateTime updatedAtBefore = ticket.getUpdatedAt();
 
-        labelService.addLabelToTicket(ticket.getId(), label.getId());
+        labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
         entityManager.flush();
         entityManager.clear();
 
