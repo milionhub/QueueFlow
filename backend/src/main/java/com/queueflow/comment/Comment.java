@@ -17,6 +17,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
 @Entity
@@ -65,10 +66,6 @@ public class Comment {
         return content;
     }
 
-    public void setContent(String content) {
-        this.content = content;
-    }
-
     public Ticket getTicket() {
         return ticket;
     }
@@ -77,12 +74,33 @@ public class Comment {
         return author;
     }
 
+    /**
+     * Changes the content. Callers must validate (not blank) before calling
+     * - this is a narrow mutator, not a validating setter.
+     */
+    public void changeContent(String content) {
+        this.content = content;
+    }
+
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
 
     public OffsetDateTime getUpdatedAt() {
         return updatedAt;
+    }
+
+    /**
+     * Same application-managed updatedAt strategy as Ticket: updated_at has
+     * a DB-side DEFAULT now() for insert time only, no DB trigger advances
+     * it on UPDATE. This fires immediately before Hibernate issues an
+     * UPDATE for this entity (i.e. only when changeContent() actually
+     * dirtied the field), refreshing updatedAt with the real wall-clock
+     * time.
+     */
+    @PreUpdate
+    private void onUpdate() {
+        this.updatedAt = OffsetDateTime.now();
     }
 
     @Override

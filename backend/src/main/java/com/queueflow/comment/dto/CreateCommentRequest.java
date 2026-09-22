@@ -1,0 +1,17 @@
+package com.queueflow.comment.dto;
+
+import java.util.UUID;
+
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+
+public record CreateCommentRequest(
+        @NotNull(message = "ticketId is required")
+        UUID ticketId,
+
+        @NotNull(message = "authorId is required")
+        UUID authorId,
+
+        @NotBlank(message = "content must not be blank")
+        String content) {
+}
