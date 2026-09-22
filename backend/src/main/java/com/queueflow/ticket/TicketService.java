@@ -5,17 +5,24 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.queueflow.common.PatchField;
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
 import com.queueflow.ticket.dto.CreateTicketRequest;
 import com.queueflow.ticket.dto.TicketResponse;
+import com.queueflow.ticket.dto.UpdateTicketRequest;
 import com.queueflow.user.User;
 import com.queueflow.user.UserRepository;
 
 @Service
 public class TicketService {
+
+    // Matches tickets.title VARCHAR(255) - re-checked here because this
+    // method can be called directly without going through bean validation
+    // (no controller/@Valid layer exists yet).
+    private static final int TITLE_MAX_LENGTH = 255;
 
     private final TicketRepository ticketRepository;
     private final ProjectRepository projectRepository;
@@ -59,6 +66,76 @@ public class TicketService {
         // flushes it in the same transaction/commit as the ticket insert -
         // both succeed together or both roll back together.
         return TicketResponse.from(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public TicketResponse getById(UUID ticketId) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
+        return TicketResponse.from(ticket);
+    }
+
+    @Transactional(readOnly = true)
+    public TicketResponse getByProjectAndNumber(UUID projectId, long ticketNumber) {
+        Ticket ticket = ticketRepository.findByProjectIdAndTicketNumber(projectId, ticketNumber)
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Ticket not found: project " + projectId + ", number " + ticketNumber));
+        return TicketResponse.from(ticket);
+    }
+
+    @Transactional
+    public TicketResponse update(UUID ticketId, UpdateTicketRequest request) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
+
+        if (request.getTitle() != null) {
+            ticket.changeTitle(validatedTitle(request.getTitle()));
+        }
+
+        PatchField<String> descriptionPatch = request.descriptionPatch();
+        if (descriptionPatch.isPresent()) {
+            ticket.changeDescription(descriptionPatch.value());
+        }
+
+        if (request.getStatus() != null) {
+            ticket.changeStatus(request.getStatus());
+        }
+
+        if (request.getPriority() != null) {
+            ticket.changePriority(request.getPriority());
+        }
+
+        PatchField<UUID> assigneeIdPatch = request.assigneeIdPatch();
+        if (assigneeIdPatch.isPresent()) {
+            UUID assigneeId = assigneeIdPatch.value();
+            if (assigneeId == null) {
+                ticket.changeAssignee(null);
+            } else {
+                User assignee = userRepository.findById(assigneeId)
+                        .orElseThrow(() -> new ResourceNotFoundException("User not found: " + assigneeId));
+                requireSameWorkspace(ticket.getProject(), assignee,
+                        "Assignee must belong to the same workspace as the project");
+                ticket.changeAssignee(assignee);
+            }
+        }
+
+        // No explicit ticketRepository.save(ticket): ticket is a managed
+        // entity in this transaction's persistence context, so Hibernate's
+        // dirty checking flushes any changed fields (firing the entity's
+        // @PreUpdate to refresh updatedAt) automatically at commit. If
+        // nothing above actually changed a field, no UPDATE is issued at
+        // all and updatedAt correctly stays untouched.
+        return TicketResponse.from(ticket);
+    }
+
+    private static String validatedTitle(String title) {
+        if (title.isBlank()) {
+            throw new BusinessRuleViolationException("title must not be blank");
+        }
+        if (title.length() > TITLE_MAX_LENGTH) {
+            throw new BusinessRuleViolationException("title must be at most " + TITLE_MAX_LENGTH + " characters");
+        }
+        return title;
     }
 
     private static void requireSameWorkspace(Project project, User user, String message) {

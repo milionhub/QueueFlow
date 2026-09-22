@@ -24,6 +24,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.JoinTable;
 import jakarta.persistence.ManyToMany;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Transient;
 
@@ -114,32 +115,16 @@ public class Ticket {
         return title;
     }
 
-    public void setTitle(String title) {
-        this.title = title;
-    }
-
     public String getDescription() {
         return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
     }
 
     public TicketStatus getStatus() {
         return status;
     }
 
-    public void setStatus(TicketStatus status) {
-        this.status = status;
-    }
-
     public TicketPriority getPriority() {
         return priority;
-    }
-
-    public void setPriority(TicketPriority priority) {
-        this.priority = priority;
     }
 
     public Project getProject() {
@@ -154,7 +139,30 @@ public class Ticket {
         return assignee;
     }
 
-    public void setAssignee(User assignee) {
+    /**
+     * Changes the title. Callers must validate (not blank, within length)
+     * before calling - this is a narrow mutator, not a validating setter.
+     */
+    public void changeTitle(String title) {
+        this.title = title;
+    }
+
+    public void changeDescription(String description) {
+        this.description = description;
+    }
+
+    public void changeStatus(TicketStatus status) {
+        this.status = status;
+    }
+
+    public void changePriority(TicketPriority priority) {
+        this.priority = priority;
+    }
+
+    /**
+     * Pass null to unassign.
+     */
+    public void changeAssignee(User assignee) {
         this.assignee = assignee;
     }
 
@@ -179,6 +187,20 @@ public class Ticket {
     @Transient
     public String getDisplayKey() {
         return project.getKey() + "-" + ticketNumber;
+    }
+
+    /**
+     * updated_at has a DB-side DEFAULT now() for insert time, but no DB
+     * trigger advances it on UPDATE (and none is being added here). This
+     * JPA lifecycle callback is the application-managed equivalent: it
+     * fires immediately before Hibernate issues an UPDATE for this entity
+     * (i.e. whenever a change* method actually dirtied a field), refreshing
+     * updatedAt with the real wall-clock time. It does not fire, and
+     * updatedAt does not change, when nothing was actually modified.
+     */
+    @PreUpdate
+    private void onUpdate() {
+        this.updatedAt = OffsetDateTime.now();
     }
 
     @Override
