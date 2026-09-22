@@ -99,6 +99,24 @@ public class Project {
         return nextTicketNumber;
     }
 
+    /**
+     * Allocates the next ticket number for this project: returns the
+     * current counter value and advances it by one. Deliberately not a
+     * public setter - the counter must only ever move forward one step at a
+     * time through this method. Callers must have loaded this Project under
+     * a pessimistic write lock (see ProjectRepository.findByIdForUpdate) in
+     * an active transaction; this method itself performs no locking.
+     */
+    public long allocateNextTicketNumber() {
+        if (nextTicketNumber < 1) {
+            throw new IllegalStateException(
+                    "Project " + id + " has an invalid next_ticket_number: " + nextTicketNumber);
+        }
+        long allocated = nextTicketNumber;
+        nextTicketNumber++;
+        return allocated;
+    }
+
     public OffsetDateTime getCreatedAt() {
         return createdAt;
     }
