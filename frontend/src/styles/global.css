@@ -23,6 +23,16 @@
 
   --color-success: #15803d;
   --color-danger: #b91c1c;
+
+  /* The session loading bar (SessionLoadingScreen). */
+  @keyframes queueflow-progress {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(300%);
+    }
+  }
 }
 
 @layer base {

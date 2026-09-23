@@ -3,10 +3,12 @@ import { Link } from 'react-router'
 import { BackendStatusBadge } from '../components/BackendStatusBadge'
 import { Button } from '../components/ui/Button'
 import { useBackendHealth } from '../hooks/useBackendHealth'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import { env } from '../lib/env'
 
 /** Frontend ↔ backend connectivity check against the public health endpoint. */
 export function HealthPage() {
+  useDocumentTitle('Backend connectivity')
   const { status, reason, recheck } = useBackendHealth()
 
   return (
@@ -42,7 +44,7 @@ export function HealthPage() {
           Check again
         </Button>
         <Link to="/" className="text-sm font-medium text-accent underline-offset-4 hover:underline">
-          Back to start
+          Go to QueueFlow
         </Link>
       </div>
     </section>
