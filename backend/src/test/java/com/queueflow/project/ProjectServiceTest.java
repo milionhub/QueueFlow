@@ -98,7 +98,7 @@ class ProjectServiceTest {
         assertThat(saved.getWorkspace()).isSameAs(workspace);
 
         assertThat(response).isEqualTo(
-                new ProjectResponse(generatedId, "E-Commerce", "ECOM", "Storefront", workspaceId, 1L, timestamp, timestamp));
+                new ProjectResponse(generatedId, "E-Commerce", "ECOM", "Storefront", workspaceId, timestamp, timestamp));
     }
 
     @Test
@@ -134,7 +134,7 @@ class ProjectServiceTest {
     }
 
     @Test
-    void getByIdReturnsMappedResponseWithNextTicketNumber() {
+    void getByIdReturnsMappedResponse() {
         UUID workspaceId = UUID.randomUUID();
         Workspace workspace = persistedWorkspace(workspaceId, "Acme Inc.");
         UUID projectId = UUID.randomUUID();
@@ -146,7 +146,7 @@ class ProjectServiceTest {
         ProjectResponse response = projectService.getById(projectId);
 
         assertThat(response).isEqualTo(
-                new ProjectResponse(projectId, "E-Commerce", "ECOM", "Storefront", workspaceId, 5L, timestamp, timestamp));
+                new ProjectResponse(projectId, "E-Commerce", "ECOM", "Storefront", workspaceId, timestamp, timestamp));
     }
 
     @Test
@@ -217,7 +217,7 @@ class ProjectServiceTest {
 
         assertThat(responses).extracting(ProjectResponse::id).containsExactly(zeta.getId(), alpha.getId());
         assertThat(responses.get(0)).isEqualTo(new ProjectResponse(zeta.getId(), "Zeta", "ZETA", "Last",
-                workspaceId, 4L, timestamp, timestamp));
+                workspaceId, timestamp, timestamp));
     }
 
     @Test

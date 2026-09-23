@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -60,13 +61,42 @@ public class SecurityConfig {
         return http.build();
     }
 
+    /**
+     * The only browser origin allowed to call this backend: the Vite dev
+     * server. Explicit origin, never a wildcard.
+     */
+    private static final List<String> ALLOWED_ORIGINS = List.of("http://localhost:5173");
+
+    /**
+     * The single CORS source for the application, applied by Spring
+     * Security's CorsFilter (which also answers preflight OPTIONS requests
+     * before authorization runs). Paths not registered here get no CORS
+     * headers at all, so browsers block cross-origin calls to them.
+     */
     private CorsConfigurationSource corsConfigurationSource() {
-        CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of("http://localhost:5173"));
-        configuration.setAllowedMethods(List.of(HttpMethod.GET.name()));
+        // REST API (development): the methods the API uses, the request
+        // headers the frontend sends (Authorization already allowed for the
+        // Phase 2 bearer token), and Location exposed so the frontend can
+        // read it from 201 Created responses. No credentials/cookies: auth
+        // will be a bearer token, not a cookie.
+        CorsConfiguration api = new CorsConfiguration();
+        api.setAllowedOrigins(ALLOWED_ORIGINS);
+        api.setAllowedMethods(List.of(
+                HttpMethod.GET.name(), HttpMethod.POST.name(), HttpMethod.PUT.name(),
+                HttpMethod.PATCH.name(), HttpMethod.DELETE.name(), HttpMethod.OPTIONS.name()));
+        api.setAllowedHeaders(List.of(HttpHeaders.CONTENT_TYPE, HttpHeaders.AUTHORIZATION));
+        api.setExposedHeaders(List.of(HttpHeaders.LOCATION));
+        api.setAllowCredentials(false);
+
+        // Actuator health: unchanged - read-only GET for the frontend's
+        // connectivity check.
+        CorsConfiguration health = new CorsConfiguration();
+        health.setAllowedOrigins(ALLOWED_ORIGINS);
+        health.setAllowedMethods(List.of(HttpMethod.GET.name()));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
-        source.registerCorsConfiguration("/actuator/health", configuration);
+        source.registerCorsConfiguration("/api/**", api);
+        source.registerCorsConfiguration("/actuator/health", health);
         return source;
     }
 }

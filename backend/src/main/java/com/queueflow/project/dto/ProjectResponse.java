@@ -11,7 +11,6 @@ public record ProjectResponse(
         String key,
         String description,
         UUID workspaceId,
-        long nextTicketNumber,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt) {
 
@@ -22,7 +21,6 @@ public record ProjectResponse(
                 project.getKey(),
                 project.getDescription(),
                 project.getWorkspace().getId(),
-                project.getNextTicketNumber(),
                 project.getCreatedAt(),
                 project.getUpdatedAt());
     }

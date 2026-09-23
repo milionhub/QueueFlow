@@ -46,7 +46,7 @@ class ProjectControllerTest {
 
     private static ProjectResponse projectResponse(UUID id, UUID workspaceId) {
         OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
-        return new ProjectResponse(id, "QueueFlow Backend", "BACK", "Backend development", workspaceId, 1L,
+        return new ProjectResponse(id, "QueueFlow Backend", "BACK", "Backend development", workspaceId,
                 timestamp, timestamp);
     }
 
@@ -82,7 +82,8 @@ class ProjectControllerTest {
                 .andExpect(jsonPath("$.key").value("BACK"))
                 .andExpect(jsonPath("$.description").value("Backend development"))
                 .andExpect(jsonPath("$.workspaceId").value(workspaceId.toString()))
-                .andExpect(jsonPath("$.nextTicketNumber").value(1))
+                // Internal ticket-allocation counter: never part of the API.
+                .andExpect(jsonPath("$.nextTicketNumber").doesNotExist())
                 .andExpect(jsonPath("$.createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.updatedAt").isNotEmpty())
                 // Only the workspace id is exposed, never the Workspace entity.
@@ -151,7 +152,8 @@ class ProjectControllerTest {
                 .andExpect(jsonPath("$.name").value("QueueFlow Backend"))
                 .andExpect(jsonPath("$.key").value("BACK"))
                 .andExpect(jsonPath("$.workspaceId").value(workspaceId.toString()))
-                .andExpect(jsonPath("$.nextTicketNumber").value(1))
+                // Internal ticket-allocation counter: never part of the API.
+                .andExpect(jsonPath("$.nextTicketNumber").doesNotExist())
                 .andExpect(jsonPath("$.workspace").doesNotExist());
 
         verify(projectService).getById(id);

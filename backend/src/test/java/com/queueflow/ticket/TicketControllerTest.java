@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -236,31 +237,62 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.creatorId").value(CREATOR_ID.toString()));
     }
 
+    // ---------------------------------------------------------------
+    // GET BY PROJECT + NUMBER (ProjectTicketController)
+    // ---------------------------------------------------------------
+
     @Test
-    void getByKeyReturns200AndDelegatesExactProjectIdAndTicketNumber() throws Exception {
+    void getByProjectAndNumberReturns200AndDelegatesExactProjectIdAndTicketNumber() throws Exception {
         UUID id = UUID.randomUUID();
         when(ticketService.getByProjectAndNumber(PROJECT_ID, 42L)).thenReturn(ticketResponse(id));
 
-        mockMvc.perform(get("/api/tickets/by-key")
-                        .param("projectId", PROJECT_ID.toString())
-                        .param("ticketNumber", "42"))
+        mockMvc.perform(get("/api/projects/{projectId}/tickets/{ticketNumber}", PROJECT_ID, 42))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value(id.toString()));
+                .andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.displayKey").value("BACK-1"))
+                .andExpect(jsonPath("$.labels").isArray());
 
-        // Also proves "/by-key" is routed to the literal mapping, never
-        // captured by "/{ticketId}" as a (bad) UUID path variable.
         verify(ticketService).getByProjectAndNumber(PROJECT_ID, 42L);
         verifyNoMoreInteractions(ticketService);
     }
 
     @Test
-    void getByKeyWithNonNumericTicketNumberIsRejectedWithoutCallingService() throws Exception {
-        mockMvc.perform(get("/api/tickets/by-key")
-                        .param("projectId", PROJECT_ID.toString())
-                        .param("ticketNumber", "BACK-1"))
+    void projectTicketCollectionAndSingleTicketRoutesDoNotConflict() throws Exception {
+        when(ticketService.getByProject(PROJECT_ID)).thenReturn(List.of());
+        when(ticketService.getByProjectAndNumber(PROJECT_ID, 7L)).thenReturn(ticketResponse(UUID.randomUUID()));
+
+        mockMvc.perform(get("/api/projects/{projectId}/tickets", PROJECT_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray());
+        mockMvc.perform(get("/api/projects/{projectId}/tickets/{ticketNumber}", PROJECT_ID, 7))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").isNotEmpty());
+
+        // Each URL reached exactly its own handler, once.
+        verify(ticketService).getByProject(PROJECT_ID);
+        verify(ticketService).getByProjectAndNumber(PROJECT_ID, 7L);
+        verifyNoMoreInteractions(ticketService);
+    }
+
+    @Test
+    void getByProjectAndNonNumericTicketNumberIsRejectedWithoutCallingService() throws Exception {
+        mockMvc.perform(get("/api/projects/{projectId}/tickets/{ticketNumber}", PROJECT_ID, "BACK-1"))
                 .andExpect(status().isBadRequest());
 
         verify(ticketService, never()).getByProjectAndNumber(any(), anyLong());
+    }
+
+    @Test
+    void removedByKeyRouteIsNoLongerATicketLookup() throws Exception {
+        // No mapping exists for /api/tickets/by-key any more: the path now
+        // only matches GET /api/tickets/{ticketId}, where "by-key" is not a
+        // UUID -> 400 before any service call. Nothing looks a ticket up.
+        mockMvc.perform(get("/api/tickets/by-key")
+                        .param("projectId", PROJECT_ID.toString())
+                        .param("ticketNumber", "1"))
+                .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(ticketService);
     }
 
     // ---------------------------------------------------------------

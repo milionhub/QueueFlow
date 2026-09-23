@@ -49,11 +49,6 @@ public class TicketController {
         return ticketService.getById(ticketId);
     }
 
-    @GetMapping("/by-key")
-    public TicketResponse getByProjectAndNumber(@RequestParam UUID projectId, @RequestParam long ticketNumber) {
-        return ticketService.getByProjectAndNumber(projectId, ticketNumber);
-    }
-
     /**
      * UpdateTicketRequest is deliberately a setter-based class, not a
      * record, so Jackson can tell an omitted property from an explicit JSON

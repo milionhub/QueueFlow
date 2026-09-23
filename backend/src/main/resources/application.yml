@@ -12,6 +12,11 @@ spring:
       # "create-drop") until a migration tool (Flyway/Liquibase) owns the schema.
       ddl-auto: validate
     show-sql: false
+    # No persistence context held open for the whole HTTP request: every
+    # lazy association must be read (and every DTO built) inside the
+    # service's @Transactional method, never during controller execution
+    # or JSON serialization.
+    open-in-view: false
 
 server:
   port: 8080
