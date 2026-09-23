@@ -23,9 +23,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
  * secret exactly once, here, and shared by the encoder and the decoder; it is
  * not exposed as a bean.
  *
- * Nothing here enables authentication: the decoder is only consulted once a
- * filter chain is configured with oauth2ResourceServer(), which SecurityConfig
- * does not do yet.
+ * The decoder is used by SecurityConfig's oauth2ResourceServer() bearer
+ * authentication; the encoder by AccessTokenService, which issues the tokens.
  */
 @Configuration
 @EnableConfigurationProperties(JwtProperties.class)

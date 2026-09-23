@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
 import java.util.function.Consumer;
@@ -78,6 +80,9 @@ class JwtAuthenticationIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private JwtProperties jwtProperties;
 
     private final String tag = "jwtit-" + UUID.randomUUID().toString().substring(0, 8);
 
@@ -217,7 +222,14 @@ class JwtAuthenticationIntegrationTest {
                 token(claims -> claims.claims(map -> map.remove("sub"))),
                 token(claims -> claims.subject("not-a-uuid")),
                 token(claims -> claims.subject(UUID.randomUUID().toString())),
-                deletedUsersToken);
+                deletedUsersToken,
+                // Not valid yet: beyond the decoder's 60s clock skew.
+                token(claims -> claims.notBefore(Instant.now().plus(Duration.ofMinutes(10)))),
+                unsigned(),
+                signedWithTheApplicationKeyUsingHs384(),
+                withCorruptedSignature(token(claims -> { })),
+                withPayloadOf(token(claims -> { }), token(claims -> claims.subject(UUID.randomUUID().toString()))),
+                "");
 
         for (String badToken : badTokens) {
             MvcResult result = perform(withToken(get("/api/auth/me"), badToken));
@@ -303,6 +315,38 @@ class JwtAuthenticationIntegrationTest {
         return foreign.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS256).type("JWT").build(),
                 JwtClaimsSet.builder().subject(userId).issuer("queueflow").issuedAt(now)
                         .expiresAt(now.plus(Duration.ofHours(1))).build())).getTokenValue();
+    }
+
+    /** alg "none": a well-formed token with valid claims and no signature at all. */
+    private String unsigned() {
+        Base64.Encoder base64 = Base64.getUrlEncoder().withoutPadding();
+        long now = Instant.now().getEpochSecond();
+        String header = base64.encodeToString("{\"alg\":\"none\",\"typ\":\"JWT\"}".getBytes(StandardCharsets.UTF_8));
+        String payload = base64.encodeToString("{\"sub\":\"%s\",\"iss\":\"queueflow\",\"iat\":%d,\"exp\":%d}"
+                .formatted(userId, now, now + 3600).getBytes(StandardCharsets.UTF_8));
+        return header + "." + payload + ".";
+    }
+
+    /** The application's own secret, but HS384: the header must not choose the algorithm. */
+    private String signedWithTheApplicationKeyUsingHs384() {
+        byte[] key = JwtConfig.hs256Key(jwtProperties.secret()).getEncoded();
+        JwtEncoder hs384 = NimbusJwtEncoder.withSecretKey(new SecretKeySpec(key, "HmacSHA384"))
+                .algorithm(MacAlgorithm.HS384).build();
+        Instant now = Instant.now();
+        return hs384.encode(JwtEncoderParameters.from(JwsHeader.with(MacAlgorithm.HS384).type("JWT").build(),
+                JwtClaimsSet.builder().subject(userId).issuer("queueflow").issuedAt(now)
+                        .expiresAt(now.plus(Duration.ofHours(1))).build())).getTokenValue();
+    }
+
+    private static String withCorruptedSignature(String token) {
+        int last = token.length() - 1;
+        return token.substring(0, last) + (token.charAt(last) == 'A' ? 'B' : 'A');
+    }
+
+    /** Header and signature of one valid token around the payload of another. */
+    private static String withPayloadOf(String token, String otherToken) {
+        String[] parts = token.split("\\.");
+        return parts[0] + "." + otherToken.split("\\.")[1] + "." + parts[2];
     }
 
     /** A perfectly valid token whose user has since been deleted. */

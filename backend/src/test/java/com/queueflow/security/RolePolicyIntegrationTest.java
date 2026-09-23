@@ -382,6 +382,17 @@ class RolePolicyIntegrationTest {
                 {"name": "Late", "email": "%s", "password": "%s"}
                 """.formatted(email("late"), PASSWORD));
         jdbcTemplate.update("UPDATE users SET role = 'ADMIN' WHERE id = ?", a.adminId());
+
+        // The workspace is the database's too: moved to B, the same token now
+        // sees B as its own workspace and A as not found - then back again.
+        jdbcTemplate.update("UPDATE users SET workspace_id = ? WHERE id = ?", b.workspaceId(), pedroId);
+        MvcResult moved = ok(pedroToken, get("/api/auth/me"), null);
+        assertThat((String) read(moved, "$.workspaceId")).isEqualTo(b.workspaceId().toString());
+        assertStatus(200, pedroToken, get("/api/workspaces/{w}", b.workspaceId()), null);
+        assertStatus(404, pedroToken, get("/api/projects/{p}", a.projectId()), null);
+        jdbcTemplate.update("UPDATE users SET workspace_id = ? WHERE id = ?", a.workspaceId(), pedroId);
+        assertStatus(404, pedroToken, get("/api/workspaces/{w}", b.workspaceId()), null);
+        assertStatus(200, pedroToken, get("/api/projects/{p}", a.projectId()), null);
     }
 
     /** A validly signed token claiming ADMIN in every common way changes nothing: the claims are never read. */
@@ -398,11 +409,16 @@ class RolePolicyIntegrationTest {
                 .claim("authorities", List.of("ROLE_ADMIN"))
                 .claim("scope", "ADMIN")
                 .claim("workspaceId", b.workspaceId().toString())
+                .claim("email", b.adminEmail())
+                .claim("name", "Administrator")
                 .build();
         String forged = jwtEncoder.encode(JwtEncoderParameters.from(
                 JwsHeader.with(MacAlgorithm.HS256).type("JWT").build(), claims)).getTokenValue();
 
         MvcResult me = ok(forged, get("/api/auth/me"), null);
+        assertThat((String) read(me, "$.id")).isEqualTo(pedroId.toString());
+        assertThat((String) read(me, "$.email")).isEqualTo(pedroEmail);
+        assertThat((String) read(me, "$.name")).isEqualTo("Pedro");
         assertThat((String) read(me, "$.role")).isEqualTo("MEMBER");
         assertThat((String) read(me, "$.workspaceId")).isEqualTo(a.workspaceId().toString());
         assertStatus(403, forged, post("/api/projects"), "{\"name\": \"Operations\", \"key\": \"OPS\"}");
@@ -466,6 +482,17 @@ class RolePolicyIntegrationTest {
 
         assertStatus(403, a.token(), patch("/api/comments/{c}", pedrosComment), "{\"content\": \"Ana's words\"}");
         assertStatus(403, a.token(), delete("/api/comments/{c}", pedrosComment), null);
+        assertThat(jdbcTemplate.queryForObject("SELECT content FROM comments WHERE id = ?", String.class,
+                pedrosComment)).isEqualTo("Pedro's words");
+
+        // Another MEMBER of the same workspace cannot either.
+        String lucia = email("lucia");
+        ok(a.token(), post("/api/workspaces/{w}/members", a.workspaceId()), """
+                {"name": "Lucia", "email": "%s", "password": "%s"}
+                """.formatted(lucia, PASSWORD));
+        String luciaToken = login(lucia, PASSWORD);
+        assertStatus(403, luciaToken, patch("/api/comments/{c}", pedrosComment), "{\"content\": \"Lucia's words\"}");
+        assertStatus(403, luciaToken, delete("/api/comments/{c}", pedrosComment), null);
         assertThat(jdbcTemplate.queryForObject("SELECT content FROM comments WHERE id = ?", String.class,
                 pedrosComment)).isEqualTo("Pedro's words");
 

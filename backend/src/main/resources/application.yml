@@ -7,9 +7,9 @@ spring:
     password: ${DB_PASSWORD}
   jpa:
     hibernate:
-      # Safe for this stage: no entities exist yet, so there is nothing to
-      # validate against. This must stay "validate" (never "update"/"create"/
-      # "create-drop") until a migration tool (Flyway/Liquibase) owns the schema.
+      # Flyway (db/migration) owns the schema; Hibernate only checks at
+      # startup that the entities match it. Never "update"/"create"/
+      # "create-drop".
       ddl-auto: validate
     show-sql: false
     # No persistence context held open for the whole HTTP request: every

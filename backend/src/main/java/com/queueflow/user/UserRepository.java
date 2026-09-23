@@ -16,6 +16,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      */
     Optional<User> findByEmail(String email);
 
+    /**
+     * Global by design, for registration and member creation: emails are
+     * unique across QueueFlow (V1/V5 unique indexes). Answers only a 409
+     * that names no account or workspace.
+     */
     boolean existsByEmail(String email);
 
     /** Tenant-scoped: a user of another workspace is simply not found. */

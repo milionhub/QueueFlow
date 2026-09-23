@@ -1,9 +1,10 @@
 package com.queueflow.common.exception;
 
 /**
- * Thrown by the service layer when a requested resource does not exist.
- * Deliberately a single, plain exception rather than a hierarchy - global
- * HTTP mapping (e.g. to a 404 response) belongs to a later phase.
+ * Thrown by the service layer when a requested resource does not exist - or
+ * exists only in another workspace, which callers must not be able to tell
+ * apart. Deliberately a single, plain exception rather than a hierarchy;
+ * GlobalExceptionHandler maps it to 404.
  */
 public class ResourceNotFoundException extends RuntimeException {
 

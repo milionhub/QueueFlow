@@ -27,7 +27,7 @@ public class TicketService {
 
     // Matches tickets.title VARCHAR(255) - re-checked here (in both create
     // and update) because these methods can be called directly without
-    // going through bean validation (no controller/@Valid layer exists yet).
+    // going through bean validation (the controllers' @Valid).
     private static final int TITLE_MAX_LENGTH = 255;
 
     private final TicketRepository ticketRepository;
