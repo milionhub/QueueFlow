@@ -361,6 +361,32 @@ class TicketServiceTest {
         assertThat(ticketCaptor.getValue().getId()).isEqualTo(response.id());
     }
 
+    @Test
+    void createRejectsBlankTitleBeforeLockingProjectOrPersistingAnything() {
+        CreateTicketRequest request = new CreateTicketRequest(UUID.randomUUID(), "   ", null,
+                TicketStatus.BACKLOG, TicketPriority.HIGH, UUID.randomUUID(), null);
+
+        assertThatThrownBy(() -> ticketService.create(request))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("title");
+
+        verify(projectRepository, never()).findByIdForUpdate(any());
+        verify(ticketRepository, never()).save(any());
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void createRejectsMissingTitle() {
+        CreateTicketRequest request = new CreateTicketRequest(UUID.randomUUID(), null, null,
+                TicketStatus.BACKLOG, TicketPriority.HIGH, UUID.randomUUID(), null);
+
+        assertThatThrownBy(() -> ticketService.create(request))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("title");
+
+        verify(ticketRepository, never()).save(any());
+    }
+
     // ---------------------------------------------------------------
     // READ
     // ---------------------------------------------------------------

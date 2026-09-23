@@ -2,8 +2,10 @@ package com.queueflow.comment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.within;
 
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -145,6 +147,32 @@ class CommentServiceIntegrationTest {
         assertThat(reloaded.getCreatedAt()).isEqualTo(createdAt);
         assertThat(reloaded.getAuthor().getId()).isEqualTo(author.getId());
         assertThat(reloaded.getTicket().getId()).isEqualTo(ticket.getId());
+    }
+
+    @Test
+    void updateResponseCarriesTheAdvancedUpdatedAtNotTheStalePreUpdateValue() {
+        Workspace workspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
+        User author = userRepository.saveAndFlush(
+                new User("Ada Lovelace", "ada6@example.com", "hash", UserRole.MEMBER, workspace));
+        Project project = projectRepository.saveAndFlush(new Project("E-Commerce", "ECOM6", null, workspace));
+        Ticket ticket = ticketRepository.saveAndFlush(
+                new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, author, null));
+        Comment comment = commentRepository.saveAndFlush(new Comment("Original content", ticket, author));
+        OffsetDateTime updatedAtBeforeUpdate = comment.getUpdatedAt();
+
+        // Deliberately no entityManager.flush() before reading the response:
+        // in production the transaction commits only after update() has
+        // already built its DTO.
+        CommentResponse response = commentService.update(
+                comment.getId(), author.getId(), new UpdateCommentRequest("Updated content"));
+
+        assertThat(response.updatedAt()).isAfter(updatedAtBeforeUpdate);
+
+        entityManager.flush();
+        entityManager.clear();
+        Comment reloaded = commentRepository.findById(comment.getId()).orElseThrow();
+        assertThat(response.updatedAt().toInstant())
+                .isCloseTo(reloaded.getUpdatedAt().toInstant(), within(1, ChronoUnit.MILLIS));
     }
 
     @Test

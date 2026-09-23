@@ -1,8 +1,10 @@
 package com.queueflow.ticket;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -171,5 +173,32 @@ class TicketUpdateIntegrationTest {
         // Thread.sleep needed.
         assertThat(reloaded.getUpdatedAt()).isAfter(updatedAtBeforeUpdate);
         assertThat(reloaded.getCreatedAt()).isEqualTo(createdAt);
+    }
+
+    @Test
+    void updateResponseCarriesTheAdvancedUpdatedAtNotTheStalePreUpdateValue() {
+        Workspace workspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
+        User creator = userRepository.saveAndFlush(
+                new User("Creator", "creator5@example.com", "hash", UserRole.MEMBER, workspace));
+        Project project = projectRepository.saveAndFlush(new Project("E-Commerce", "ECOM5", null, workspace));
+        Ticket ticket = persistTicket(project, creator, null, null);
+        OffsetDateTime updatedAtBeforeUpdate = ticket.getUpdatedAt();
+
+        UpdateTicketRequest request = new UpdateTicketRequest();
+        request.setTitle("Updated title");
+
+        // Deliberately no entityManager.flush() before reading the response:
+        // in production the transaction commits only after update() has
+        // already built its DTO, so the response must not depend on a
+        // flush the caller performs afterwards.
+        TicketResponse response = ticketService.update(ticket.getId(), creator.getId(), request);
+
+        assertThat(response.updatedAt()).isAfter(updatedAtBeforeUpdate);
+
+        entityManager.flush();
+        entityManager.clear();
+        Ticket reloaded = ticketRepository.findById(ticket.getId()).orElseThrow();
+        assertThat(response.updatedAt().toInstant())
+                .isCloseTo(reloaded.getUpdatedAt().toInstant(), within(1, ChronoUnit.MILLIS));
     }
 }

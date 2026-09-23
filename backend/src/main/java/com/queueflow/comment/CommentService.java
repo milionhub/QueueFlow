@@ -82,8 +82,11 @@ public class CommentService {
 
         // No explicit commentRepository.save(comment): comment is a managed
         // entity in this transaction's persistence context, so Hibernate's
-        // dirty checking flushes the change (firing @PreUpdate to refresh
-        // updatedAt) automatically at commit.
+        // dirty checking detects the change. The explicit flush() (not a
+        // save) issues that UPDATE now rather than at commit, so @PreUpdate
+        // has already refreshed updatedAt before the response is built -
+        // same reasoning as TicketService.update().
+        commentRepository.flush();
         return CommentResponse.from(comment);
     }
 

@@ -22,9 +22,9 @@ import com.queueflow.user.UserRepository;
 @Service
 public class TicketService {
 
-    // Matches tickets.title VARCHAR(255) - re-checked here because this
-    // method can be called directly without going through bean validation
-    // (no controller/@Valid layer exists yet).
+    // Matches tickets.title VARCHAR(255) - re-checked here (in both create
+    // and update) because these methods can be called directly without
+    // going through bean validation (no controller/@Valid layer exists yet).
     private static final int TITLE_MAX_LENGTH = 255;
 
     private final TicketRepository ticketRepository;
@@ -42,6 +42,10 @@ public class TicketService {
 
     @Transactional
     public TicketResponse create(CreateTicketRequest request) {
+        // Validated before taking the project row lock below, so an invalid
+        // request never blocks concurrent ticket creation on that project.
+        String title = validatedTitle(request.title());
+
         Project project = projectRepository.findByIdForUpdate(request.projectId())
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + request.projectId()));
 
@@ -60,7 +64,7 @@ public class TicketService {
         // allocation is safe from concurrent allocation on the same row.
         long ticketNumber = project.allocateNextTicketNumber();
 
-        Ticket ticket = new Ticket(ticketNumber, request.title(), request.description(), request.status(),
+        Ticket ticket = new Ticket(ticketNumber, title, request.description(), request.status(),
                 request.priority(), project, creator, assignee);
         Ticket saved = ticketRepository.save(ticket);
 
@@ -169,16 +173,22 @@ public class TicketService {
 
         // No explicit ticketRepository.save(ticket): ticket is a managed
         // entity in this transaction's persistence context, so Hibernate's
-        // dirty checking flushes any changed fields (firing the entity's
-        // @PreUpdate to refresh updatedAt) automatically at commit. If
-        // nothing above actually changed a field, no UPDATE is issued at
-        // all and updatedAt correctly stays untouched. Each recordActivity
-        // call joins this same transaction.
+        // dirty checking detects any changed fields. If nothing above
+        // actually changed a field, no UPDATE is issued at all and
+        // updatedAt correctly stays untouched. Each recordActivity call
+        // joins this same transaction.
+        //
+        // The explicit flush() (not a save) makes that dirty-check UPDATE
+        // happen now rather than at commit, so the entity's @PreUpdate has
+        // already refreshed updatedAt before the response is built below -
+        // otherwise the returned DTO would carry the stale pre-update
+        // value. It stays inside this same transaction.
+        ticketRepository.flush();
         return TicketResponse.from(ticket);
     }
 
     private static String validatedTitle(String title) {
-        if (title.isBlank()) {
+        if (title == null || title.isBlank()) {
             throw new BusinessRuleViolationException("title must not be blank");
         }
         if (title.length() > TITLE_MAX_LENGTH) {
