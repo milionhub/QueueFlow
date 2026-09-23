@@ -3,27 +3,42 @@ package com.queueflow.common.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.ResultActions;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.jayway.jsonpath.JsonPath;
 import com.queueflow.common.exception.BusinessRuleViolationException;
@@ -34,6 +49,10 @@ import com.queueflow.label.LabelController;
 import com.queueflow.label.LabelService;
 import com.queueflow.project.ProjectController;
 import com.queueflow.project.ProjectService;
+import com.queueflow.project.dto.ProjectResponse;
+import com.queueflow.ticket.ProjectTicketController;
+import com.queueflow.ticket.TicketController;
+import com.queueflow.ticket.TicketService;
 
 import jakarta.servlet.ServletException;
 
@@ -41,11 +60,15 @@ import jakarta.servlet.ServletException;
  * Exercises GlobalExceptionHandler through the real Spring MVC
  * exception-resolution path: real controllers, real SecurityConfig and the
  * advice (auto-included by the web slice), with the services mocked to
- * throw the actual service-layer exceptions.
+ * throw the actual service-layer exceptions. Framework cases also assert
+ * which exception Spring MVC actually raised, so the mapping is tied to the
+ * real Spring Framework 7 behavior rather than assumed.
  */
-@WebMvcTest({ProjectController.class, LabelController.class})
+@WebMvcTest({ProjectController.class, LabelController.class, TicketController.class, ProjectTicketController.class})
 @Import(SecurityConfig.class)
 class GlobalExceptionHandlerTest {
+
+    private static final UUID ID = UUID.randomUUID();
 
     @Autowired
     private MockMvc mockMvc;
@@ -56,35 +79,45 @@ class GlobalExceptionHandlerTest {
     @MockitoBean
     private LabelService labelService;
 
-    /** Structure shared by every ApiErrorResponse, and nothing internal leaks. */
-    private static void expectApiError(ResultActions result, int status, String error, String message, String path)
-            throws Exception {
-        result.andExpect(status().is(status))
+    @MockitoBean
+    private TicketService ticketService;
+
+    /**
+     * Everything every standardized error must satisfy: exactly the five
+     * ApiErrorResponse fields with the given values, a UTC timestamp of at
+     * most microsecond precision, and nothing internal in the body.
+     */
+    private static MvcResult expectApiError(ResultActions result, int status, String error, String message,
+            String path) throws Exception {
+        MvcResult mvcResult = result.andExpect(status().is(status))
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.length()").value(5))
-                .andExpect(jsonPath("$.timestamp").isNotEmpty())
                 .andExpect(jsonPath("$.status").value(status))
                 .andExpect(jsonPath("$.error").value(error))
                 .andExpect(jsonPath("$.message").value(message))
                 .andExpect(jsonPath("$.path").value(path))
-                .andExpect(jsonPath("$.trace").doesNotExist())
-                .andExpect(jsonPath("$.exception").doesNotExist());
-        String body = result.andReturn().getResponse().getContentAsString();
-        // No exception class names, package names or stack frames.
-        assertThat(body).doesNotContain("Exception", "com.queueflow");
+                .andReturn();
+        String body = mvcResult.getResponse().getContentAsString();
+
+        OffsetDateTime timestamp = OffsetDateTime.parse(JsonPath.read(body, "$.timestamp"));
+        assertThat(timestamp.getOffset()).isEqualTo(ZoneOffset.UTC);
+        assertThat(timestamp.getNano() % 1_000).isZero();
+
+        // No exception class names, package or Java type names, stack frames.
+        assertThat(body).doesNotContain("Exception", "com.queueflow", "java.", "jackson");
+        return mvcResult;
     }
 
     // ---------------------------------------------------------------
-    // 404 / 409
+    // 1.8A: service-layer exceptions and @Valid (unchanged)
     // ---------------------------------------------------------------
 
     @Test
     void resourceNotFoundBecomes404WithStandardBody() throws Exception {
-        UUID id = UUID.randomUUID();
-        when(projectService.getById(id)).thenThrow(new ResourceNotFoundException("Project not found: " + id));
+        when(projectService.getById(ID)).thenThrow(new ResourceNotFoundException("Project not found: " + ID));
 
-        expectApiError(mockMvc.perform(get("/api/projects/{projectId}", id)),
-                404, "Not Found", "Project not found: " + id, "/api/projects/" + id);
+        expectApiError(mockMvc.perform(get("/api/projects/{projectId}", ID)),
+                404, "Not Found", "Project not found: " + ID, "/api/projects/" + ID);
     }
 
     @Test
@@ -96,7 +129,7 @@ class GlobalExceptionHandlerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"workspaceId": "%s", "name": "QueueFlow", "key": "qf"}
-                                """.formatted(UUID.randomUUID()))),
+                                """.formatted(ID))),
                 409, "Conflict", "Project key already exists in workspace: QF", "/api/projects");
     }
 
@@ -109,13 +142,9 @@ class GlobalExceptionHandlerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"workspaceId": "%s", "name": "Bug"}
-                                """.formatted(UUID.randomUUID()))),
+                                """.formatted(ID))),
                 409, "Conflict", "Label already exists in workspace: Bug", "/api/labels");
     }
-
-    // ---------------------------------------------------------------
-    // 400 - @Valid request bodies
-    // ---------------------------------------------------------------
 
     @Test
     void singleValidationErrorBecomes400WithItsMessage() throws Exception {
@@ -126,7 +155,7 @@ class GlobalExceptionHandlerTest {
                                 """)),
                 400, "Bad Request", "workspaceId is required", "/api/projects");
 
-        verify(projectService, never()).create(any());
+        verifyNoInteractions(projectService);
     }
 
     @Test
@@ -142,20 +171,105 @@ class GlobalExceptionHandlerTest {
                     "/api/projects");
         }
 
-        verify(projectService, never()).create(any());
+        verifyNoInteractions(projectService);
     }
 
     // ---------------------------------------------------------------
-    // timestamp / path
+    // 1.8B: request errors detected by Spring MVC -> 400
+    // ---------------------------------------------------------------
+
+    static Stream<Arguments> frameworkBadRequests() {
+        String ticketBody = """
+                {"projectId": "%s", "title": "t", "status": "%s", "priority": "LOW", "creatorId": "%s"}
+                """;
+        return Stream.of(
+                Arguments.of("malformed JSON",
+                        post("/api/projects").contentType(MediaType.APPLICATION_JSON).content("{\"name\": "),
+                        HttpMessageNotReadableException.class, "Malformed or missing request body", "/api/projects"),
+                Arguments.of("missing request body",
+                        post("/api/projects").contentType(MediaType.APPLICATION_JSON),
+                        HttpMessageNotReadableException.class, "Malformed or missing request body", "/api/projects"),
+                Arguments.of("unknown enum value in body",
+                        post("/api/tickets").contentType(MediaType.APPLICATION_JSON)
+                                .content(ticketBody.formatted(ID, "NOT_A_STATUS", ID)),
+                        HttpMessageNotReadableException.class, "Malformed or missing request body", "/api/tickets"),
+                Arguments.of("invalid UUID path variable",
+                        get("/api/projects/{projectId}", "not-a-uuid"),
+                        MethodArgumentTypeMismatchException.class, "Invalid value for parameter: projectId",
+                        "/api/projects/not-a-uuid"),
+                Arguments.of("invalid numeric path variable",
+                        get("/api/projects/{projectId}/tickets/{ticketNumber}", ID, "not-a-number"),
+                        MethodArgumentTypeMismatchException.class, "Invalid value for parameter: ticketNumber",
+                        "/api/projects/" + ID + "/tickets/not-a-number"),
+                Arguments.of("missing required query parameter",
+                        patch("/api/tickets/{ticketId}", ID).contentType(MediaType.APPLICATION_JSON).content("{}"),
+                        MissingServletRequestParameterException.class, "Missing required parameter: actorUserId",
+                        "/api/tickets/" + ID));
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("frameworkBadRequests")
+    void frameworkRequestErrorsBecome400WithStandardBody(String description, MockHttpServletRequestBuilder request,
+            Class<? extends Exception> expectedException, String message, String path) throws Exception {
+        MvcResult result = expectApiError(mockMvc.perform(request), 400, "Bad Request", message, path);
+
+        assertThat(result.getResolvedException()).isInstanceOf(expectedException);
+        verifyNoInteractions(projectService, ticketService);
+    }
+
+    @Test
+    void invalidQueryParameterIsReportedWithoutEchoingTheQueryString() throws Exception {
+        MvcResult result = expectApiError(mockMvc.perform(get("/api/projects/by-key")
+                        .param("workspaceId", "not-a-uuid")
+                        .param("key", "QF")),
+                400, "Bad Request", "Invalid value for parameter: workspaceId", "/api/projects/by-key");
+
+        assertThat(result.getResolvedException()).isInstanceOf(MethodArgumentTypeMismatchException.class);
+        String path = JsonPath.read(result.getResponse().getContentAsString(), "$.path");
+        assertThat(path).doesNotContain("?", "workspaceId=", "key=");
+    }
+
+    // ---------------------------------------------------------------
+    // 1.8B: routing / protocol errors -> 404, 405, 415
     // ---------------------------------------------------------------
 
     @Test
-    void timestampIsUtcWithAtMostMicrosecondPrecision() throws Exception {
-        UUID id = UUID.randomUUID();
-        when(projectService.getById(id)).thenThrow(new ResourceNotFoundException("Project not found: " + id));
+    void unknownApiRouteBecomes404WithStandardBody() throws Exception {
+        MvcResult result = expectApiError(mockMvc.perform(get("/api/this-route-does-not-exist")),
+                404, "Not Found", "No endpoint matches this request", "/api/this-route-does-not-exist");
 
-        String body = mockMvc.perform(get("/api/projects/{projectId}", id))
-                .andExpect(status().isNotFound())
+        // Spring Framework 7 raises this for any URL no controller maps.
+        assertThat(result.getResolvedException()).isInstanceOf(NoResourceFoundException.class);
+    }
+
+    @Test
+    void unsupportedMethodOnKnownEndpointBecomes405AndKeepsTheAllowHeader() throws Exception {
+        MvcResult result = expectApiError(mockMvc.perform(delete("/api/projects/{projectId}", ID)),
+                405, "Method Not Allowed", "HTTP method not allowed", "/api/projects/" + ID);
+
+        assertThat(result.getResolvedException()).isInstanceOf(HttpRequestMethodNotSupportedException.class);
+        assertThat(result.getResponse().getHeaders(HttpHeaders.ALLOW))
+                .flatMap(value -> Stream.of(value.split(",")).map(String::trim).toList())
+                .containsExactlyInAnyOrder("GET", "PATCH");
+        verifyNoInteractions(projectService);
+    }
+
+    @Test
+    void unsupportedContentTypeBecomes415AndKeepsTheAcceptHeader() throws Exception {
+        MvcResult result = expectApiError(mockMvc.perform(post("/api/projects")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("name=QueueFlow")),
+                415, "Unsupported Media Type", "Unsupported Content-Type; use application/json", "/api/projects");
+
+        assertThat(result.getResolvedException()).isInstanceOf(HttpMediaTypeNotSupportedException.class);
+        assertThat(result.getResponse().getHeader(HttpHeaders.ACCEPT)).contains("application/json");
+        verifyNoInteractions(projectService);
+    }
+
+    @Test
+    void timestampIsUtcWithAtMostMicrosecondPrecision() throws Exception {
+        String body = mockMvc.perform(get("/api/projects/{projectId}", "not-a-uuid"))
+                .andExpect(status().isBadRequest())
                 .andReturn().getResponse().getContentAsString();
 
         OffsetDateTime timestamp = OffsetDateTime.parse(JsonPath.read(body, "$.timestamp"));
@@ -180,19 +294,31 @@ class GlobalExceptionHandlerTest {
     }
 
     // ---------------------------------------------------------------
-    // Not owned by the 1.8A advice
+    // Not owned by this advice (yet)
     // ---------------------------------------------------------------
 
     @Test
     void businessRuleViolationIsDeliberatelyNotHandledYet() {
-        UUID id = UUID.randomUUID();
-        when(projectService.getById(id)).thenThrow(new BusinessRuleViolationException("some business rule"));
+        when(projectService.getById(ID)).thenThrow(new BusinessRuleViolationException("some business rule"));
 
         // No @ExceptionHandler claims it, so it propagates out of MVC
-        // unresolved (MockMvc rethrows it) instead of becoming a 400/404/409
-        // ApiErrorResponse. Its HTTP mapping is decided once it is split.
-        assertThatThrownBy(() -> mockMvc.perform(get("/api/projects/{projectId}", id)))
+        // unresolved (MockMvc rethrows it) instead of becoming any
+        // ApiErrorResponse status. Its mapping is decided once it is split.
+        assertThatThrownBy(() -> mockMvc.perform(get("/api/projects/{projectId}", ID)))
                 .isInstanceOf(ServletException.class)
                 .hasCauseInstanceOf(BusinessRuleViolationException.class);
+    }
+
+    @Test
+    void validRequestIsUnaffected() throws Exception {
+        when(projectService.getById(ID)).thenReturn(new ProjectResponse(ID, "QueueFlow",
+                "QF", null, UUID.randomUUID(), OffsetDateTime.parse("2026-09-23T10:15:30Z"),
+                OffsetDateTime.parse("2026-09-23T10:15:30Z")));
+
+        mockMvc.perform(get("/api/projects/{projectId}", ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.key").value("QF"))
+                .andExpect(jsonPath("$.status").doesNotExist())
+                .andExpect(header().doesNotExist(HttpHeaders.ALLOW));
     }
 }
