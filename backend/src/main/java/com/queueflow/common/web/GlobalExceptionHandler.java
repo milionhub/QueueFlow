@@ -20,6 +20,7 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.InvalidCredentialsException;
 import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
@@ -35,8 +36,9 @@ import jakarta.servlet.http.HttpServletRequest;
  *
  * Business failures are split by meaning, not by where they are thrown:
  * invalid values (BusinessRuleViolationException, 400), resources that
- * cannot be related (InvalidRelationshipException, 400) and actions the
- * acting user may not perform (ForbiddenOperationException, 403).
+ * cannot be related (InvalidRelationshipException, 400), actions the
+ * acting user may not perform (ForbiddenOperationException, 403) and login
+ * credentials that identify no user (InvalidCredentialsException, 401).
  *
  * Unexpected failures deliberately keep Spring's default handling: there is
  * no catch-all Exception/RuntimeException/Throwable handler, and a database
@@ -103,6 +105,13 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleForbidden(ForbiddenOperationException exception,
             HttpServletRequest request) {
         return error(HttpStatus.FORBIDDEN, exception.getMessage(), request);
+    }
+
+    /** "These credentials do not identify a user" - login only, always the same message. */
+    @ExceptionHandler(InvalidCredentialsException.class)
+    ResponseEntity<ApiErrorResponse> handleInvalidCredentials(InvalidCredentialsException exception,
+            HttpServletRequest request) {
+        return error(HttpStatus.UNAUTHORIZED, InvalidCredentialsException.MESSAGE, request);
     }
 
     // ---------------------------------------------------------------

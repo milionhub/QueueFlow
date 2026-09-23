@@ -24,6 +24,11 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.queueflow.auth.AuthController;
+import com.queueflow.auth.AuthService;
+import com.queueflow.auth.dto.AuthResponse;
+import com.queueflow.user.UserRole;
+import com.queueflow.user.dto.UserResponse;
 import com.queueflow.workspace.WorkspaceController;
 import com.queueflow.workspace.WorkspaceService;
 import com.queueflow.workspace.dto.WorkspaceResponse;
@@ -32,10 +37,10 @@ import com.queueflow.workspace.dto.WorkspaceResponse;
  * CORS policy of the real SecurityConfig, exercised through its filter
  * chain. Preflight (OPTIONS) requests are answered by Spring Security's
  * CorsFilter itself, before any controller, so they apply to every
- * /api/** path; WorkspaceController is in the slice to also check CORS
- * headers on actual (non-preflight) requests.
+ * /api/** path; WorkspaceController and AuthController are in the slice to
+ * also check CORS headers on actual (non-preflight) GET and POST requests.
  */
-@WebMvcTest(WorkspaceController.class)
+@WebMvcTest({WorkspaceController.class, AuthController.class})
 @Import(SecurityConfig.class)
 class SecurityConfigCorsTest {
 
@@ -47,6 +52,15 @@ class SecurityConfigCorsTest {
 
     @MockitoBean
     private WorkspaceService workspaceService;
+
+    @MockitoBean
+    private AuthService authService;
+
+    private static AuthResponse registered(UUID userId) {
+        OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
+        return new AuthResponse("token", "Bearer", 3600, new UserResponse(userId, "Ada", "ada@example.com",
+                UserRole.ADMIN, UUID.randomUUID(), timestamp, timestamp));
+    }
 
     private static WorkspaceResponse workspace(UUID id) {
         OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
@@ -83,17 +97,18 @@ class SecurityConfigCorsTest {
 
     @Test
     void actualPostFromFrontendReturnsLocationAndExposesItToTheBrowser() throws Exception {
-        UUID id = UUID.randomUUID();
-        when(workspaceService.create(any())).thenReturn(workspace(id));
+        UUID userId = UUID.randomUUID();
+        when(authService.register(any())).thenReturn(registered(userId));
 
-        mockMvc.perform(post("/api/workspaces")
+        mockMvc.perform(post("/api/auth/register")
                         .header(HttpHeaders.ORIGIN, FRONTEND)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name": "Acme Inc."}
+                                {"name": "Ada", "email": "ada@example.com", "password": "password123",
+                                 "workspaceName": "Acme Inc."}
                                 """))
                 .andExpect(status().isCreated())
-                .andExpect(header().string(HttpHeaders.LOCATION, containsString("/api/workspaces/" + id)))
+                .andExpect(header().string(HttpHeaders.LOCATION, containsString("/api/users/" + userId)))
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, FRONTEND))
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, containsString("Location")));
     }

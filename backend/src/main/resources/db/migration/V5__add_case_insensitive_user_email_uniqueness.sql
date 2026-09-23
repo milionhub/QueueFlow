@@ -1,0 +1,23 @@
+-- Email identity is case-insensitive: "Ada@Example.com" and "ada@example.com"
+-- are the same account. The application normalizes every email it stores or
+-- looks up (trim + lower-case, see EmailAddresses); this index is the
+-- database-level guarantee behind it, so no write path that forgets to
+-- normalize - or a direct SQL insert - can create a second account that
+-- differs only in letter case. Concurrent registrations of case variants
+-- also end here as a unique_violation (SQLSTATE 23505), which the API reports
+-- as 409 Conflict.
+--
+-- A UNIQUE constraint cannot be defined on an expression in PostgreSQL, hence
+-- a unique index. The column type stays VARCHAR(320) (no citext extension
+-- needed), and lower() follows the database's own case mapping.
+--
+-- uq_users_email (V1, case-sensitive) is deliberately kept. It is now
+-- logically implied by this index, but it is also the index that serves the
+-- application's lookups: stored emails are already normalized, so login and
+-- the uniqueness pre-check query "email = ?" on the plain column, which this
+-- expression index cannot answer. Dropping it would force those queries onto
+-- lower(email) for no gain on a table of this size.
+--
+-- If existing rows already differ only in case, this statement fails and the
+-- migration stops: which account wins cannot be decided automatically.
+CREATE UNIQUE INDEX uq_users_email_lower ON users (lower(email));

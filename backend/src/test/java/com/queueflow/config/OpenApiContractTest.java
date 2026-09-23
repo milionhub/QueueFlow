@@ -48,7 +48,7 @@ class OpenApiContractTest {
         assertThat(doc.read("$.info.version", String.class)).isEqualTo("v1");
         List<String> tags = doc.read("$.tags[*].name");
         assertThat(tags).containsExactlyInAnyOrder(
-                "Workspaces", "Users", "Projects", "Tickets", "Labels", "Comments", "Activity");
+                "Authentication", "Workspaces", "Users", "Projects", "Tickets", "Labels", "Comments", "Activity");
     }
 
     @Test
@@ -56,7 +56,7 @@ class OpenApiContractTest {
         Map<String, Object> paths = doc.read("$.paths");
         assertThat(paths.keySet()).allMatch(path -> path.startsWith("/api/"));
         List<String> operationIds = doc.read("$.paths.*.*.operationId");
-        assertThat(operationIds).hasSize(27).doesNotHaveDuplicates();
+        assertThat(operationIds).hasSize(28).doesNotHaveDuplicates();
     }
 
     @Test
@@ -100,6 +100,34 @@ class OpenApiContractTest {
     }
 
     @Test
+    void documentsRegisterAndLoginButNoOtherAuthEndpointYet() {
+        assertThat(doc.read("$.paths['/api/auth/register'].post.operationId", String.class)).isEqualTo("register");
+        assertThat(doc.read("$.paths['/api/auth/register'].post.responses['201'].content['application/json']"
+                + ".schema.$ref", String.class)).isEqualTo("#/components/schemas/AuthResponse");
+        assertThat(doc.read("$.paths['/api/auth/register'].post.responses['409'].$ref", String.class))
+                .isEqualTo(OpenApiConfig.CONFLICT);
+        assertThat(doc.read("$.paths['/api/auth/login'].post.operationId", String.class)).isEqualTo("login");
+        assertThat(doc.read("$.paths['/api/auth/login'].post.responses['401'].$ref", String.class))
+                .isEqualTo(OpenApiConfig.UNAUTHORIZED);
+
+        Map<String, Object> paths = doc.read("$.paths");
+        assertThat(paths).doesNotContainKey("/api/auth/me").doesNotContainKey("/api/workspaces");
+    }
+
+    @Test
+    void documentsPasswordsAsWriteOnlyAndNeverReturnsThem() {
+        assertThat(doc.read("$.components.schemas.RegisterRequest.properties.password.writeOnly", Boolean.class))
+                .isTrue();
+        assertThat(doc.read("$.components.schemas.LoginRequest.properties.password.writeOnly", Boolean.class))
+                .isTrue();
+        Map<String, Object> authResponse = doc.read("$.components.schemas.AuthResponse.properties");
+        assertThat(authResponse).containsOnlyKeys("accessToken", "tokenType", "expiresIn", "user");
+        // Registration takes no role and no workspaceId: the first user is always a new workspace's ADMIN.
+        Map<String, Object> registerFields = doc.read("$.components.schemas.RegisterRequest.properties");
+        assertThat(registerFields).containsOnlyKeys("name", "email", "password", "workspaceName");
+    }
+
+    @Test
     void documentsTheErrorBody() {
         assertThat(doc.read("$.components.schemas.ApiErrorResponse.required", List.class))
                 .containsExactlyInAnyOrder("timestamp", "status", "error", "message", "path");
@@ -118,11 +146,11 @@ class OpenApiContractTest {
     /**
      * The accidental YAML converter (see WebMvcConfig) must stay removed. The
      * body is invalid on purpose: if YAML were read again the request would
-     * fail validation (400) rather than create a workspace.
+     * fail validation (400) rather than register anyone.
      */
     @Test
     void apiIsJsonOnly() throws Exception {
-        mockMvc.perform(post("/api/workspaces")
+        mockMvc.perform(post("/api/auth/register")
                         .contentType("application/yaml")
                         .content("name: ''\n"))
                 .andExpect(status().isUnsupportedMediaType());

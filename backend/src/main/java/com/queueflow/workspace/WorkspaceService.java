@@ -6,7 +6,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.queueflow.common.exception.ResourceNotFoundException;
-import com.queueflow.workspace.dto.CreateWorkspaceRequest;
 import com.queueflow.workspace.dto.WorkspaceResponse;
 
 @Service
@@ -16,13 +15,6 @@ public class WorkspaceService {
 
     public WorkspaceService(WorkspaceRepository workspaceRepository) {
         this.workspaceRepository = workspaceRepository;
-    }
-
-    @Transactional
-    public WorkspaceResponse create(CreateWorkspaceRequest request) {
-        Workspace workspace = new Workspace(request.name());
-        Workspace saved = workspaceRepository.save(workspace);
-        return WorkspaceResponse.from(saved);
     }
 
     @Transactional(readOnly = true)

@@ -31,7 +31,8 @@ public class OpenApiConfig {
 
     /** Reusable error responses, referenced from controllers as e.g. {@code ref = NOT_FOUND}. */
     public static final String BAD_REQUEST = "#/components/responses/BadRequest";
-    public static final String FORBIDDEN = "#/components/responses/Forbidden";
+    public static final String UNAUTHORIZED = "#/components/responses/Unauthorized";
+    public static final String FORBIDDEN ="#/components/responses/Forbidden";
     public static final String NOT_FOUND = "#/components/responses/NotFound";
     public static final String CONFLICT = "#/components/responses/Conflict";
 
@@ -49,6 +50,7 @@ public class OpenApiConfig {
                         "BadRequest", errorResponse(
                                 "Invalid request: validation failure, malformed body or parameter, invalid "
                                         + "business value, or resources that cannot be related"),
+                        "Unauthorized", errorResponse("The credentials do not identify a user"),
                         "Forbidden", errorResponse("The acting user is not allowed to perform this operation"),
                         "NotFound", errorResponse("A referenced resource does not exist"),
                         "Conflict", errorResponse("The request conflicts with existing data")));
@@ -63,10 +65,11 @@ public class OpenApiConfig {
                                 teams: workspaces and their members, projects, tickets with per-project numbers \
                                 (e.g. CORE-7), labels, comments and an automatic per-ticket activity history.
 
-                                This is the Phase 1 core API. It is not yet authenticated: where an operation \
-                                needs to know who is acting, the client currently supplies that user's id \
-                                (actorUserId, creatorId, authorId). Authentication is introduced in Phase 2 \
-                                and will replace client-supplied identity where appropriate.
+                                Registering creates a workspace and its first (ADMIN) user; registering and \
+                                logging in both return a bearer access token. No other endpoint requires that \
+                                token yet: where an operation needs to know who is acting, the client \
+                                currently supplies that user's id (actorUserId, creatorId, authorId). \
+                                Authentication of the rest of the API will replace client-supplied identity.
 
                                 All requests and responses are JSON. Errors use the ApiErrorResponse body."""))
                 .components(components);

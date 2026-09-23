@@ -47,8 +47,9 @@ import com.queueflow.workspace.WorkspaceRepository;
  *       CHECK constraint, with correct actor and old/new values.</li>
  *   <li>Ticket numbers are allocated per project.</li>
  * </ul>
- * Users are created through the repository: there is no user endpoint
- * until Phase 2 registration.
+ * The workspace and its ADMIN come from real registration; the second
+ * member is created through the repository, as there is no member-creation
+ * endpoint yet.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -104,15 +105,20 @@ class CoreWorkflowIntegrationTest {
     @Test
     void coreWorkflowPersistsServesAndAuditsEverything() throws Exception {
         // --- workspace + members --------------------------------------------
-        MvcResult workspace = send(post("/api/workspaces"), """
-                {"name": "Workflow Workspace"}
-                """, 201);
-        workspaceId = UUID.fromString(read(workspace, "$.id"));
-        assertThat(workspace.getResponse().getHeader(HttpHeaders.LOCATION)).endsWith("/api/workspaces/" + workspaceId);
+        // Registration creates the workspace and its first user, Alice (ADMIN).
+        MvcResult registered = send(post("/api/auth/register"), """
+                {"name": "Alice", "email": "Alice-%s@Example.com", "password": "workflow-password",
+                 "workspaceName": "Workflow Workspace"}
+                """.formatted(UUID.randomUUID()), 201);
+        workspaceId = UUID.fromString(read(registered, "$.user.workspaceId"));
+        UUID aliceId = UUID.fromString(read(registered, "$.user.id"));
+        assertThat((String) read(registered, "$.user.role")).isEqualTo("ADMIN");
+        assertThat(registered.getResponse().getHeader(HttpHeaders.LOCATION)).endsWith("/api/users/" + aliceId);
+        assertThat((String) read(call(get("/api/workspaces/{id}", workspaceId), 200), "$.name"))
+                .isEqualTo("Workflow Workspace");
 
         Workspace saved = workspaceRepository.findById(workspaceId).orElseThrow();
-        User alice = userRepository.save(new User("Alice", "alice-" + workspaceId + "@example.com", "hash",
-                UserRole.ADMIN, saved));
+        User alice = userRepository.findById(aliceId).orElseThrow();
         User bob = userRepository.save(new User("bob", "bob-" + workspaceId + "@example.com", "hash",
                 UserRole.MEMBER, saved));
 

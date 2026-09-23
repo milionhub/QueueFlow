@@ -2,7 +2,6 @@ package com.queueflow.workspace;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -18,7 +17,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.queueflow.common.exception.ResourceNotFoundException;
-import com.queueflow.workspace.dto.CreateWorkspaceRequest;
 import com.queueflow.workspace.dto.WorkspaceResponse;
 
 /**
@@ -45,32 +43,6 @@ class WorkspaceServiceTest {
         ReflectionTestUtils.setField(workspace, "createdAt", timestamp);
         ReflectionTestUtils.setField(workspace, "updatedAt", timestamp);
         return workspace;
-    }
-
-    @Test
-    void createMapsRequestAndReturnsResponseFromSavedEntity() {
-        CreateWorkspaceRequest request = new CreateWorkspaceRequest("Acme Inc.");
-        UUID generatedId = UUID.randomUUID();
-        OffsetDateTime generatedTimestamp = OffsetDateTime.now();
-
-        // Simulates what the repository/Hibernate does on save() with a
-        // PostgreSQL-generated UUIDv7 id (IDENTITY strategy): the id and
-        // timestamps only exist on the entity Hibernate hands back.
-        when(workspaceRepository.save(any(Workspace.class))).thenAnswer(invocation -> {
-            Workspace argument = invocation.getArgument(0);
-            assertThat(argument.getName()).isEqualTo("Acme Inc.");
-            assertThat(argument.getId()).isNull();
-            ReflectionTestUtils.setField(argument, "id", generatedId);
-            ReflectionTestUtils.setField(argument, "createdAt", generatedTimestamp);
-            ReflectionTestUtils.setField(argument, "updatedAt", generatedTimestamp);
-            return argument;
-        });
-
-        WorkspaceResponse response = workspaceService.create(request);
-
-        assertThat(response).isEqualTo(
-                new WorkspaceResponse(generatedId, "Acme Inc.", generatedTimestamp, generatedTimestamp));
-        verify(workspaceRepository).save(any(Workspace.class));
     }
 
     @Test
