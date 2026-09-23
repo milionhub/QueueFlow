@@ -31,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import com.queueflow.config.SecurityConfig;
+import com.queueflow.label.dto.LabelResponse;
 import com.queueflow.ticket.dto.CreateTicketRequest;
 import com.queueflow.ticket.dto.TicketResponse;
 import com.queueflow.ticket.dto.UpdateTicketRequest;
@@ -61,7 +62,7 @@ class TicketControllerTest {
             String description, UUID assigneeId) {
         OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
         return new TicketResponse(id, 1L, "BACK-1", "Fix checkout bug", description, status, priority,
-                PROJECT_ID, "BACK", CREATOR_ID, assigneeId, timestamp, timestamp);
+                PROJECT_ID, "BACK", CREATOR_ID, assigneeId, timestamp, timestamp, List.of());
     }
 
     private static TicketResponse ticketResponse(UUID id) {
@@ -73,7 +74,9 @@ class TicketControllerTest {
         result.andExpect(jsonPath("$.project").doesNotExist())
                 .andExpect(jsonPath("$.creator").doesNotExist())
                 .andExpect(jsonPath("$.assignee").doesNotExist())
-                .andExpect(jsonPath("$.labels").doesNotExist());
+                // labels is a LabelResponse DTO array, never Label entities.
+                .andExpect(jsonPath("$.labels").isArray())
+                .andExpect(jsonPath("$.labels[*].workspace").doesNotExist());
     }
 
     private UpdateTicketRequest patchAndCaptureRequest(UUID ticketId, UUID actorUserId, String json)
@@ -204,6 +207,33 @@ class TicketControllerTest {
         expectNoEntityLeakage(result);
 
         verify(ticketService).getById(id);
+    }
+
+    @Test
+    void labelsSerializeAsNestedLabelDtosInServiceProvidedOrder() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        UUID api = UUID.randomUUID();
+        UUID bug = UUID.randomUUID();
+        OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
+        TicketResponse withLabels = new TicketResponse(id, 1L, "BACK-1", "Fix checkout bug", null,
+                TicketStatus.TODO, TicketPriority.LOW, PROJECT_ID, "BACK", CREATOR_ID, null, timestamp, timestamp,
+                List.of(new LabelResponse(api, "api", workspaceId, timestamp, timestamp),
+                        new LabelResponse(bug, "Bug", workspaceId, timestamp, timestamp)));
+        when(ticketService.getById(id)).thenReturn(withLabels);
+
+        mockMvc.perform(get("/api/tickets/{ticketId}", id))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.labels.length()").value(2))
+                .andExpect(jsonPath("$.labels[0].id").value(api.toString()))
+                .andExpect(jsonPath("$.labels[0].name").value("api"))
+                .andExpect(jsonPath("$.labels[0].workspaceId").value(workspaceId.toString()))
+                .andExpect(jsonPath("$.labels[0].createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.labels[1].name").value("Bug"))
+                .andExpect(jsonPath("$.labels[*].workspace").doesNotExist())
+                // Unchanged top-level fields alongside the new one.
+                .andExpect(jsonPath("$.displayKey").value("BACK-1"))
+                .andExpect(jsonPath("$.creatorId").value(CREATOR_ID.toString()));
     }
 
     @Test
@@ -353,7 +383,9 @@ class TicketControllerTest {
         result.andExpect(jsonPath("$[*].project").doesNotExist())
                 .andExpect(jsonPath("$[*].creator").doesNotExist())
                 .andExpect(jsonPath("$[*].assignee").doesNotExist())
-                .andExpect(jsonPath("$[*].labels").doesNotExist());
+                .andExpect(jsonPath("$[0].labels").isArray())
+                .andExpect(jsonPath("$[1].labels").isArray())
+                .andExpect(jsonPath("$[*].labels[*].workspace").doesNotExist());
 
         verify(ticketService).getByProject(PROJECT_ID);
         verifyNoMoreInteractions(ticketService);

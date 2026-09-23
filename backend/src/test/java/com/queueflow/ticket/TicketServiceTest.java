@@ -337,7 +337,8 @@ class TicketServiceTest {
 
         assertThat(response).isEqualTo(new TicketResponse(
                 generatedId, 1L, "ECOM-1", "Fix checkout bug", "Details", TicketStatus.IN_PROGRESS,
-                TicketPriority.CRITICAL, projectId, "ECOM", creatorId, assigneeId, timestamp, timestamp));
+                TicketPriority.CRITICAL, projectId, "ECOM", creatorId, assigneeId, timestamp, timestamp,
+                List.of()));
 
         verify(projectRepository, never()).save(any());
     }
@@ -898,7 +899,7 @@ class TicketServiceTest {
         assertThat(responses).extracting(TicketResponse::id).containsExactly(two.getId(), one.getId());
         assertThat(responses.get(1)).isEqualTo(new TicketResponse(one.getId(), 1L, "ECOM-1", "First", "Details",
                 TicketStatus.BACKLOG, TicketPriority.HIGH, projectId, "ECOM", creator.getId(), creator.getId(),
-                timestamp, timestamp));
+                timestamp, timestamp, List.of()));
     }
 
     @Test

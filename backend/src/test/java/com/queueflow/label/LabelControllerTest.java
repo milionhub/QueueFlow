@@ -61,7 +61,8 @@ class LabelControllerTest {
 
     private static TicketResponse ticketResponse(UUID ticketId) {
         return new TicketResponse(ticketId, 1L, "BACK-1", "Fix checkout bug", null, TicketStatus.BACKLOG,
-                TicketPriority.HIGH, UUID.randomUUID(), "BACK", UUID.randomUUID(), null, TIMESTAMP, TIMESTAMP);
+                TicketPriority.HIGH, UUID.randomUUID(), "BACK", UUID.randomUUID(), null, TIMESTAMP, TIMESTAMP,
+                List.of());
     }
 
     private void postExpectingBadRequest(String json) throws Exception {
@@ -240,7 +241,9 @@ class LabelControllerTest {
         result.andExpect(jsonPath("$.project").doesNotExist())
                 .andExpect(jsonPath("$.creator").doesNotExist())
                 .andExpect(jsonPath("$.assignee").doesNotExist())
-                .andExpect(jsonPath("$.labels").doesNotExist());
+                // labels is a LabelResponse DTO array, never Label entities.
+                .andExpect(jsonPath("$.labels").isArray())
+                .andExpect(jsonPath("$.labels[*].workspace").doesNotExist());
     }
 
     // ---------------------------------------------------------------

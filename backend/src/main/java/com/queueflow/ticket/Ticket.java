@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.UUID;
 
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
@@ -75,6 +76,15 @@ public class Ticket {
     // No cascade: labels are independent workspace resources that must
     // already exist before being attached, and detaching or deleting a
     // ticket must never delete the Label itself.
+    //
+    // @BatchSize: TicketResponse includes labels, so listing a project's
+    // tickets touches every ticket's (still LAZY) label collection. Instead
+    // of one SELECT per ticket (N+1), the first access initializes up to
+    // 50 pending ticket label collections from this persistence context in
+    // a single query. 50 comfortably covers a typical V1 project board in
+    // one round trip while keeping each batch's IN-list small; larger
+    // projects just take one more query per 50 tickets.
+    @BatchSize(size = 50)
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
             name = "ticket_labels",

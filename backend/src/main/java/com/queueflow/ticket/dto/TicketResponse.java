@@ -1,8 +1,13 @@
 package com.queueflow.ticket.dto;
 
 import java.time.OffsetDateTime;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
+import com.queueflow.label.Label;
+import com.queueflow.label.dto.LabelResponse;
 import com.queueflow.ticket.Ticket;
 import com.queueflow.ticket.TicketPriority;
 import com.queueflow.ticket.TicketStatus;
@@ -21,16 +26,42 @@ public record TicketResponse(
         UUID creatorId,
         UUID assigneeId,
         OffsetDateTime createdAt,
-        OffsetDateTime updatedAt) {
+        OffsetDateTime updatedAt,
+        List<LabelResponse> labels) {
 
     /**
-     * Must be called while the Ticket's Project (and, transitively, its
-     * key) is reachable - i.e. from inside the transactional service
-     * boundary that loaded/created it. getDisplayKey() initializes the
-     * Project association if it isn't already loaded.
+     * Same user-facing order as the workspace label list (see
+     * LabelRepository.findAllInWorkspaceSortedByName): case-insensitive
+     * name, then exact name for case-only ties ("Bug"/"bug"), then id
+     * (compared as its canonical string, which matches PostgreSQL's uuid
+     * order). Ticket.labels is a Set with no meaningful order of its own.
+     */
+    private static final Comparator<Label> LABEL_ORDER = Comparator
+            .comparing((Label label) -> label.getName().toLowerCase(Locale.ROOT))
+            .thenComparing(Label::getName)
+            .thenComparing(label -> label.getId().toString());
+
+    /** Never null: always an immutable list, [] for a ticket without labels. */
+    public TicketResponse {
+        labels = labels == null ? List.of() : List.copyOf(labels);
+    }
+
+    /**
+     * Must be called while the Ticket's Project and labels are reachable -
+     * i.e. from inside the transactional service boundary that
+     * loaded/created it. getDisplayKey() initializes the Project association
+     * and getLabels() the (lazy, batch-fetched) label collection if they
+     * aren't already loaded. The labels are read from the current managed
+     * state, so an association change made earlier in the same transaction
+     * is reflected without any flush. The entity collection itself is only
+     * read and sorted into a new list, never mutated.
      */
     public static TicketResponse from(Ticket ticket) {
         User assignee = ticket.getAssignee();
+        List<LabelResponse> labels = ticket.getLabels().stream()
+                .sorted(LABEL_ORDER)
+                .map(LabelResponse::from)
+                .toList();
         return new TicketResponse(
                 ticket.getId(),
                 ticket.getTicketNumber(),
@@ -44,6 +75,7 @@ public record TicketResponse(
                 ticket.getCreator().getId(),
                 assignee != null ? assignee.getId() : null,
                 ticket.getCreatedAt(),
-                ticket.getUpdatedAt());
+                ticket.getUpdatedAt(),
+                labels);
     }
 }

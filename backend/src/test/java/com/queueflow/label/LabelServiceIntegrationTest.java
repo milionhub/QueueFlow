@@ -206,4 +206,71 @@ class LabelServiceIntegrationTest {
         Ticket reloaded = ticketRepository.findById(ticket.getId()).orElseThrow();
         assertThat(reloaded.getUpdatedAt()).isEqualTo(updatedAtBefore);
     }
+
+    private static List<String> labelNames(TicketResponse response) {
+        return response.labels().stream().map(LabelResponse::name).toList();
+    }
+
+    private long activityCount(Ticket ticket, ActivityType type) {
+        return activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId()).stream()
+                .filter(activity -> activity.getType() == type)
+                .count();
+    }
+
+    /** Simulates the next HTTP request: nothing (ticket, label collection) is already loaded. */
+    private void newRequest() {
+        entityManager.flush();
+        entityManager.clear();
+    }
+
+    @Test
+    void addAndRemoveResponsesReflectTheCurrentLabelsImmediatelyAndRepeatsChangeNothing() {
+        Workspace workspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
+        User actor = userRepository.saveAndFlush(
+                new User("Actor", "actor-g2@example.com", "hash", UserRole.MEMBER, workspace));
+        Project project = projectRepository.saveAndFlush(new Project("E-Commerce", "ECOM7", null, workspace));
+        Ticket ticket = ticketRepository.saveAndFlush(
+                new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, actor, null));
+        Label urgent = labelRepository.saveAndFlush(new Label("urgent", workspace));
+        Label api = labelRepository.saveAndFlush(new Label("api", workspace));
+        Label bug = labelRepository.saveAndFlush(new Label("Bug", workspace));
+        OffsetDateTime updatedAtBefore = ticket.getUpdatedAt();
+        labelService.addLabelToTicket(ticket.getId(), urgent.getId(), actor.getId());
+        labelService.addLabelToTicket(ticket.getId(), api.getId(), actor.getId());
+
+        // PUT: the response already contains the newly attached label, in
+        // case-insensitive order - built from the managed state, no flush.
+        newRequest();
+        TicketResponse added = labelService.addLabelToTicket(ticket.getId(), bug.getId(), actor.getId());
+        assertThat(labelNames(added)).containsExactly("api", "Bug", "urgent");
+
+        // Repeated PUT: same labels, no duplicate LABEL_ADDED.
+        newRequest();
+        TicketResponse addedAgain = labelService.addLabelToTicket(ticket.getId(), bug.getId(), actor.getId());
+        assertThat(labelNames(addedAgain)).containsExactly("api", "Bug", "urgent");
+
+        // DELETE: the response no longer contains the removed label.
+        newRequest();
+        TicketResponse removed = labelService.removeLabelFromTicket(ticket.getId(), bug.getId(), actor.getId());
+        assertThat(labelNames(removed)).containsExactly("api", "urgent");
+
+        // Repeated DELETE: unchanged, no duplicate LABEL_REMOVED.
+        newRequest();
+        TicketResponse removedAgain = labelService.removeLabelFromTicket(ticket.getId(), bug.getId(),
+                actor.getId());
+        assertThat(labelNames(removedAgain)).containsExactly("api", "urgent");
+
+        newRequest();
+        assertThat(ticketLabelRowCount(ticket.getId(), bug.getId())).isZero();
+        assertThat(activityCount(ticket, ActivityType.LABEL_ADDED)).isEqualTo(3L); // urgent, api, Bug
+        assertThat(activityCount(ticket, ActivityType.LABEL_REMOVED)).isEqualTo(1L); // Bug
+
+        // Label-only changes never touch Ticket.updatedAt - neither in the
+        // responses nor in the database.
+        for (TicketResponse response : List.of(added, addedAgain, removed, removedAgain)) {
+            assertThat(response.updatedAt().toInstant()).isEqualTo(updatedAtBefore.toInstant());
+        }
+        Ticket reloaded = ticketRepository.findById(ticket.getId()).orElseThrow();
+        assertThat(reloaded.getUpdatedAt().toInstant()).isEqualTo(updatedAtBefore.toInstant());
+    }
 }
