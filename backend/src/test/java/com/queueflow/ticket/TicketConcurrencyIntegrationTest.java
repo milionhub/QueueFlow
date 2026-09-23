@@ -77,7 +77,7 @@ class TicketConcurrencyIntegrationTest {
         // Activity row referencing the ticket via a FK with no cascade, so
         // activities must be deleted before their ticket.
         createdTicketIds.forEach(ticketId -> activityRepository
-                .findByTicketIdOrderByCreatedAtAsc(ticketId)
+                .findByTicketIdOrderByCreatedAtAscIdAsc(ticketId)
                 .forEach(activity -> activityRepository.deleteById(activity.getId())));
         createdTicketIds.forEach(ticketRepository::deleteById);
         if (project != null) {

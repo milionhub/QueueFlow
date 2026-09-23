@@ -127,7 +127,7 @@ class LabelServiceIntegrationTest {
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(1L);
         assertThat(response.id()).isEqualTo(ticket.getId());
 
-        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId());
+        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId());
         assertThat(activities).extracting(Activity::getType).containsExactly(ActivityType.LABEL_ADDED);
     }
 
@@ -159,7 +159,7 @@ class LabelServiceIntegrationTest {
         assertThat(ticketRepository.findById(ticket.getId())).isPresent();
         assertThat(labelRepository.findById(label.getId())).isPresent();
 
-        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId());
+        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId());
         assertThat(activities).extracting(Activity::getType)
                 .containsExactly(ActivityType.LABEL_ADDED, ActivityType.LABEL_REMOVED);
     }

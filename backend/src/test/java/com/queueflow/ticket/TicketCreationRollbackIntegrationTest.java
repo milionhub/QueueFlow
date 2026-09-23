@@ -119,6 +119,6 @@ class TicketCreationRollbackIntegrationTest {
         // production code, isn't achievable - Activity has no unique/check
         // constraint reachable through a legitimate flow the way
         // tickets.ticket_number is).
-        assertThat(activityRepository.findByTicketIdOrderByCreatedAtAsc(preExistingTicket.getId())).isEmpty();
+        assertThat(activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(preExistingTicket.getId())).isEmpty();
     }
 }

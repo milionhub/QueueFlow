@@ -101,7 +101,7 @@ class TicketActivityIntegrationTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAsc(response.id());
+        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(response.id());
         assertThat(activities).hasSize(1);
         Activity activity = activities.get(0);
         assertThat(activity.getType()).isEqualTo(ActivityType.TICKET_CREATED);
@@ -137,7 +137,7 @@ class TicketActivityIntegrationTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId());
+        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId());
         assertThat(activities).extracting(Activity::getType, Activity::getOldValue, Activity::getNewValue)
                 .containsExactly(
                         tuple(ActivityType.TITLE_CHANGED, "Original title", "Updated title"),
@@ -160,7 +160,7 @@ class TicketActivityIntegrationTest {
         ticketService.update(ticket.getId(), creator.getId(), request);
         entityManager.flush();
 
-        assertThat(activityRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId())).isEmpty();
+        assertThat(activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId())).isEmpty();
     }
 
     // ---------------------------------------------------------------
@@ -184,7 +184,7 @@ class TicketActivityIntegrationTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId());
+        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId());
         assertThat(activities).hasSize(1);
         assertThat(activities.get(0).getType()).isEqualTo(ActivityType.LABEL_ADDED);
         assertThat(activities.get(0).getOldValue()).isNull();
@@ -210,7 +210,7 @@ class TicketActivityIntegrationTest {
         entityManager.flush();
         entityManager.clear();
 
-        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId());
+        List<Activity> activities = activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId());
         assertThat(activities).extracting(Activity::getType, Activity::getOldValue, Activity::getNewValue)
                 .containsExactly(
                         tuple(ActivityType.LABEL_ADDED, null, "backend"),

@@ -28,7 +28,7 @@ public class ActivityService {
         if (!ticketRepository.existsById(ticketId)) {
             throw new ResourceNotFoundException("Ticket not found: " + ticketId);
         }
-        return activityRepository.findByTicketIdOrderByCreatedAtAsc(ticketId).stream()
+        return activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticketId).stream()
                 .map(ActivityResponse::from)
                 .toList();
     }

@@ -93,7 +93,7 @@ class ActivityServiceTest {
                 ticket, user, now.minusMinutes(5));
 
         when(ticketRepository.existsById(ticketId)).thenReturn(true);
-        when(activityRepository.findByTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(List.of(first, second));
+        when(activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticketId)).thenReturn(List.of(first, second));
 
         List<ActivityResponse> responses = activityService.getByTicket(ticketId);
 
@@ -111,7 +111,7 @@ class ActivityServiceTest {
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
 
-        verify(activityRepository, never()).findByTicketIdOrderByCreatedAtAsc(any());
+        verify(activityRepository, never()).findByTicketIdOrderByCreatedAtAscIdAsc(any());
     }
 
     @Test
@@ -126,7 +126,7 @@ class ActivityServiceTest {
                 ticket, user, now);
 
         when(ticketRepository.existsById(ticketId)).thenReturn(true);
-        when(activityRepository.findByTicketIdOrderByCreatedAtAsc(ticketId)).thenReturn(List.of(activity));
+        when(activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticketId)).thenReturn(List.of(activity));
 
         List<ActivityResponse> responses = activityService.getByTicket(ticketId);
 
