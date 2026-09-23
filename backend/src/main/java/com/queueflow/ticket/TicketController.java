@@ -77,7 +77,6 @@ public class TicketController {
                     + "\"assigneeId\": null to clear it. Every field that actually changes records one "
                     + "activity; the whole update is applied atomically.")
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
-    @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @PatchMapping("/{ticketId}")
     public TicketResponse update(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID ticketId,

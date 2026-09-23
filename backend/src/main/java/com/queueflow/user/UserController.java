@@ -23,7 +23,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  * login live in AuthController). Users of other workspaces are not found.
  * Responses are UserResponse, which never carries passwordHash.
  */
-@Tag(name = "Users", description = "Users and workspace members (read-only)")
+@Tag(name = "Users", description = "Users and workspace members")
 @RestController
 @RequestMapping("/api/users")
 public class UserController {

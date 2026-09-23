@@ -43,7 +43,6 @@ public class TicketLabelController {
             description = "Idempotent: adding a label that is already attached changes nothing and records no "
                     + "activity. Returns the updated ticket.")
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
-    @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @ApiResponse(responseCode = "409", ref = OpenApiConfig.CONFLICT)
     @PutMapping("/{labelId}")
@@ -56,7 +55,6 @@ public class TicketLabelController {
             description = "Idempotent: removing a label that is not attached changes nothing and records no "
                     + "activity. Returns the updated ticket.")
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
-    @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @DeleteMapping("/{labelId}")
     public TicketResponse removeLabel(@AuthenticationPrincipal AuthenticatedUser actor,

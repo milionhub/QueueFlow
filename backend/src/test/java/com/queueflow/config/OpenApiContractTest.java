@@ -56,7 +56,7 @@ class OpenApiContractTest {
         Map<String, Object> paths = doc.read("$.paths");
         assertThat(paths.keySet()).allMatch(path -> path.startsWith("/api/"));
         List<String> operationIds = doc.read("$.paths.*.*.operationId");
-        assertThat(operationIds).hasSize(29).doesNotHaveDuplicates();
+        assertThat(operationIds).hasSize(30).doesNotHaveDuplicates();
     }
 
     @Test
@@ -65,7 +65,7 @@ class OpenApiContractTest {
         assertThat(doc.read("$.paths['/api/tickets'].post.responses['201'].content['application/json'].schema.$ref",
                 String.class)).isEqualTo("#/components/schemas/TicketResponse");
 
-        assertThat(doc.read("$.paths['/api/tickets/{ticketId}'].patch.responses['403'].$ref", String.class))
+        assertThat(doc.read("$.paths['/api/comments/{commentId}'].patch.responses['403'].$ref", String.class))
                 .isEqualTo(OpenApiConfig.FORBIDDEN);
         assertThat(doc.read("$.paths['/api/projects'].post.responses['409'].$ref", String.class))
                 .isEqualTo(OpenApiConfig.CONFLICT);
@@ -134,7 +134,7 @@ class OpenApiContractTest {
         List<Map<String, Object>> protectedOperations = operations.stream()
                 .filter(operation -> !operation.containsKey("security"))
                 .toList();
-        assertThat(protectedOperations).hasSize(27);
+        assertThat(protectedOperations).hasSize(28);
         assertThat(protectedOperations).allSatisfy(operation ->
                 assertThat(JsonPath.<String>read(operation, "$.responses['401'].$ref"))
                         .isEqualTo(OpenApiConfig.UNAUTHORIZED));
@@ -155,7 +155,7 @@ class OpenApiContractTest {
             }
         });
         List<Map<String, Object>> workspaceParameters = doc.read("$.paths.*.*.parameters[?(@.name == 'workspaceId')]");
-        assertThat(workspaceParameters).hasSize(4).allSatisfy(parameter -> {
+        assertThat(workspaceParameters).hasSize(5).allSatisfy(parameter -> {
             assertThat(parameter).containsEntry("in", "path");
             assertThat((String) parameter.get("description")).contains("own workspace");
         });
@@ -168,6 +168,45 @@ class OpenApiContractTest {
         assertThat(me).doesNotContainKey("parameters").doesNotContainKey("requestBody");
         List<String> parameterNames = doc.read("$.paths.*.*.parameters[*].name");
         assertThat(parameterNames).doesNotContain("currentUser", "principal", "authentication");
+    }
+
+    /**
+     * 403 is documented exactly where a same-workspace rule can refuse the
+     * caller: the ADMIN-only operations and comment authorship. Everything
+     * else is open to both roles, and another workspace's resource is 404,
+     * never 403 (e.g. ticket updates and ticket labels). Member creation takes only
+     * name, email and password - never a role or workspace - and answers
+     * with the password-free UserResponse.
+     */
+    @Test
+    void documentsTheAdminOnlyOperations() {
+        List<Map<String, Object>> operations = doc.read("$.paths.*.*");
+        List<String> forbidding = operations.stream()
+                .filter(operation -> ((Map<?, ?>) operation.get("responses")).containsKey("403"))
+                .map(operation -> (String) operation.get("operationId"))
+                .toList();
+        assertThat(forbidding).containsExactlyInAnyOrder("createProject", "updateProject",
+                "createWorkspaceMember", "updateComment", "deleteComment");
+
+        assertThat(doc.read("$.paths['/api/projects'].post.responses['403'].$ref", String.class))
+                .isEqualTo(OpenApiConfig.FORBIDDEN);
+        assertThat(doc.read("$.paths['/api/projects/{projectId}'].patch.responses['403'].$ref", String.class))
+                .isEqualTo(OpenApiConfig.FORBIDDEN);
+
+        String createMember = "$.paths['/api/workspaces/{workspaceId}/members'].post";
+        assertThat(doc.read(createMember + ".operationId", String.class)).isEqualTo("createWorkspaceMember");
+        assertThat(doc.read(createMember + ".description", String.class)).startsWith("ADMIN only.");
+        assertThat(doc.read(createMember + ".requestBody.content['application/json'].schema.$ref", String.class))
+                .isEqualTo("#/components/schemas/CreateMemberRequest");
+        assertThat(doc.read(createMember + ".responses['201'].content['application/json'].schema.$ref",
+                String.class)).isEqualTo("#/components/schemas/UserResponse");
+        Map<String, Object> responses = doc.read(createMember + ".responses");
+        assertThat(responses).containsKeys("201", "400", "401", "403", "404", "409");
+
+        Map<String, Object> fields = doc.read("$.components.schemas.CreateMemberRequest.properties");
+        assertThat(fields).containsOnlyKeys("name", "email", "password");
+        assertThat(doc.read("$.components.schemas.CreateMemberRequest.properties.password.writeOnly", Boolean.class))
+                .isTrue();
     }
 
     @Test

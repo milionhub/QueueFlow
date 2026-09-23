@@ -1,6 +1,5 @@
 package com.queueflow.auth;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -11,12 +10,12 @@ import org.springframework.transaction.annotation.Transactional;
 import com.queueflow.auth.dto.AuthResponse;
 import com.queueflow.auth.dto.LoginRequest;
 import com.queueflow.auth.dto.RegisterRequest;
-import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.InvalidCredentialsException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.security.AccessTokenService;
 import com.queueflow.user.EmailAddresses;
 import com.queueflow.user.User;
+import com.queueflow.user.UserAccountRules;
 import com.queueflow.user.UserRepository;
 import com.queueflow.user.UserRole;
 import com.queueflow.user.dto.UserResponse;
@@ -30,16 +29,6 @@ import com.queueflow.workspace.WorkspaceRepository;
  */
 @Service
 public class AuthService {
-
-    // Match workspaces.name / users.name VARCHAR(255) and users.email
-    // VARCHAR(320), checked on the normalized values because the service can
-    // be called without bean validation, and lower-casing can change length.
-    static final int NAME_MAX_LENGTH = 255;
-    static final int EMAIL_MAX_LENGTH = 320;
-    static final int PASSWORD_MIN_CHARACTERS = 8;
-    // BCrypt only uses the first 72 bytes of its input, and Spring Security's
-    // encoder refuses anything longer; checked here so it is a 400, never a 500.
-    static final int PASSWORD_MAX_UTF8_BYTES = 72;
 
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
@@ -71,10 +60,11 @@ public class AuthService {
      */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
-        String name = validatedName("name", request.name());
-        String email = validatedEmail(request.email());
-        String password = validatedPassword(request.password());
-        String workspaceName = validatedName("workspaceName", request.workspaceName());
+        // The same account rules as ADMIN member creation (UserService).
+        String name = UserAccountRules.validatedName("name", request.name());
+        String email = UserAccountRules.validatedEmail(request.email());
+        String password = UserAccountRules.validatedPassword(request.password());
+        String workspaceName = UserAccountRules.validatedName("workspaceName", request.workspaceName());
 
         // Business-level pre-check for a clean error on the normal path. Not
         // the concurrency guarantee - that is the users email unique indexes
@@ -122,47 +112,5 @@ public class AuthService {
         } catch (IllegalArgumentException unusableStoredHash) {
             return false;
         }
-    }
-
-    private static String validatedName(String field, String value) {
-        String trimmed = value == null ? "" : value.strip();
-        if (trimmed.isEmpty()) {
-            throw new BusinessRuleViolationException(field + " must not be blank");
-        }
-        if (trimmed.length() > NAME_MAX_LENGTH) {
-            throw new BusinessRuleViolationException(field + " must be at most " + NAME_MAX_LENGTH + " characters");
-        }
-        return trimmed;
-    }
-
-    private static String validatedEmail(String email) {
-        String normalized = email == null ? "" : EmailAddresses.normalize(email);
-        if (normalized.isEmpty()) {
-            throw new BusinessRuleViolationException("email must not be blank");
-        }
-        if (normalized.length() > EMAIL_MAX_LENGTH) {
-            throw new BusinessRuleViolationException(
-                    "email must be at most " + EMAIL_MAX_LENGTH + " characters");
-        }
-        if (!EmailAddresses.isValid(normalized)) {
-            throw new BusinessRuleViolationException("email must be a valid email address");
-        }
-        return normalized;
-    }
-
-    /** Returned unchanged: passwords are never trimmed or otherwise normalized. */
-    private static String validatedPassword(String password) {
-        if (password == null) {
-            throw new BusinessRuleViolationException("password is required");
-        }
-        if (password.codePointCount(0, password.length()) < PASSWORD_MIN_CHARACTERS) {
-            throw new BusinessRuleViolationException(
-                    "password must be at least " + PASSWORD_MIN_CHARACTERS + " characters");
-        }
-        if (password.getBytes(StandardCharsets.UTF_8).length > PASSWORD_MAX_UTF8_BYTES) {
-            throw new BusinessRuleViolationException(
-                    "password must be at most " + PASSWORD_MAX_UTF8_BYTES + " bytes when UTF-8 encoded");
-        }
-        return password;
     }
 }

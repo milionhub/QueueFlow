@@ -45,9 +45,11 @@ public class ProjectController {
     }
 
     @Operation(summary = "Create a project", operationId = "createProject",
-            description = "Created in the caller's workspace. The key is trimmed and upper-cased, must then be "
-                    + "2-10 characters of A-Z and 0-9, is unique within the workspace and cannot be changed later.")
+            description = "ADMIN only. Created in the caller's workspace. The key is trimmed and upper-cased, "
+                    + "must then be 2-10 characters of A-Z and 0-9, is unique within the workspace and cannot be "
+                    + "changed later.")
     @ApiResponse(responseCode = "201", description = "Project created", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
     @ApiResponse(responseCode = "409", ref = OpenApiConfig.CONFLICT)
     @PostMapping
     public ResponseEntity<ProjectResponse> create(@AuthenticationPrincipal AuthenticatedUser actor,
@@ -72,13 +74,14 @@ public class ProjectController {
      * Partial update of name and/or description only - the key is
      * immutable. UpdateProjectRequest is a setter-based class (not a
      * record) so Jackson keeps an omitted description distinct from an
-     * explicit null. Any member of the project's workspace may currently
-     * edit it (role rules are not applied yet).
+     * explicit null. ADMIN only (see ProjectService.update for why that is
+     * decided after the project is found).
      */
     @Operation(summary = "Update a project", operationId = "updateProject",
-            description = "Partial update of name and description only; the key is immutable. Omit a field to leave "
-                    + "it unchanged; send \"description\": null to clear the description.")
+            description = "ADMIN only. Partial update of name and description only; the key is immutable. "
+                    + "Omit a field to leave it unchanged; send \"description\": null to clear the description.")
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @PatchMapping("/{projectId}")
     public ProjectResponse update(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID projectId,

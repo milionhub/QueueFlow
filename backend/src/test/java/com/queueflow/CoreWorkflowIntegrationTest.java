@@ -24,12 +24,6 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.jayway.jsonpath.JsonPath;
-import com.queueflow.security.AccessTokenService;
-import com.queueflow.user.User;
-import com.queueflow.user.UserRepository;
-import com.queueflow.user.UserRole;
-import com.queueflow.workspace.Workspace;
-import com.queueflow.workspace.WorkspaceRepository;
 
 /**
  * One connected Phase 1 workflow through the real application: HTTP ->
@@ -48,9 +42,9 @@ import com.queueflow.workspace.WorkspaceRepository;
  *       CHECK constraint, with correct actor and old/new values.</li>
  *   <li>Ticket numbers are allocated per project.</li>
  * </ul>
- * The workspace and its ADMIN come from real registration; the second
- * member is created through the repository, as there is no member-creation
- * endpoint yet.
+ * The workspace and its ADMIN come from real registration; the ADMIN then
+ * creates the second member, who logs in with their own password. The full
+ * role matrix lives in RolePolicyIntegrationTest.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -60,16 +54,7 @@ class CoreWorkflowIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
-    private UserRepository userRepository;
-
-    @Autowired
-    private WorkspaceRepository workspaceRepository;
-
-    @Autowired
     private JdbcTemplate jdbcTemplate;
-
-    @Autowired
-    private AccessTokenService accessTokenService;
 
     private UUID workspaceId;
 
@@ -135,9 +120,13 @@ class CoreWorkflowIntegrationTest {
         assertThat((String) read(call(get("/api/workspaces/{id}", workspaceId), 200), "$.name"))
                 .isEqualTo("Workflow Workspace");
 
-        Workspace saved = workspaceRepository.findById(workspaceId).orElseThrow();
-        User bob = userRepository.save(new User("bob", "bob-" + workspaceId + "@example.com", "hash",
-                UserRole.MEMBER, saved));
+        // Alice (ADMIN) adds Bob; he is always a MEMBER and gets no token here.
+        String bobEmail = "bob-" + workspaceId + "@example.com";
+        MvcResult bobCreated = send(post("/api/workspaces/{id}/members", workspaceId), """
+                {"name": "bob", "email": "%s", "password": "bob-password"}
+                """.formatted(bobEmail), 201);
+        assertThat((String) read(bobCreated, "$.role")).isEqualTo("MEMBER");
+        UUID bobId = UUID.fromString(read(bobCreated, "$.id"));
 
         MvcResult members = call(get("/api/workspaces/{id}/members", workspaceId), 200);
         assertThat(read(members, "$[*].name").toString()).isEqualTo("[\"Alice\",\"bob\"]");
@@ -178,11 +167,11 @@ class CoreWorkflowIntegrationTest {
         MvcResult patched = send(patch("/api/tickets/{id}", ticketId), """
                 {"title": "Checkout fails", "description": null, "status": "IN_PROGRESS",
                  "priority": "HIGH", "assigneeId": "%s"}
-                """.formatted(bob.getId()), 200);
+                """.formatted(bobId), 200);
         assertThat((String) read(patched, "$.title")).isEqualTo("Checkout fails");
         assertThat((Object) read(patched, "$.description")).isNull();
         assertThat((String) read(patched, "$.status")).isEqualTo("IN_PROGRESS");
-        assertThat((String) read(patched, "$.assigneeId")).isEqualTo(bob.getId().toString());
+        assertThat((String) read(patched, "$.assigneeId")).isEqualTo(bobId.toString());
 
         // --- labels: attach (idempotent), ordered in the response, detach ---
         UUID urgent = UUID.fromString(read(send(post("/api/labels"), """
@@ -211,9 +200,11 @@ class CoreWorkflowIntegrationTest {
                 {"content": "Looking into it now"}
                 """, 200), "$.content")).isEqualTo("Looking into it now");
 
-        // Bob, with his own token, cannot touch Alice's comment; his own is his.
+        // Bob logs in himself and cannot touch Alice's comment; his own is his.
         String aliceToken = accessToken;
-        accessToken = accessTokenService.issue(bob.getId()).tokenValue();
+        accessToken = read(send(post("/api/auth/login"), """
+                {"email": "%s", "password": "bob-password"}
+                """.formatted(bobEmail), 200), "$.accessToken");
         send(patch("/api/comments/{id}", commentId), """
                 {"content": "Hijacked"}
                 """, 403);
@@ -221,7 +212,7 @@ class CoreWorkflowIntegrationTest {
         MvcResult bobsComment = send(post("/api/comments"), """
                 {"ticketId": "%s", "content": "Me too"}
                 """.formatted(ticketId), 201);
-        assertThat((String) read(bobsComment, "$.authorId")).isEqualTo(bob.getId().toString());
+        assertThat((String) read(bobsComment, "$.authorId")).isEqualTo(bobId.toString());
         assertThat((String) read(bobsComment, "$.authorName")).isEqualTo("bob");
         accessToken = aliceToken;
 
@@ -238,7 +229,7 @@ class CoreWorkflowIntegrationTest {
         assertThat(entries).extracting(e -> e.get("oldValue")).containsExactly(
                 null, "Checkout bug", "Initial description", "BACKLOG", "LOW", null, null, null, "urgent");
         assertThat(entries).extracting(e -> e.get("newValue")).containsExactly(
-                null, "Checkout fails", null, "IN_PROGRESS", "HIGH", bob.getId().toString(), "urgent", "Bug", null);
+                null, "Checkout fails", null, "IN_PROGRESS", "HIGH", bobId.toString(), "urgent", "Bug", null);
         assertThat(entries).extracting(e -> e.get("userId")).containsOnly(aliceId.toString());
         assertThat(entries).extracting(e -> e.get("userName")).containsOnly("Alice");
         assertThat(entries).extracting(e -> e.get("ticketId")).containsOnly(ticketId.toString());
@@ -246,7 +237,7 @@ class CoreWorkflowIntegrationTest {
         // --- final state and the project counters ---------------------------
         MvcResult finalTicket = call(get("/api/tickets/{id}", ticketId), 200);
         assertThat(read(finalTicket, "$.labels[*].name").toString()).isEqualTo("[\"Bug\"]");
-        assertThat((String) read(finalTicket, "$.assigneeId")).isEqualTo(bob.getId().toString());
+        assertThat((String) read(finalTicket, "$.assigneeId")).isEqualTo(bobId.toString());
         assertThat(jdbcTemplate.queryForObject("SELECT next_ticket_number FROM projects WHERE id = ?", Long.class,
                 coreId)).isEqualTo(3L);
         assertThat(jdbcTemplate.queryForObject("SELECT next_ticket_number FROM projects WHERE id = ?", Long.class,

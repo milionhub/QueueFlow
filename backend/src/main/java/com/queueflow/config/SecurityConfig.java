@@ -35,7 +35,9 @@ import jakarta.servlet.DispatcherType;
  *
  * Controllers pass that AuthenticatedUser to the services, which use it as
  * the only acting identity. Deliberately not here: per-workspace access and
- * ADMIN/MEMBER rules, which the services decide.
+ * ADMIN/MEMBER rules, which the services decide (WorkspaceAccess, then
+ * RoleAccess) so that another workspace's resource is 404 for every role,
+ * never a role-based 403. No method security is enabled.
  */
 @Configuration
 public class SecurityConfig {

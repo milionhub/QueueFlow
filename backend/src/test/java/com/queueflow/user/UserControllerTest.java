@@ -7,7 +7,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -19,13 +21,18 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.ResourceAlreadyExistsException;
+import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.user.UserRole;
+import com.queueflow.user.dto.CreateMemberRequest;
 import com.queueflow.user.dto.UserResponse;
 
 /**
@@ -152,5 +159,80 @@ class UserControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(userService, never()).getByWorkspace(any(), any());
+    }
+
+    // ---------------------------------------------------------------
+    // CREATE MEMBER
+    // ---------------------------------------------------------------
+
+    private static final String MEMBER_JSON =
+            "{\"name\":\"Pedro\",\"email\":\"pedro@example.com\",\"password\":\"pedro-password\"}";
+
+    @Test
+    void createMemberReturns201WithLocationAndTheSafeUserResponse() throws Exception {
+        UUID workspaceId = ACTOR.workspaceId();
+        UUID id = UUID.randomUUID();
+        CreateMemberRequest request = new CreateMemberRequest("Pedro", "pedro@example.com", "pedro-password");
+        when(userService.createMember(ACTOR, workspaceId, request))
+                .thenReturn(userResponse(id, "pedro@example.com", workspaceId));
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/members", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON).content(MEMBER_JSON))
+                .andExpect(status().isCreated())
+                .andExpect(header().string("Location", "http://localhost/api/users/" + id))
+                .andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.role").value("MEMBER"))
+                .andExpect(jsonPath("$.password").doesNotExist())
+                .andExpect(jsonPath("$.passwordHash").doesNotExist())
+                .andExpect(jsonPath("$.accessToken").doesNotExist());
+
+        verify(userService).createMember(ACTOR, workspaceId, request);
+    }
+
+    /** Unknown fields are ignored: role and workspace cannot even reach the service. */
+    @Test
+    void createMemberIgnoresRoleAndWorkspaceFieldsInTheBody() throws Exception {
+        UUID workspaceId = ACTOR.workspaceId();
+        when(userService.createMember(eq(ACTOR), eq(workspaceId), any()))
+                .thenReturn(userResponse(UUID.randomUUID(), "pedro@example.com", workspaceId));
+
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/members", workspaceId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Pedro\",\"email\":\"pedro@example.com\","
+                                + "\"password\":\"pedro-password\",\"role\":\"ADMIN\",\"ROLE\":\"ADMIN\","
+                                + "\"workspaceId\":\"" + UUID.randomUUID() + "\"}"))
+                .andExpect(status().isCreated());
+
+        verify(userService).createMember(ACTOR, workspaceId,
+                new CreateMemberRequest("Pedro", "pedro@example.com", "pedro-password"));
+    }
+
+    @Test
+    void createMemberWithInvalidBodyIs400WithoutCallingService() throws Exception {
+        mockMvc.perform(post("/api/workspaces/{workspaceId}/members", ACTOR.workspaceId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\" \",\"email\":\"pedro@example.com\",\"password\":\"short\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+
+        verify(userService, never()).createMember(any(), any(), any());
+    }
+
+    @Test
+    void createMemberMapsTheServiceDecisionsToTheErrorContract() throws Exception {
+        UUID workspaceId = ACTOR.workspaceId();
+        when(userService.createMember(eq(ACTOR), eq(workspaceId), any()))
+                .thenThrow(new ForbiddenOperationException("Only workspace admins can create members"))
+                .thenThrow(new ResourceNotFoundException("Workspace not found: " + workspaceId))
+                .thenThrow(new ResourceAlreadyExistsException("Email is already registered"));
+
+        for (int status : new int[] {403, 404, 409}) {
+            mockMvc.perform(post("/api/workspaces/{workspaceId}/members", workspaceId)
+                            .contentType(MediaType.APPLICATION_JSON).content(MEMBER_JSON))
+                    .andExpect(status().is(status))
+                    .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                    .andExpect(jsonPath("$.status").value(status))
+                    .andExpect(jsonPath("$.path").value("/api/workspaces/" + workspaceId + "/members"));
+        }
     }
 }

@@ -31,6 +31,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.dto.CreateProjectRequest;
@@ -48,9 +49,17 @@ import com.queueflow.workspace.WorkspaceRepository;
 @ExtendWith(MockitoExtension.class)
 class ProjectServiceTest {
 
-    /** The caller of every operation below; its workspace is the only one the service can see. */
+    /**
+     * The caller of every operation below; its workspace is the only one the
+     * service can see. An ADMIN, because creating and updating projects is
+     * ADMIN-only (see the ROLE POLICY section for the MEMBER cases).
+     */
     private static final AuthenticatedUser ACTOR =
-            new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), UserRole.MEMBER);
+            new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), UserRole.ADMIN);
+
+    /** A MEMBER of the same workspace as ACTOR. */
+    private static final AuthenticatedUser MEMBER =
+            new AuthenticatedUser(UUID.randomUUID(), ACTOR.workspaceId(), UserRole.MEMBER);
 
     @Mock
     private ProjectRepository projectRepository;
@@ -577,5 +586,76 @@ class ProjectServiceTest {
         assertThatThrownBy(() -> projectService.update(ACTOR, projectId, request))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(projectId.toString());
+    }
+
+    // ---------------------------------------------------------------
+    // ROLE POLICY: creating and updating projects is ADMIN-only
+    // ---------------------------------------------------------------
+
+    @Test
+    void aMemberCannotCreateAProjectAndNothingIsLookedUpOrSaved() {
+        assertThatThrownBy(() -> projectService.create(MEMBER, new CreateProjectRequest("Operations", "OPS", null)))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessage("Only workspace admins can create projects");
+
+        verifyNoInteractions(projectRepository, workspaceRepository);
+    }
+
+    /** The role comes first on create: even an invalid key is a 403 for a MEMBER, never a 400. */
+    @Test
+    void aMemberIsForbiddenBeforeTheRequestIsValidated() {
+        assertThatThrownBy(() -> projectService.create(MEMBER, new CreateProjectRequest(" ", "!", null)))
+                .isInstanceOf(ForbiddenOperationException.class);
+    }
+
+    @Test
+    void aMemberCannotUpdateAProjectOfTheirOwnWorkspaceAndNothingChanges() {
+        Workspace workspace = persistedWorkspace(ACTOR.workspaceId(), "Acme Inc.");
+        UUID projectId = UUID.randomUUID();
+        Project project = existingProject(projectId, workspace);
+        UpdateProjectRequest request = patch();
+        request.setName("Renamed");
+        request.setDescription(null);
+
+        assertThatThrownBy(() -> projectService.update(MEMBER, projectId, request))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessage("Only workspace admins can update projects");
+
+        assertThat(project.getName()).isEqualTo("Original Name");
+        assertThat(project.getDescription()).isEqualTo("Original description");
+        assertThat(project.getUpdatedAt()).isEqualTo(ORIGINAL_TIMESTAMP);
+        assertImmutableFieldsUnchanged(project, workspace);
+    }
+
+    /**
+     * The project is resolved in the caller's workspace before the role is
+     * looked at: a project the caller cannot see is 404 for a MEMBER too,
+     * so a 403 never confirms that it exists.
+     */
+    @Test
+    void aProjectOutsideTheCallersWorkspaceIsNotFoundForAMemberToo() {
+        UUID projectId = UUID.randomUUID();
+        when(projectRepository.findByIdAndWorkspaceId(projectId, MEMBER.workspaceId())).thenReturn(Optional.empty());
+        UpdateProjectRequest request = patch();
+        request.setName("Renamed");
+
+        assertThatThrownBy(() -> projectService.update(MEMBER, projectId, request))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Project not found: " + projectId);
+    }
+
+    @Test
+    void membersKeepReadAccessToProjects() {
+        Workspace workspace = persistedWorkspace(ACTOR.workspaceId(), "Acme Inc.");
+        UUID projectId = UUID.randomUUID();
+        Project project = persistedProject(projectId, "E-Commerce", "ECOM", null, workspace, 1L, ORIGINAL_TIMESTAMP);
+        when(projectRepository.findByIdAndWorkspaceId(projectId, MEMBER.workspaceId()))
+                .thenReturn(Optional.of(project));
+        when(projectRepository.findByWorkspaceIdAndKey(MEMBER.workspaceId(), "ECOM")).thenReturn(Optional.of(project));
+        when(projectRepository.findAllInWorkspaceSortedByName(MEMBER.workspaceId())).thenReturn(List.of(project));
+
+        assertThat(projectService.getById(MEMBER, projectId).id()).isEqualTo(projectId);
+        assertThat(projectService.getByKey(MEMBER, "ecom").id()).isEqualTo(projectId);
+        assertThat(projectService.getByWorkspace(MEMBER, MEMBER.workspaceId())).hasSize(1);
     }
 }

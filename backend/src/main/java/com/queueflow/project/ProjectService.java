@@ -16,6 +16,7 @@ import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
 import com.queueflow.project.dto.UpdateProjectRequest;
 import com.queueflow.security.AuthenticatedUser;
+import com.queueflow.security.RoleAccess;
 import com.queueflow.workspace.Workspace;
 import com.queueflow.workspace.WorkspaceAccess;
 import com.queueflow.workspace.WorkspaceRepository;
@@ -47,9 +48,15 @@ public class ProjectService {
         this.workspaceRepository = workspaceRepository;
     }
 
-    /** Always created in the caller's workspace: the request cannot choose another. */
+    /**
+     * ADMIN only. Always created in the caller's workspace: the request
+     * cannot choose another, so there is no foreign resource to hide and the
+     * role is checked first.
+     */
     @Transactional
     public ProjectResponse create(AuthenticatedUser actor, CreateProjectRequest request) {
+        RoleAccess.requireAdmin(actor, "create projects");
+
         // Validated before any database access, so an invalid key or name can
         // never reach PostgreSQL as a length/constraint failure. The name
         // follows the same rule as update(): trimmed, not blank, max length
@@ -109,11 +116,16 @@ public class ProjectService {
      * is validated before any mutation. No explicit save: the project is a
      * managed entity, so dirty checking flushes real changes at commit; an
      * empty or same-value PATCH changes nothing (not even updatedAt).
+     *
+     * ADMIN only, checked after the project is found in the caller's
+     * workspace: another workspace's project is 404 for every role, and the
+     * 403 is only ever about a project the caller can already see.
      */
     @Transactional
     public ProjectResponse update(AuthenticatedUser actor, UUID projectId, UpdateProjectRequest request) {
         Project project = projectRepository.findByIdAndWorkspaceId(projectId, actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
+        RoleAccess.requireAdmin(actor, "update projects");
 
         String newName = request.getName() != null ? validatedName(request.getName()) : null;
         PatchField<String> descriptionPatch = request.descriptionPatch();

@@ -28,6 +28,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
 import com.queueflow.project.dto.UpdateProjectRequest;
@@ -356,5 +357,37 @@ class ProjectControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(projectService, never()).update(any(), any(), any());
+    }
+
+    // ---------------------------------------------------------------
+    // ROLE POLICY: decided by ProjectService, answered as the JSON 403
+    // ---------------------------------------------------------------
+
+    private static final AuthenticatedUser MEMBER = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.MEMBER);
+
+    /** No web-layer role rule: a MEMBER's request reaches the service, which refuses it. */
+    @Test
+    @WithAuthenticatedUser(role = UserRole.MEMBER)
+    void memberCreateAndUpdateAreForbiddenByTheServiceWithTheStandardErrorBody() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        when(projectService.create(eq(MEMBER), any()))
+                .thenThrow(new ForbiddenOperationException("Only workspace admins can create projects"));
+        when(projectService.update(eq(MEMBER), eq(projectId), any()))
+                .thenThrow(new ForbiddenOperationException("Only workspace admins can update projects"));
+
+        mockMvc.perform(post("/api/projects").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Operations\",\"key\":\"OPS\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.error").value("Forbidden"))
+                .andExpect(jsonPath("$.message").value("Only workspace admins can create projects"))
+                .andExpect(jsonPath("$.path").value("/api/projects"));
+        mockMvc.perform(patch("/api/projects/{projectId}", projectId).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"Renamed\"}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.message").value("Only workspace admins can update projects"));
     }
 }
