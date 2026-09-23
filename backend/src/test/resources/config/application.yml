@@ -1,0 +1,11 @@
+# TEST-ONLY configuration, loaded on top of src/main/resources/application.yml
+# (Spring Boot also reads classpath:/config/application.yml and lets it
+# override). It exists only on the test classpath, so it can never act as a
+# fallback for the real application, which still requires JWT_SECRET.
+queueflow:
+  security:
+    jwt:
+      # Base64 of the ASCII text
+      # "queueflow-TEST-ONLY-jwt-signing-key-never-use-outside-tests" (59 bytes).
+      # Deterministic and public on purpose: it signs nothing outside tests.
+      secret: cXVldWVmbG93LVRFU1QtT05MWS1qd3Qtc2lnbmluZy1rZXktbmV2ZXItdXNlLW91dHNpZGUtdGVzdHM=

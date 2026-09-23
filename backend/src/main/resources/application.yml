@@ -25,3 +25,16 @@ springdoc:
   # The API is JSON-only; without this Springdoc documents undeclared
   # response types as */*.
   default-produces-media-type: application/json
+
+queueflow:
+  security:
+    jwt:
+      # Base64-encoded HS256 key of at least 32 bytes, e.g. the output of
+      # `openssl rand -base64 32`. Required: the application refuses to start
+      # without it. The empty default is not a fallback key - it only turns a
+      # missing JWT_SECRET into an empty value that JwtConfig rejects with a
+      # clear "not set" message (an unresolved placeholder would otherwise
+      # reach the key decoder literally). Never commit a real value.
+      secret: ${JWT_SECRET:}
+      issuer: queueflow
+      ttl: PT1H
