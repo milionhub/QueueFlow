@@ -47,9 +47,13 @@ public class ProjectService {
 
     @Transactional
     public ProjectResponse create(CreateProjectRequest request) {
-        // Validated before any database access, so an invalid key can never
-        // reach PostgreSQL as a length/constraint failure.
+        // Validated before any database access, so an invalid key or name can
+        // never reach PostgreSQL as a length/constraint failure. The name
+        // follows the same rule as update(): trimmed, not blank, max length
+        // on the trimmed value. The description is stored as given, as in
+        // update().
         String normalizedKey = validatedKey(request.key());
+        String name = validatedName(request.name());
 
         Workspace workspace = workspaceRepository.findById(request.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Workspace not found: " + request.workspaceId()));
@@ -62,7 +66,7 @@ public class ProjectService {
                     "Project key already exists in workspace: " + normalizedKey);
         }
 
-        Project project = new Project(request.name(), normalizedKey, request.description(), workspace);
+        Project project = new Project(name, normalizedKey, request.description(), workspace);
         Project saved = projectRepository.save(project);
         return ProjectResponse.from(saved);
     }
@@ -145,6 +149,9 @@ public class ProjectService {
     }
 
     private static String validatedName(String name) {
+        if (name == null) {
+            throw new BusinessRuleViolationException("name must not be blank");
+        }
         String trimmed = name.trim();
         if (trimmed.isEmpty()) {
             throw new BusinessRuleViolationException("name must not be blank");

@@ -82,14 +82,17 @@ class ProjectUpdateIntegrationTest {
     }
 
     @Test
-    void createStoresTheNormalizedKey() {
+    void createStoresTheNormalizedKeyAndTrimmedName() {
         Workspace workspace = workspace();
 
-        ProjectResponse response = projectService.create(new CreateProjectRequest(workspace.getId(), "CRM", " crm ", null));
+        ProjectResponse response = projectService.create(
+                new CreateProjectRequest(workspace.getId(), "  QueueFlow Core  ", " crm ", null));
         newRequest();
 
         assertThat(response.key()).isEqualTo("CRM");
+        assertThat(response.name()).isEqualTo("QueueFlow Core");
         assertThat(rawColumn("key", response.id())).isEqualTo("CRM");
+        assertThat(rawColumn("name", response.id())).isEqualTo("QueueFlow Core");
     }
 
     @Test

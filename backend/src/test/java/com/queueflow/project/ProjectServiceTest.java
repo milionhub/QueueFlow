@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.NullSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -320,6 +321,61 @@ class ProjectServiceTest {
     void createRejectsNullKey() {
         assertThatThrownBy(() -> projectService.create(new CreateProjectRequest(UUID.randomUUID(), "Project", null, null)))
                 .isInstanceOf(BusinessRuleViolationException.class);
+
+        verifyNoInteractions(workspaceRepository, projectRepository);
+    }
+
+    // ---------------------------------------------------------------
+    // NAME RULE (create) - same as update(): trim, not blank, max on trimmed
+    // ---------------------------------------------------------------
+
+    private Project createAndCaptureSaved(String rawName, String description) {
+        UUID workspaceId = UUID.randomUUID();
+        when(workspaceRepository.findById(workspaceId))
+                .thenReturn(Optional.of(persistedWorkspace(workspaceId, "Acme Inc.")));
+        when(projectRepository.existsByWorkspaceIdAndKey(workspaceId, "QF")).thenReturn(false);
+        when(projectRepository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        projectService.create(new CreateProjectRequest(workspaceId, rawName, "qf", description));
+
+        ArgumentCaptor<Project> captor = ArgumentCaptor.forClass(Project.class);
+        verify(projectRepository).save(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    void createTrimsNameAndStoresDescriptionAsGiven() {
+        Project saved = createAndCaptureSaved("  QueueFlow Core  ", "  Kept as given  ");
+
+        assertThat(saved.getName()).isEqualTo("QueueFlow Core");
+        assertThat(saved.getDescription()).isEqualTo("  Kept as given  ");
+    }
+
+    @Test
+    void createAcceptsMaximumLengthNameAfterTrimming() {
+        Project saved = createAndCaptureSaved(" " + "a".repeat(255) + " ", null);
+
+        assertThat(saved.getName()).hasSize(255);
+    }
+
+    @Test
+    void createRejectsNameLongerThanTheLimitAfterTrimming() {
+        assertThatThrownBy(() -> projectService.create(
+                new CreateProjectRequest(UUID.randomUUID(), "a".repeat(256), "qf", null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("255");
+
+        verifyNoInteractions(workspaceRepository, projectRepository);
+    }
+
+    @ParameterizedTest
+    @NullSource
+    @ValueSource(strings = {"", "   "})
+    void createRejectsBlankNameBeforeAnyDatabaseAccess(String blankName) {
+        assertThatThrownBy(() -> projectService.create(
+                new CreateProjectRequest(UUID.randomUUID(), blankName, "qf", null)))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessageContaining("name");
 
         verifyNoInteractions(workspaceRepository, projectRepository);
     }
