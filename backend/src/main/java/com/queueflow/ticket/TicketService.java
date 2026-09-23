@@ -11,6 +11,8 @@ import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
 import com.queueflow.common.PatchField;
 import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
@@ -52,13 +54,17 @@ public class TicketService {
 
         User creator = userRepository.findById(request.creatorId())
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.creatorId()));
-        requireSameWorkspace(project, creator, "Creator must belong to the same workspace as the project");
+        if (!inSameWorkspace(project, creator)) {
+            throw new InvalidRelationshipException("Creator must belong to the same workspace as the project");
+        }
 
         User assignee = null;
         if (request.assigneeId() != null) {
             assignee = userRepository.findById(request.assigneeId())
                     .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.assigneeId()));
-            requireSameWorkspace(project, assignee, "Assignee must belong to the same workspace as the project");
+            if (!inSameWorkspace(project, assignee)) {
+                throw new InvalidRelationshipException("Assignee must belong to the same workspace as the project");
+            }
         }
 
         // project was loaded under a pessimistic write lock above, so this
@@ -122,7 +128,11 @@ public class TicketService {
 
         User actor = userRepository.findById(actorUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorUserId));
-        requireSameWorkspace(ticket.getProject(), actor, "Actor must belong to the same workspace as the ticket");
+        // Permission check first: an actor from outside the ticket's
+        // workspace may not mutate it at all, whatever the request contains.
+        if (!inSameWorkspace(ticket.getProject(), actor)) {
+            throw new ForbiddenOperationException("Actor must belong to the same workspace as the ticket");
+        }
 
         if (request.getTitle() != null) {
             String newTitle = validatedTitle(request.getTitle());
@@ -178,8 +188,10 @@ public class TicketService {
                 } else {
                     User newAssignee = userRepository.findById(newAssigneeId)
                             .orElseThrow(() -> new ResourceNotFoundException("User not found: " + newAssigneeId));
-                    requireSameWorkspace(ticket.getProject(), newAssignee,
-                            "Assignee must belong to the same workspace as the project");
+                    if (!inSameWorkspace(ticket.getProject(), newAssignee)) {
+                        throw new InvalidRelationshipException(
+                                "Assignee must belong to the same workspace as the project");
+                    }
                     ticket.changeAssignee(newAssignee);
                     activityService.recordActivity(ActivityType.ASSIGNEE_CHANGED,
                             oldAssigneeId != null ? oldAssigneeId.toString() : null, newAssigneeId.toString(),
@@ -214,11 +226,14 @@ public class TicketService {
         return title;
     }
 
-    private static void requireSameWorkspace(Project project, User user, String message) {
-        UUID projectWorkspaceId = project.getWorkspace().getId();
-        UUID userWorkspaceId = user.getWorkspace().getId();
-        if (!projectWorkspaceId.equals(userWorkspaceId)) {
-            throw new BusinessRuleViolationException(message);
-        }
+    /**
+     * Whether the user belongs to the project's workspace. Callers decide
+     * what a mismatch means from the user's role: for the acting user it is
+     * a permission failure (ForbiddenOperationException); for a creator or
+     * assignee being linked to the ticket it is an invalid relationship
+     * (InvalidRelationshipException).
+     */
+    private static boolean inSameWorkspace(Project project, User user) {
+        return project.getWorkspace().getId().equals(user.getWorkspace().getId());
     }
 }

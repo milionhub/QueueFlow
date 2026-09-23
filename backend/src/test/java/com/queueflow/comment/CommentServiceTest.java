@@ -24,6 +24,8 @@ import com.queueflow.comment.dto.CommentResponse;
 import com.queueflow.comment.dto.CreateCommentRequest;
 import com.queueflow.comment.dto.UpdateCommentRequest;
 import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
 import com.queueflow.ticket.Ticket;
@@ -164,7 +166,7 @@ class CommentServiceTest {
     }
 
     @Test
-    void createThrowsBusinessRuleViolationExceptionWhenAuthorInDifferentWorkspace() {
+    void createThrowsInvalidRelationshipExceptionWhenAuthorInDifferentWorkspace() {
         Workspace ticketWorkspace = persistedWorkspace(UUID.randomUUID());
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         Project project = persistedProject(UUID.randomUUID(), ticketWorkspace);
@@ -177,7 +179,7 @@ class CommentServiceTest {
 
         assertThatThrownBy(() -> commentService.create(
                 new CreateCommentRequest(ticket.getId(), author.getId(), "Hello")))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("workspace");
 
         verify(commentRepository, never()).save(any());
@@ -317,7 +319,7 @@ class CommentServiceTest {
     }
 
     @Test
-    void updateThrowsBusinessRuleViolationExceptionWhenActorIsNotAuthor() {
+    void updateThrowsForbiddenOperationExceptionWhenActorIsNotAuthor() {
         Workspace workspace = persistedWorkspace(UUID.randomUUID());
         Project project = persistedProject(UUID.randomUUID(), workspace);
         User creator = persistedUser(UUID.randomUUID(), "Creator", workspace);
@@ -330,8 +332,26 @@ class CommentServiceTest {
 
         assertThatThrownBy(() -> commentService.update(
                 comment.getId(), differentActorId, new UpdateCommentRequest("Updated")))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("author");
+
+        assertThat(comment.getContent()).isEqualTo("Original");
+    }
+
+    @Test
+    void updateByNonAuthorIsForbiddenEvenWhenTheContentIsAlsoInvalid() {
+        // Permission is checked before the content: a non-author gets 403,
+        // not a validation error about a comment they may not edit anyway.
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        Project project = persistedProject(UUID.randomUUID(), workspace);
+        User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
+        Ticket ticket = persistedTicket(UUID.randomUUID(), project, author);
+        Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
+        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+
+        assertThatThrownBy(() -> commentService.update(
+                comment.getId(), UUID.randomUUID(), new UpdateCommentRequest("   ")))
+                .isInstanceOf(ForbiddenOperationException.class);
 
         assertThat(comment.getContent()).isEqualTo("Original");
     }
@@ -423,7 +443,7 @@ class CommentServiceTest {
     }
 
     @Test
-    void deleteThrowsBusinessRuleViolationExceptionWhenActorIsNotAuthor() {
+    void deleteThrowsForbiddenOperationExceptionWhenActorIsNotAuthor() {
         Workspace workspace = persistedWorkspace(UUID.randomUUID());
         Project project = persistedProject(UUID.randomUUID(), workspace);
         User creator = persistedUser(UUID.randomUUID(), "Creator", workspace);
@@ -435,7 +455,7 @@ class CommentServiceTest {
         when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
 
         assertThatThrownBy(() -> commentService.delete(comment.getId(), differentActorId))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("author");
 
         verify(commentRepository, never()).delete(any());

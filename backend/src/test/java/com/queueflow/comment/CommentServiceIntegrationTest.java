@@ -18,7 +18,7 @@ import org.springframework.context.annotation.Import;
 import com.queueflow.comment.dto.CommentResponse;
 import com.queueflow.comment.dto.CreateCommentRequest;
 import com.queueflow.comment.dto.UpdateCommentRequest;
-import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
 import com.queueflow.ticket.Ticket;
@@ -211,7 +211,7 @@ class CommentServiceIntegrationTest {
 
         assertThatThrownBy(() -> commentService.create(
                 new CreateCommentRequest(ticket.getId(), outsider.getId(), "Should fail")))
-                .isInstanceOf(BusinessRuleViolationException.class);
+                .isInstanceOf(InvalidRelationshipException.class);
         entityManager.flush();
 
         assertThat(commentRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId())).isEmpty();

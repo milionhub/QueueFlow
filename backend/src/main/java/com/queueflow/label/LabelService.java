@@ -8,7 +8,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
-import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.label.dto.CreateLabelRequest;
@@ -98,8 +99,10 @@ public class LabelService {
         User actor = userRepository.findById(actorUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorUserId));
 
-        requireSameWorkspace(ticket, label);
+        // Permission first: an actor from outside the ticket's workspace is
+        // refused (403) before the request's label is even considered.
         requireActorSameWorkspace(ticket, actor);
+        requireSameWorkspace(ticket, label);
 
         // Idempotent by design (see Ticket.addLabel): attaching an
         // already-attached label is a no-op, not an error - and no
@@ -125,8 +128,10 @@ public class LabelService {
         User actor = userRepository.findById(actorUserId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorUserId));
 
-        requireSameWorkspace(ticket, label);
+        // Permission first: an actor from outside the ticket's workspace is
+        // refused (403) before the request's label is even considered.
         requireActorSameWorkspace(ticket, actor);
+        requireSameWorkspace(ticket, label);
 
         boolean changed = ticket.removeLabel(label);
         if (changed) {
@@ -140,7 +145,7 @@ public class LabelService {
         UUID ticketWorkspaceId = ticket.getProject().getWorkspace().getId();
         UUID labelWorkspaceId = label.getWorkspace().getId();
         if (!ticketWorkspaceId.equals(labelWorkspaceId)) {
-            throw new BusinessRuleViolationException("Label must belong to the same workspace as the ticket");
+            throw new InvalidRelationshipException("Label must belong to the same workspace as the ticket");
         }
     }
 
@@ -148,7 +153,7 @@ public class LabelService {
         UUID ticketWorkspaceId = ticket.getProject().getWorkspace().getId();
         UUID actorWorkspaceId = actor.getWorkspace().getId();
         if (!ticketWorkspaceId.equals(actorWorkspaceId)) {
-            throw new BusinessRuleViolationException("Actor must belong to the same workspace as the ticket");
+            throw new ForbiddenOperationException("Actor must belong to the same workspace as the ticket");
         }
     }
 

@@ -26,6 +26,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
 import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
@@ -174,7 +176,7 @@ class TicketServiceTest {
     }
 
     @Test
-    void createThrowsBusinessRuleViolationExceptionWhenCreatorInDifferentWorkspace() {
+    void createThrowsInvalidRelationshipExceptionWhenCreatorInDifferentWorkspace() {
         Workspace projectWorkspace = persistedWorkspace(UUID.randomUUID());
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         UUID projectId = UUID.randomUUID();
@@ -186,7 +188,7 @@ class TicketServiceTest {
         when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
 
         assertThatThrownBy(() -> ticketService.create(requestFor(projectId, creatorId, null)))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Creator");
 
         verify(ticketRepository, never()).save(any());
@@ -254,7 +256,7 @@ class TicketServiceTest {
     }
 
     @Test
-    void createThrowsBusinessRuleViolationExceptionWhenAssigneeInDifferentWorkspace() {
+    void createThrowsInvalidRelationshipExceptionWhenAssigneeInDifferentWorkspace() {
         Workspace projectWorkspace = persistedWorkspace(UUID.randomUUID());
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         UUID projectId = UUID.randomUUID();
@@ -269,7 +271,7 @@ class TicketServiceTest {
         when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
 
         assertThatThrownBy(() -> ticketService.create(requestFor(projectId, creatorId, assigneeId)))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Assignee");
 
         verify(ticketRepository, never()).save(any());
@@ -480,7 +482,7 @@ class TicketServiceTest {
     }
 
     @Test
-    void updateThrowsBusinessRuleViolationExceptionWhenActorInDifferentWorkspace() {
+    void updateThrowsForbiddenOperationExceptionWhenActorInDifferentWorkspace() {
         Workspace workspace = persistedWorkspace(UUID.randomUUID());
         Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L);
         User creator = persistedUser(UUID.randomUUID(), workspace);
@@ -492,7 +494,7 @@ class TicketServiceTest {
         when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
 
         assertThatThrownBy(() -> ticketService.update(ticket.getId(), outsider.getId(), new UpdateTicketRequest()))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Actor");
     }
 
@@ -791,7 +793,7 @@ class TicketServiceTest {
     }
 
     @Test
-    void updateThrowsBusinessRuleViolationExceptionWhenAssigneeInDifferentWorkspace() {
+    void updateThrowsInvalidRelationshipExceptionWhenAssigneeInDifferentWorkspace() {
         Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         UUID assigneeId = UUID.randomUUID();
@@ -802,7 +804,7 @@ class TicketServiceTest {
         request.setAssigneeId(assigneeId);
 
         assertThatThrownBy(() -> ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Assignee");
 
         assertThat(fixture.ticket().getAssignee()).isNull();

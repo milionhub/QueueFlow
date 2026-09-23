@@ -10,6 +10,8 @@ import com.queueflow.comment.dto.CommentResponse;
 import com.queueflow.comment.dto.CreateCommentRequest;
 import com.queueflow.comment.dto.UpdateCommentRequest;
 import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.ticket.Ticket;
 import com.queueflow.ticket.TicketRepository;
@@ -40,7 +42,7 @@ public class CommentService {
         UUID ticketWorkspaceId = ticket.getProject().getWorkspace().getId();
         UUID authorWorkspaceId = author.getWorkspace().getId();
         if (!ticketWorkspaceId.equals(authorWorkspaceId)) {
-            throw new BusinessRuleViolationException("Comment author must belong to the same workspace as the ticket");
+            throw new InvalidRelationshipException("Comment author must belong to the same workspace as the ticket");
         }
 
         String content = validatedContent(request.content());
@@ -75,7 +77,7 @@ public class CommentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found: " + commentId));
 
         if (!comment.getAuthor().getId().equals(actorUserId)) {
-            throw new BusinessRuleViolationException("Only the comment author can edit this comment");
+            throw new ForbiddenOperationException("Only the comment author can edit this comment");
         }
 
         comment.changeContent(validatedContent(request.content()));
@@ -96,7 +98,7 @@ public class CommentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found: " + commentId));
 
         if (!comment.getAuthor().getId().equals(actorUserId)) {
-            throw new BusinessRuleViolationException("Only the comment author can delete this comment");
+            throw new ForbiddenOperationException("Only the comment author can delete this comment");
         }
 
         commentRepository.delete(comment);

@@ -18,7 +18,7 @@ import com.queueflow.activity.Activity;
 import com.queueflow.activity.ActivityRepository;
 import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
-import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.label.dto.CreateLabelRequest;
 import com.queueflow.label.dto.LabelResponse;
 import com.queueflow.project.Project;
@@ -176,7 +176,7 @@ class LabelServiceIntegrationTest {
         Label label = labelRepository.saveAndFlush(new Label("backend", labelWorkspace));
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId()))
-                .isInstanceOf(BusinessRuleViolationException.class);
+                .isInstanceOf(InvalidRelationshipException.class);
         entityManager.flush();
 
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(0L);

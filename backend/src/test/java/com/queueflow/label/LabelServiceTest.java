@@ -20,7 +20,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
-import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.label.dto.CreateLabelRequest;
@@ -251,7 +252,7 @@ class LabelServiceTest {
     }
 
     @Test
-    void addLabelToTicketThrowsBusinessRuleViolationExceptionWhenActorInDifferentWorkspace() {
+    void addLabelToTicketThrowsForbiddenOperationExceptionWhenActorInDifferentWorkspace() {
         Fixture fixture = newFixture();
         Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
@@ -260,14 +261,14 @@ class LabelServiceTest {
         when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), label.getId(), outsider.getId()))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Actor");
 
         assertThat(fixture.ticket().getLabels()).isEmpty();
     }
 
     @Test
-    void addLabelToTicketThrowsBusinessRuleViolationExceptionWhenLabelCrossWorkspace() {
+    void addLabelToTicketThrowsInvalidRelationshipExceptionWhenLabelCrossWorkspace() {
         Fixture fixture = newFixture();
         Workspace labelWorkspace = persistedWorkspace(UUID.randomUUID());
         Label label = persistedLabel(UUID.randomUUID(), "backend", labelWorkspace);
@@ -275,8 +276,26 @@ class LabelServiceTest {
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), label.getId(), fixture.actor().getId()))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Label");
+
+        assertThat(fixture.ticket().getLabels()).isEmpty();
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void addLabelToTicketChecksThePermissionBeforeTheLabelRelationship() {
+        // Outsider actor AND a foreign label: the actor is refused (403)
+        // before the request's label is even considered.
+        Fixture fixture = newFixture();
+        Label foreignLabel = persistedLabel(UUID.randomUUID(), "backend", persistedWorkspace(UUID.randomUUID()));
+        User outsider = persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID()));
+        when(labelRepository.findById(foreignLabel.getId())).thenReturn(Optional.of(foreignLabel));
+        when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
+
+        assertThatThrownBy(() -> labelService.addLabelToTicket(
+                fixture.ticket().getId(), foreignLabel.getId(), outsider.getId()))
+                .isInstanceOf(ForbiddenOperationException.class);
 
         assertThat(fixture.ticket().getLabels()).isEmpty();
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
@@ -360,7 +379,7 @@ class LabelServiceTest {
     }
 
     @Test
-    void removeLabelFromTicketThrowsBusinessRuleViolationExceptionWhenActorInDifferentWorkspace() {
+    void removeLabelFromTicketThrowsForbiddenOperationExceptionWhenActorInDifferentWorkspace() {
         Fixture fixture = newFixture();
         Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
@@ -369,19 +388,19 @@ class LabelServiceTest {
         when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
 
         assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), outsider.getId()))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Actor");
     }
 
     @Test
-    void removeLabelFromTicketThrowsBusinessRuleViolationExceptionWhenLabelCrossWorkspace() {
+    void removeLabelFromTicketThrowsInvalidRelationshipExceptionWhenLabelCrossWorkspace() {
         Fixture fixture = newFixture();
         Workspace labelWorkspace = persistedWorkspace(UUID.randomUUID());
         Label label = persistedLabel(UUID.randomUUID(), "backend", labelWorkspace);
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
         assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), fixture.actor().getId()))
-                .isInstanceOf(BusinessRuleViolationException.class)
+                .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Label");
     }
 

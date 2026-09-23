@@ -17,6 +17,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
+import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 
@@ -29,13 +32,14 @@ import jakarta.servlet.http.HttpServletRequest;
  * handler uses its own fixed, safe message (at most adding a parameter
  * name, which is part of the public API anyway).
  *
+ * Business failures are split by meaning, not by where they are thrown:
+ * invalid values (BusinessRuleViolationException, 400), resources that
+ * cannot be related (InvalidRelationshipException, 400) and actions the
+ * acting user may not perform (ForbiddenOperationException, 403).
+ *
  * <ul>
- *   <li>BusinessRuleViolationException is deliberately NOT handled yet: it
- *       currently covers invalid input, permission failures and
- *       cross-workspace references, which need different statuses. It will
- *       be split before being mapped.</li>
  *   <li>DataIntegrityViolationException (database uniqueness races) is not
- *       handled yet either - a following 1.8 step.</li>
+ *       handled yet - a following 1.8 step.</li>
  *   <li>There is deliberately no catch-all Exception handler, so unexpected
  *       failures are not disguised as intentional API errors.</li>
  * </ul>
@@ -56,6 +60,27 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleAlreadyExists(ResourceAlreadyExistsException exception,
             HttpServletRequest request) {
         return error(HttpStatus.CONFLICT, exception.getMessage(), request);
+    }
+
+    /** "The requested business value/state is invalid." */
+    @ExceptionHandler(BusinessRuleViolationException.class)
+    ResponseEntity<ApiErrorResponse> handleBusinessRule(BusinessRuleViolationException exception,
+            HttpServletRequest request) {
+        return error(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
+    }
+
+    /** "These resources cannot legally be related." */
+    @ExceptionHandler(InvalidRelationshipException.class)
+    ResponseEntity<ApiErrorResponse> handleInvalidRelationship(InvalidRelationshipException exception,
+            HttpServletRequest request) {
+        return error(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
+    }
+
+    /** "The actor is not allowed to perform this operation." */
+    @ExceptionHandler(ForbiddenOperationException.class)
+    ResponseEntity<ApiErrorResponse> handleForbidden(ForbiddenOperationException exception,
+            HttpServletRequest request) {
+        return error(HttpStatus.FORBIDDEN, exception.getMessage(), request);
     }
 
     // ---------------------------------------------------------------

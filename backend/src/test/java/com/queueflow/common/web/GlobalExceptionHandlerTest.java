@@ -3,6 +3,7 @@ package com.queueflow.common.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -26,6 +27,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -42,6 +44,8 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import com.jayway.jsonpath.JsonPath;
 import com.queueflow.common.exception.BusinessRuleViolationException;
+import com.queueflow.common.exception.ForbiddenOperationException;
+import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.config.SecurityConfig;
@@ -294,19 +298,74 @@ class GlobalExceptionHandlerTest {
     }
 
     // ---------------------------------------------------------------
+    // 1.8C: business-rule taxonomy
+    // ---------------------------------------------------------------
+
+    @Test
+    void businessRuleViolationBecomes400() throws Exception {
+        when(projectService.create(any())).thenThrow(new BusinessRuleViolationException(
+                "key must be 2-10 characters, using only letters A-Z and digits 0-9: A-B"));
+
+        expectApiError(mockMvc.perform(post("/api/projects")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workspaceId": "%s", "name": "QueueFlow", "key": "A-B"}
+                                """.formatted(ID))),
+                400, "Bad Request", "key must be 2-10 characters, using only letters A-Z and digits 0-9: A-B",
+                "/api/projects");
+    }
+
+    @Test
+    void invalidRelationshipBecomes400WithThePathOnly() throws Exception {
+        UUID actorUserId = UUID.randomUUID();
+        when(ticketService.update(eq(ID), eq(actorUserId), any())).thenThrow(
+                new InvalidRelationshipException("Assignee must belong to the same workspace as the project"));
+
+        expectApiError(mockMvc.perform(patch("/api/tickets/{ticketId}", ID)
+                        .param("actorUserId", actorUserId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"assigneeId": "%s"}
+                                """.formatted(UUID.randomUUID()))),
+                400, "Bad Request", "Assignee must belong to the same workspace as the project",
+                "/api/tickets/" + ID);
+    }
+
+    @Test
+    void forbiddenOperationBecomes403WithThePathOnly() throws Exception {
+        UUID actorUserId = UUID.randomUUID();
+        when(ticketService.update(eq(ID), eq(actorUserId), any())).thenThrow(
+                new ForbiddenOperationException("Actor must belong to the same workspace as the ticket"));
+
+        MvcResult result = expectApiError(mockMvc.perform(patch("/api/tickets/{ticketId}", ID)
+                        .param("actorUserId", actorUserId.toString())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"status": "DONE"}
+                                """)),
+                403, "Forbidden", "Actor must belong to the same workspace as the ticket", "/api/tickets/" + ID);
+
+        String path = JsonPath.read(result.getResponse().getContentAsString(), "$.path");
+        assertThat(path).doesNotContain("?", "actorUserId");
+    }
+
+    // ---------------------------------------------------------------
     // Not owned by this advice (yet)
     // ---------------------------------------------------------------
 
     @Test
-    void businessRuleViolationIsDeliberatelyNotHandledYet() {
-        when(projectService.getById(ID)).thenThrow(new BusinessRuleViolationException("some business rule"));
+    void dataIntegrityViolationIsDeliberatelyNotHandledYet() {
+        when(projectService.create(any())).thenThrow(new DataIntegrityViolationException("duplicate key"));
 
-        // No @ExceptionHandler claims it, so it propagates out of MVC
-        // unresolved (MockMvc rethrows it) instead of becoming any
-        // ApiErrorResponse status. Its mapping is decided once it is split.
-        assertThatThrownBy(() -> mockMvc.perform(get("/api/projects/{projectId}", ID)))
+        // No @ExceptionHandler claims it (database races are a later 1.8
+        // step), so it propagates out of MVC unresolved - MockMvc rethrows it.
+        assertThatThrownBy(() -> mockMvc.perform(post("/api/projects")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workspaceId": "%s", "name": "QueueFlow", "key": "QF"}
+                                """.formatted(ID))))
                 .isInstanceOf(ServletException.class)
-                .hasCauseInstanceOf(BusinessRuleViolationException.class);
+                .hasCauseInstanceOf(DataIntegrityViolationException.class);
     }
 
     @Test
