@@ -16,21 +16,24 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.queueflow.config.SecurityConfig;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.workspace.dto.WorkspaceResponse;
 
 /**
  * Web-layer slice: real Spring MVC request mapping, bean validation, JSON
- * (de)serialization and the real (temporary) SecurityConfig, with the
- * service mocked. No request here sends credentials, so a passing GET also
- * proves the temporary Phase 1 security policy. Workspaces are created by
- * registration (see AuthControllerTest), not by this controller.
+ * (de)serialization and the real security filter chain, with the service
+ * mocked, run as an authenticated user (@WithAuthenticatedUser). Workspaces
+ * are created by registration (see AuthControllerTest), not by this
+ * controller.
  */
 @WebMvcTest(WorkspaceController.class)
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
+@WithAuthenticatedUser
 class WorkspaceControllerTest {
 
     @Autowired
@@ -73,11 +76,23 @@ class WorkspaceControllerTest {
         verifyNoInteractions(workspaceService);
     }
 
+    /** Only the API, health and docs are served: a token does not open anything else. */
     @Test
-    void nonApiPathsStillRequireAuthentication() throws Exception {
-        // Guards the temporary policy's boundary: only /api/** and
-        // /actuator/health are opened, security is not disabled wholesale.
+    void nonApiPathsAreDeniedEvenWithAuthentication() throws Exception {
         mockMvc.perform(get("/not-an-api-path"))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.message").value("Access denied"))
+                .andExpect(jsonPath("$.path").value("/not-an-api-path"));
+    }
+
+    @Test
+    @WithAnonymousUser
+    void workspaceReadsRequireAuthentication() throws Exception {
+        mockMvc.perform(get("/api/workspaces/{workspaceId}", UUID.randomUUID()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.message").value("Authentication required"));
+
+        verifyNoInteractions(workspaceService);
     }
 }

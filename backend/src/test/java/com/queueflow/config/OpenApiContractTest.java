@@ -56,7 +56,7 @@ class OpenApiContractTest {
         Map<String, Object> paths = doc.read("$.paths");
         assertThat(paths.keySet()).allMatch(path -> path.startsWith("/api/"));
         List<String> operationIds = doc.read("$.paths.*.*.operationId");
-        assertThat(operationIds).hasSize(28).doesNotHaveDuplicates();
+        assertThat(operationIds).hasSize(29).doesNotHaveDuplicates();
     }
 
     @Test
@@ -100,7 +100,7 @@ class OpenApiContractTest {
     }
 
     @Test
-    void documentsRegisterAndLoginButNoOtherAuthEndpointYet() {
+    void documentsTheAuthEndpoints() {
         assertThat(doc.read("$.paths['/api/auth/register'].post.operationId", String.class)).isEqualTo("register");
         assertThat(doc.read("$.paths['/api/auth/register'].post.responses['201'].content['application/json']"
                 + ".schema.$ref", String.class)).isEqualTo("#/components/schemas/AuthResponse");
@@ -110,8 +110,43 @@ class OpenApiContractTest {
         assertThat(doc.read("$.paths['/api/auth/login'].post.responses['401'].$ref", String.class))
                 .isEqualTo(OpenApiConfig.UNAUTHORIZED);
 
+        assertThat(doc.read("$.paths['/api/auth/me'].get.operationId", String.class)).isEqualTo("getCurrentUser");
+        assertThat(doc.read("$.paths['/api/auth/me'].get.responses['200'].content['application/json'].schema.$ref",
+                String.class)).isEqualTo("#/components/schemas/UserResponse");
+
         Map<String, Object> paths = doc.read("$.paths");
-        assertThat(paths).doesNotContainKey("/api/auth/me").doesNotContainKey("/api/workspaces");
+        assertThat(paths).doesNotContainKey("/api/workspaces");
+    }
+
+    @Test
+    void documentsBearerAuthenticationForEverythingButRegisterAndLogin() {
+        Map<String, Object> scheme = doc.read("$.components.securitySchemes.bearerAuth");
+        assertThat(scheme).containsEntry("type", "http").containsEntry("scheme", "bearer")
+                .containsEntry("bearerFormat", "JWT");
+        assertThat(doc.read("$.security[*].bearerAuth", List.class)).hasSize(1);
+
+        // Public: an explicit empty requirement overrides the global one.
+        assertThat(doc.read("$.paths['/api/auth/register'].post.security", List.class)).isEmpty();
+        assertThat(doc.read("$.paths['/api/auth/login'].post.security", List.class)).isEmpty();
+
+        // Everything else inherits bearerAuth and documents the 401.
+        List<Map<String, Object>> operations = doc.read("$.paths.*.*");
+        List<Map<String, Object>> protectedOperations = operations.stream()
+                .filter(operation -> !operation.containsKey("security"))
+                .toList();
+        assertThat(protectedOperations).hasSize(27);
+        assertThat(protectedOperations).allSatisfy(operation ->
+                assertThat(JsonPath.<String>read(operation, "$.responses['401'].$ref"))
+                        .isEqualTo(OpenApiConfig.UNAUTHORIZED));
+    }
+
+    /** The authenticated principal is resolved from the token, never a request parameter. */
+    @Test
+    void currentUserIsNotARequestParameter() {
+        Map<String, Object> me = doc.read("$.paths['/api/auth/me'].get");
+        assertThat(me).doesNotContainKey("parameters").doesNotContainKey("requestBody");
+        List<String> parameterNames = doc.read("$.paths.*.*.parameters[*].name");
+        assertThat(parameterNames).doesNotContain("currentUser", "principal", "authentication");
     }
 
     @Test
@@ -136,11 +171,10 @@ class OpenApiContractTest {
     }
 
     @Test
-    void exposesNoEntitiesActuatorOrSecurityScheme() {
+    void exposesNoEntitiesOrActuator() {
         Map<String, Object> schemas = doc.read("$.components.schemas");
         assertThat(schemas.keySet()).allMatch(name -> name.endsWith("Request") || name.endsWith("Response"));
         assertThat(json).doesNotContain("passwordHash", "/actuator");
-        assertThat(json).doesNotContain("securitySchemes", "\"security\"");
     }
 
     /**

@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.OffsetDateTime;
@@ -27,7 +28,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.queueflow.auth.AuthController;
 import com.queueflow.auth.AuthService;
 import com.queueflow.auth.dto.AuthResponse;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.user.UserRole;
+import com.queueflow.user.UserService;
 import com.queueflow.user.dto.UserResponse;
 import com.queueflow.workspace.WorkspaceController;
 import com.queueflow.workspace.WorkspaceService;
@@ -35,13 +39,15 @@ import com.queueflow.workspace.dto.WorkspaceResponse;
 
 /**
  * CORS policy of the real SecurityConfig, exercised through its filter
- * chain. Preflight (OPTIONS) requests are answered by Spring Security's
- * CorsFilter itself, before any controller, so they apply to every
- * /api/** path; WorkspaceController and AuthController are in the slice to
- * also check CORS headers on actual (non-preflight) GET and POST requests.
+ * chain, including how it interacts with bearer authentication (requests
+ * here are anonymous unless marked @WithAuthenticatedUser). Preflight
+ * (OPTIONS) requests are answered by Spring Security's CorsFilter itself,
+ * before authentication or any controller, so they apply to every /api/**
+ * path; WorkspaceController and AuthController are in the slice to also
+ * check CORS headers on actual (non-preflight) GET and POST requests.
  */
 @WebMvcTest({WorkspaceController.class, AuthController.class})
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
 class SecurityConfigCorsTest {
 
     private static final String FRONTEND = "http://localhost:5173";
@@ -56,6 +62,9 @@ class SecurityConfigCorsTest {
     @MockitoBean
     private AuthService authService;
 
+    @MockitoBean
+    private UserService userService;
+
     private static AuthResponse registered(UUID userId) {
         OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
         return new AuthResponse("token", "Bearer", 3600, new UserResponse(userId, "Ada", "ada@example.com",
@@ -67,6 +76,7 @@ class SecurityConfigCorsTest {
         return new WorkspaceResponse(id, "Acme Inc.", timestamp, timestamp);
     }
 
+    /** Preflights carry no token (browsers never send one) and must still succeed. */
     @ParameterizedTest
     @ValueSource(strings = {"GET", "POST", "PUT", "PATCH", "DELETE"})
     void preflightFromFrontendIsAllowedForApiMethodsWithContentTypeAndAuthorization(String method)
@@ -84,6 +94,7 @@ class SecurityConfigCorsTest {
     }
 
     @Test
+    @WithAuthenticatedUser
     void actualGetFromFrontendCarriesCorsHeadersAndExposesLocation() throws Exception {
         UUID id = UUID.randomUUID();
         when(workspaceService.getById(id)).thenReturn(workspace(id));
@@ -93,6 +104,34 @@ class SecurityConfigCorsTest {
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, FRONTEND))
                 .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_EXPOSE_HEADERS, containsString("Location")))
                 .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS));
+    }
+
+    /**
+     * The browser must be able to read the 401 body: the CorsFilter runs
+     * before authentication, so the rejection still carries CORS headers.
+     */
+    @Test
+    void protectedRequestFromFrontendWithoutTokenIs401ThatTheBrowserCanRead() throws Exception {
+        mockMvc.perform(get("/api/workspaces/{workspaceId}", UUID.randomUUID()).header(HttpHeaders.ORIGIN, FRONTEND))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, FRONTEND))
+                .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS))
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+                .andExpect(jsonPath("$.message").value("Authentication required"));
+
+        verifyNoInteractions(workspaceService);
+    }
+
+    @Test
+    void rejectedTokenFromFrontendIs401ThatTheBrowserCanRead() throws Exception {
+        mockMvc.perform(get("/api/workspaces/{workspaceId}", UUID.randomUUID())
+                        .header(HttpHeaders.ORIGIN, FRONTEND)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer not-a-jwt"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, FRONTEND))
+                .andExpect(jsonPath("$.message").value("Invalid or expired token"));
+
+        verifyNoInteractions(workspaceService);
     }
 
     @Test

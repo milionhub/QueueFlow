@@ -30,7 +30,8 @@ import org.springframework.test.web.servlet.ResultActions;
 import com.queueflow.comment.dto.CommentResponse;
 import com.queueflow.comment.dto.CreateCommentRequest;
 import com.queueflow.comment.dto.UpdateCommentRequest;
-import com.queueflow.config.SecurityConfig;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 
 /**
  * Web-layer slice covering both CommentService-backed controllers
@@ -40,7 +41,8 @@ import com.queueflow.config.SecurityConfig;
  * CommentServiceTest / CommentServiceIntegrationTest, not here.
  */
 @WebMvcTest({CommentController.class, TicketCommentController.class})
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
+@WithAuthenticatedUser
 class CommentControllerTest {
 
     @Autowired

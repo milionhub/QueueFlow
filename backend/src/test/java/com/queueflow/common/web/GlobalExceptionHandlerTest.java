@@ -49,12 +49,13 @@ import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
-import com.queueflow.config.SecurityConfig;
 import com.queueflow.label.LabelController;
 import com.queueflow.label.LabelService;
 import com.queueflow.project.ProjectController;
 import com.queueflow.project.ProjectService;
 import com.queueflow.project.dto.ProjectResponse;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.ticket.ProjectTicketController;
 import com.queueflow.ticket.TicketController;
 import com.queueflow.ticket.TicketService;
@@ -70,7 +71,8 @@ import jakarta.servlet.ServletException;
  * real Spring Framework 7 behavior rather than assumed.
  */
 @WebMvcTest({ProjectController.class, LabelController.class, TicketController.class, ProjectTicketController.class})
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
+@WithAuthenticatedUser
 class GlobalExceptionHandlerTest {
 
     private static final UUID ID = UUID.randomUUID();

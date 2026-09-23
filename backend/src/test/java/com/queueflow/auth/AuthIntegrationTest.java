@@ -258,11 +258,15 @@ class AuthIntegrationTest {
     }
 
     @Test
-    void existingApiStillNeedsNoToken() throws Exception {
+    void theIssuedTokenIsWhatOpensTheRestOfTheApi() throws Exception {
         MvcResult registered = register(email("open"), tag + " Open");
         String workspaceId = read(registered, "$.user.workspaceId");
+        String token = read(registered, "$.accessToken");
 
-        MvcResult members = mockMvc.perform(get("/api/workspaces/{id}/members", workspaceId)).andReturn();
+        assertThat(mockMvc.perform(get("/api/workspaces/{id}/members", workspaceId)).andReturn()
+                .getResponse().getStatus()).isEqualTo(401);
+        MvcResult members = mockMvc.perform(get("/api/workspaces/{id}/members", workspaceId)
+                .header("Authorization", "Bearer " + token)).andReturn();
 
         assertThat(members.getResponse().getStatus()).isEqualTo(200);
         assertThat((List<String>) read(members, "$[*].email")).containsExactly(email("open"));

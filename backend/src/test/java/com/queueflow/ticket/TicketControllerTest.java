@@ -31,8 +31,9 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-import com.queueflow.config.SecurityConfig;
 import com.queueflow.label.dto.LabelResponse;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.ticket.dto.CreateTicketRequest;
 import com.queueflow.ticket.dto.TicketResponse;
 import com.queueflow.ticket.dto.UpdateTicketRequest;
@@ -46,7 +47,8 @@ import com.queueflow.ticket.dto.UpdateTicketRequest;
  * TicketServiceTest (which builds the DTO by hand) cannot prove.
  */
 @WebMvcTest({TicketController.class, ProjectTicketController.class})
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
+@WithAuthenticatedUser
 class TicketControllerTest {
 
     @Autowired

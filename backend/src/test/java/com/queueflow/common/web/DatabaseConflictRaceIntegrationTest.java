@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
@@ -32,6 +33,7 @@ import com.queueflow.label.dto.CreateLabelRequest;
 import com.queueflow.label.dto.LabelResponse;
 import com.queueflow.project.ProjectService;
 import com.queueflow.project.dto.CreateProjectRequest;
+import com.queueflow.security.AccessTokenService;
 import com.queueflow.ticket.TicketPriority;
 import com.queueflow.ticket.TicketService;
 import com.queueflow.ticket.TicketStatus;
@@ -72,6 +74,9 @@ class DatabaseConflictRaceIntegrationTest {
     private MockMvc mockMvc;
 
     @Autowired
+    private AccessTokenService accessTokenService;
+
+    @Autowired
     private LabelService labelService;
 
     @Autowired
@@ -98,12 +103,15 @@ class DatabaseConflictRaceIntegrationTest {
     private final ExecutorService executor = Executors.newFixedThreadPool(2);
     private Workspace workspace;
     private User user;
+    private String bearer;
 
     @BeforeEach
     void setUp() {
         workspace = workspaceRepository.save(new Workspace("Race Workspace " + UUID.randomUUID()));
         user = userRepository.save(new User("Racer", "racer-" + UUID.randomUUID() + "@example.com", "hash",
                 UserRole.MEMBER, workspace));
+        // A real access token for that user: requests B go through bearer authentication.
+        bearer = "Bearer " + accessTokenService.issue(user.getId()).tokenValue();
     }
 
     @AfterEach
@@ -173,6 +181,7 @@ class DatabaseConflictRaceIntegrationTest {
         // B: the real HTTP request for the same name. Its duplicate pre-check
         // cannot see A's row, so its INSERT blocks on the unique index.
         Future<MvcResult> b = executor.submit(() -> mockMvc.perform(post("/api/labels")
+                        .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"workspaceId": "%s", "name": "Race"}
@@ -214,6 +223,7 @@ class DatabaseConflictRaceIntegrationTest {
         // ticket_labels INSERT only happens at COMMIT, where it blocks.
         Future<MvcResult> b = executor.submit(() -> mockMvc.perform(
                         put("/api/tickets/{ticketId}/labels/{labelId}", ticketId, label.id())
+                                .header(HttpHeaders.AUTHORIZATION, bearer)
                                 .param("actorUserId", user.getId().toString()))
                 .andReturn());
         awaitSessionBlockedOnLock();

@@ -69,6 +69,9 @@ class CoreWorkflowIntegrationTest {
 
     private UUID workspaceId;
 
+    /** Alice's access token, sent on every request once she has logged in. */
+    private String accessToken;
+
     @AfterEach
     void cleanUp() {
         if (workspaceId == null) {
@@ -86,6 +89,9 @@ class CoreWorkflowIntegrationTest {
     }
 
     private MvcResult call(MockHttpServletRequestBuilder request, int expectedStatus) throws Exception {
+        if (accessToken != null) {
+            request.header(HttpHeaders.AUTHORIZATION, "Bearer " + accessToken);
+        }
         MvcResult result = mockMvc.perform(request).andReturn();
         assertThat(result.getResponse().getStatus())
                 .as("%s %s -> %s", result.getRequest().getMethod(), result.getRequest().getRequestURI(),
@@ -106,14 +112,22 @@ class CoreWorkflowIntegrationTest {
     void coreWorkflowPersistsServesAndAuditsEverything() throws Exception {
         // --- workspace + members --------------------------------------------
         // Registration creates the workspace and its first user, Alice (ADMIN).
+        String aliceEmail = "Alice-" + UUID.randomUUID() + "@Example.com";
         MvcResult registered = send(post("/api/auth/register"), """
-                {"name": "Alice", "email": "Alice-%s@Example.com", "password": "workflow-password",
+                {"name": "Alice", "email": "%s", "password": "workflow-password",
                  "workspaceName": "Workflow Workspace"}
-                """.formatted(UUID.randomUUID()), 201);
+                """.formatted(aliceEmail), 201);
         workspaceId = UUID.fromString(read(registered, "$.user.workspaceId"));
         UUID aliceId = UUID.fromString(read(registered, "$.user.id"));
         assertThat((String) read(registered, "$.user.role")).isEqualTo("ADMIN");
         assertThat(registered.getResponse().getHeader(HttpHeaders.LOCATION)).endsWith("/api/users/" + aliceId);
+
+        // Every other endpoint needs her access token: log in, then use it throughout.
+        call(get("/api/workspaces/{id}", workspaceId), 401);
+        accessToken = read(send(post("/api/auth/login"), """
+                {"email": "%s", "password": "workflow-password"}
+                """.formatted(aliceEmail), 200), "$.accessToken");
+        assertThat((String) read(call(get("/api/auth/me"), 200), "$.id")).isEqualTo(aliceId.toString());
         assertThat((String) read(call(get("/api/workspaces/{id}", workspaceId), 200), "$.name"))
                 .isEqualTo("Workflow Workspace");
 

@@ -27,9 +27,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
-import com.queueflow.config.SecurityConfig;
 import com.queueflow.label.dto.CreateLabelRequest;
 import com.queueflow.label.dto.LabelResponse;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.ticket.TicketPriority;
 import com.queueflow.ticket.TicketStatus;
 import com.queueflow.ticket.dto.TicketResponse;
@@ -39,12 +40,14 @@ import com.queueflow.ticket.dto.TicketResponse;
  * (LabelController, TicketLabelController and WorkspaceLabelController)
  * with LabelService mocked,
  * same approach as the other controller tests: real MVC mapping, bean
- * validation, JSON serialization and the real (temporary) SecurityConfig.
+ * validation, JSON serialization and the real security filter chain, run
+ * as an authenticated user (@WithAuthenticatedUser).
  * Idempotency and Activity recording are service behavior, covered by
  * LabelServiceTest / LabelServiceIntegrationTest, not here.
  */
 @WebMvcTest({LabelController.class, TicketLabelController.class, WorkspaceLabelController.class})
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
+@WithAuthenticatedUser
 class LabelControllerTest {
 
     @Autowired

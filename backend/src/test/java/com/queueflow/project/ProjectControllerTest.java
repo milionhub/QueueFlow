@@ -28,19 +28,21 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.queueflow.config.SecurityConfig;
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
 import com.queueflow.project.dto.UpdateProjectRequest;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 
 /**
  * Web-layer slice with ProjectService mocked, same approach as
  * WorkspaceControllerTest: real MVC mapping, bean validation, JSON
- * serialization and the real (temporary) SecurityConfig. No request sends
- * credentials or a CSRF token.
+ * serialization and the real security filter chain, run as an
+ * authenticated user (@WithAuthenticatedUser). No request sends a CSRF token.
  */
 @WebMvcTest({ProjectController.class, WorkspaceProjectController.class})
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
+@WithAuthenticatedUser
 class ProjectControllerTest {
 
     @Autowired

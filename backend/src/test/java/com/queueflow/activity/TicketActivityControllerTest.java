@@ -27,7 +27,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.queueflow.activity.dto.ActivityResponse;
-import com.queueflow.config.SecurityConfig;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 
 /**
  * Web-layer slice with ActivityService mocked, same approach as the other
@@ -35,7 +36,8 @@ import com.queueflow.config.SecurityConfig;
  * by ActivityServiceTest / TicketActivityIntegrationTest, not here.
  */
 @WebMvcTest(TicketActivityController.class)
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
+@WithAuthenticatedUser
 class TicketActivityControllerTest {
 
     @Autowired

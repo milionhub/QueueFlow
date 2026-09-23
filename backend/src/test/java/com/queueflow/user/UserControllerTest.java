@@ -21,16 +21,19 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-import com.queueflow.config.SecurityConfig;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.user.dto.UserResponse;
 
 /**
  * Web-layer slice with UserService mocked. Same approach as
  * WorkspaceControllerTest: real MVC mapping, JSON serialization and the
- * real (temporary) SecurityConfig.
+ * real security filter chain, run as an authenticated user
+ * (@WithAuthenticatedUser).
  */
 @WebMvcTest({UserController.class, WorkspaceMemberController.class})
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
+@WithAuthenticatedUser
 class UserControllerTest {
 
     @Autowired

@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -31,17 +32,20 @@ import com.queueflow.auth.dto.LoginRequest;
 import com.queueflow.auth.dto.RegisterRequest;
 import com.queueflow.common.exception.InvalidCredentialsException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
-import com.queueflow.config.SecurityConfig;
+import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.user.UserRole;
+import com.queueflow.user.UserService;
 import com.queueflow.user.dto.UserResponse;
 
 /**
  * Web slice for the auth endpoints: routing, JSON shape, bean validation,
- * status codes and error bodies through the real SecurityConfig (both
- * endpoints are reachable without credentials), with AuthService mocked.
+ * status codes and error bodies through the real security filter chain,
+ * with AuthService and UserService mocked. Register and login are public;
+ * /me requires an authenticated caller.
  */
 @WebMvcTest(AuthController.class)
-@Import(SecurityConfig.class)
+@Import(WebSecurityTestConfiguration.class)
 class AuthControllerTest {
 
     private static final String PASSWORD = "s3cret-Pa55word";
@@ -51,6 +55,9 @@ class AuthControllerTest {
 
     @MockitoBean
     private AuthService authService;
+
+    @MockitoBean
+    private UserService userService;
 
     private static AuthResponse authResponse(UUID userId, UUID workspaceId) {
         OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30.123456Z");
@@ -192,7 +199,44 @@ class AuthControllerTest {
     }
 
     @Test
-    void thereIsNoMeEndpointYet() throws Exception {
-        mockMvc.perform(get("/api/auth/me")).andExpect(status().isNotFound());
+    void meRequiresAuthentication() throws Exception {
+        mockMvc.perform(get("/api/auth/me"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+                .andExpect(jsonPath("$.message").value("Authentication required"))
+                .andExpect(jsonPath("$.path").value("/api/auth/me"));
+
+        verifyNoInteractions(userService);
+    }
+
+    /** "Me" is whoever the principal is: a userId query parameter cannot choose someone else. */
+    @Test
+    @WithAuthenticatedUser(role = UserRole.MEMBER)
+    void meReturnsTheAuthenticatedUsersProfile() throws Exception {
+        UUID me = UUID.fromString(WithAuthenticatedUser.USER_ID);
+        UUID workspaceId = UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID);
+        OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
+        when(userService.getById(me)).thenReturn(
+                new UserResponse(me, "Ada", "ada@example.com", UserRole.MEMBER, workspaceId, timestamp, timestamp));
+
+        mockMvc.perform(get("/api/auth/me").param("userId", UUID.randomUUID().toString()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(me.toString()))
+                .andExpect(jsonPath("$.workspaceId").value(workspaceId.toString()))
+                .andExpect(jsonPath("$.role").value("MEMBER"))
+                .andExpect(content().string(not(containsString("password"))));
+
+        verify(userService).getById(me);
+    }
+
+    @Test
+    void registerAndLoginIgnoreAnyTokenSent() throws Exception {
+        // Public endpoints: a stale or garbage token must not block logging in again.
+        when(authService.login(any())).thenReturn(authResponse(UUID.randomUUID(), UUID.randomUUID()));
+
+        mockMvc.perform(json(post("/api/auth/login"), """
+                        {"email": "ada@example.com", "password": "%s"}
+                        """.formatted(PASSWORD)).header(HttpHeaders.AUTHORIZATION, "Bearer expired-or-garbage"))
+                .andExpect(status().isOk());
     }
 }
