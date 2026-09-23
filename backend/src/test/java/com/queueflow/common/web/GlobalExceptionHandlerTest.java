@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
@@ -350,20 +351,56 @@ class GlobalExceptionHandlerTest {
     }
 
     // ---------------------------------------------------------------
-    // Not owned by this advice (yet)
+    // 1.8D: database integrity failures
     // ---------------------------------------------------------------
 
-    @Test
-    void dataIntegrityViolationIsDeliberatelyNotHandledYet() {
-        when(projectService.create(any())).thenThrow(new DataIntegrityViolationException("duplicate key"));
+    /** Same shape as the real chain: Spring -> Hibernate -> JDBC driver with a SQLSTATE. */
+    private static DataIntegrityViolationException integrityFailure(String sqlState) {
+        return new DataIntegrityViolationException("could not execute statement [uq_labels_workspace_name]",
+                new RuntimeException("hibernate ConstraintViolationException",
+                        new SQLException("ERROR: duplicate key value violates unique constraint \"uq_x\"", sqlState)));
+    }
 
-        // No @ExceptionHandler claims it (database races are a later 1.8
-        // step), so it propagates out of MVC unresolved - MockMvc rethrows it.
-        assertThatThrownBy(() -> mockMvc.perform(post("/api/projects")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"workspaceId": "%s", "name": "QueueFlow", "key": "QF"}
-                                """.formatted(ID))))
+    private void postProjectExpecting(DataIntegrityViolationException exception) {
+        when(projectService.create(any())).thenThrow(exception);
+    }
+
+    private ResultActions postProject() throws Exception {
+        return mockMvc.perform(post("/api/projects")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {"workspaceId": "%s", "name": "QueueFlow", "key": "QF"}
+                        """.formatted(ID)));
+    }
+
+    @Test
+    void uniqueViolationRaceBecomes409WithAGenericSafeMessage() throws Exception {
+        postProjectExpecting(integrityFailure("23505"));
+
+        MvcResult result = expectApiError(postProject(),
+                409, "Conflict", "Resource conflicts with existing data", "/api/projects");
+
+        // Nothing from the database leaks: no SQL, constraint or table names, no driver text.
+        assertThat(result.getResponse().getContentAsString())
+                .doesNotContain("uq_", "constraint", "duplicate key", "SQL", "ERROR", "hibernate", "labels");
+    }
+
+    @Test
+    void nonUniqueIntegrityFailureIsDeclinedAndStaysUnhandled() {
+        // Foreign-key violation (23503): an application bug, not a client
+        // conflict - the handler rethrows it, so it escapes MVC unresolved.
+        postProjectExpecting(integrityFailure("23503"));
+
+        assertThatThrownBy(this::postProject)
+                .isInstanceOf(ServletException.class)
+                .hasCauseInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void integrityFailureWithoutAnySqlStateIsDeclinedAndStaysUnhandled() {
+        postProjectExpecting(new DataIntegrityViolationException("duplicate key"));
+
+        assertThatThrownBy(this::postProject)
                 .isInstanceOf(ServletException.class)
                 .hasCauseInstanceOf(DataIntegrityViolationException.class);
     }

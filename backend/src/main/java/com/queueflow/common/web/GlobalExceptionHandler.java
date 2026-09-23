@@ -3,6 +3,7 @@ package com.queueflow.common.web;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -37,12 +38,11 @@ import jakarta.servlet.http.HttpServletRequest;
  * cannot be related (InvalidRelationshipException, 400) and actions the
  * acting user may not perform (ForbiddenOperationException, 403).
  *
- * <ul>
- *   <li>DataIntegrityViolationException (database uniqueness races) is not
- *       handled yet - a following 1.8 step.</li>
- *   <li>There is deliberately no catch-all Exception handler, so unexpected
- *       failures are not disguised as intentional API errors.</li>
- * </ul>
+ * Unexpected failures deliberately keep Spring's default handling: there is
+ * no catch-all Exception/RuntimeException/Throwable handler, and a database
+ * integrity failure other than a unique-violation race is declined (see
+ * {@link #handleDataIntegrity}), so programming errors and broken
+ * invariants are never disguised as intentional client errors.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -60,6 +60,28 @@ public class GlobalExceptionHandler {
     ResponseEntity<ApiErrorResponse> handleAlreadyExists(ResourceAlreadyExistsException exception,
             HttpServletRequest request) {
         return error(HttpStatus.CONFLICT, exception.getMessage(), request);
+    }
+
+    /**
+     * A unique constraint rejected a concurrent duplicate that got past the
+     * service's own pre-check (which, when it does catch the duplicate,
+     * throws ResourceAlreadyExistsException with a specific message). The
+     * message here is deliberately generic: nothing from the database
+     * (SQL, table or constraint names, error text) is exposed.
+     *
+     * Every other integrity failure (foreign key, not-null, check, ...)
+     * means an application bug or broken invariant, not a client conflict,
+     * so this handler declines it by rethrowing the same exception: Spring
+     * then treats it as unresolved and it follows the normal unexpected-error
+     * path (HTTP 500), exactly as if this handler did not exist.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ResponseEntity<ApiErrorResponse> handleDataIntegrity(DataIntegrityViolationException exception,
+            HttpServletRequest request) {
+        if (!DatabaseConflicts.isUniqueViolation(exception)) {
+            throw exception;
+        }
+        return error(HttpStatus.CONFLICT, "Resource conflicts with existing data", request);
     }
 
     /** "The requested business value/state is invalid." */
