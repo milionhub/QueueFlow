@@ -8,7 +8,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
-import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
@@ -21,6 +20,7 @@ import com.queueflow.ticket.dto.TicketResponse;
 import com.queueflow.user.User;
 import com.queueflow.user.UserRepository;
 import com.queueflow.workspace.Workspace;
+import com.queueflow.workspace.WorkspaceAccess;
 import com.queueflow.workspace.WorkspaceRepository;
 
 @Service
@@ -41,19 +41,19 @@ public class LabelService {
         this.activityService = activityService;
     }
 
+    /** Always created in the caller's workspace: the request cannot choose another. */
     @Transactional
-    public LabelResponse create(CreateLabelRequest request) {
+    public LabelResponse create(AuthenticatedUser actor, CreateLabelRequest request) {
         String normalizedName = normalizeName(request.name());
-
-        Workspace workspace = workspaceRepository.findById(request.workspaceId())
-                .orElseThrow(() -> new ResourceNotFoundException("Workspace not found: " + request.workspaceId()));
 
         // Business-level pre-check for a clean error on the normal path.
         // Not the concurrency guarantee - labels.UNIQUE(workspace_id, name)
         // remains the final protection, same reasoning as ProjectService.
-        if (labelRepository.existsByWorkspaceIdAndName(request.workspaceId(), normalizedName)) {
+        if (labelRepository.existsByWorkspaceIdAndName(actor.workspaceId(), normalizedName)) {
             throw new ResourceAlreadyExistsException("Label already exists in workspace: " + normalizedName);
         }
+        // A reference, no query: the caller's workspace was loaded to authenticate them.
+        Workspace workspace = workspaceRepository.getReferenceById(actor.workspaceId());
 
         Label label = new Label(normalizedName, workspace);
         Label saved = labelRepository.save(label);
@@ -61,48 +61,45 @@ public class LabelService {
     }
 
     @Transactional(readOnly = true)
-    public LabelResponse getById(UUID labelId) {
-        Label label = labelRepository.findById(labelId)
+    public LabelResponse getById(AuthenticatedUser actor, UUID labelId) {
+        Label label = labelRepository.findByIdAndWorkspaceId(labelId, actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Label not found: " + labelId));
         return LabelResponse.from(label);
     }
 
+    /** Names are unique per workspace, so the name is looked up in the caller's workspace only. */
     @Transactional(readOnly = true)
-    public LabelResponse getByWorkspaceAndName(UUID workspaceId, String name) {
+    public LabelResponse getByName(AuthenticatedUser actor, String name) {
         String normalizedName = normalizeName(name);
-        Label label = labelRepository.findByWorkspaceIdAndName(workspaceId, normalizedName)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Label not found in workspace " + workspaceId + " with name: " + normalizedName));
+        Label label = labelRepository.findByWorkspaceIdAndName(actor.workspaceId(), normalizedName)
+                .orElseThrow(() -> new ResourceNotFoundException("Label not found with name: " + normalizedName));
         return LabelResponse.from(label);
     }
 
     /**
      * All labels in a workspace, ordered case-insensitively by name
-     * (see the repository query for tie-breaking). An unknown
-     * workspace is a not-found error, never a silent empty list.
+     * (see the repository query for tie-breaking). Any workspace other than
+     * the caller's is not found, never a silent empty list.
      */
     @Transactional(readOnly = true)
-    public List<LabelResponse> getByWorkspace(UUID workspaceId) {
-        if (!workspaceRepository.existsById(workspaceId)) {
-            throw new ResourceNotFoundException("Workspace not found: " + workspaceId);
-        }
-        return labelRepository.findAllInWorkspaceSortedByName(workspaceId).stream()
+    public List<LabelResponse> getByWorkspace(AuthenticatedUser actor, UUID workspaceId) {
+        WorkspaceAccess.requireOwnWorkspace(actor, workspaceId);
+        return labelRepository.findAllInWorkspaceSortedByName(actor.workspaceId()).stream()
                 .map(LabelResponse::from)
                 .toList();
     }
 
     @Transactional
     public TicketResponse addLabelToTicket(AuthenticatedUser actor, UUID ticketId, UUID labelId) {
-        Ticket ticket = ticketRepository.findById(ticketId)
+        // Both sides are looked up inside the caller's workspace, ticket
+        // first: anything outside it is simply not found, and each message
+        // names only the id the caller sent.
+        Ticket ticket = ticketRepository.findByIdAndProjectWorkspaceId(ticketId, actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
-        Label label = labelRepository.findById(labelId)
+        Label label = labelRepository.findByIdAndWorkspaceId(labelId, actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Label not found: " + labelId));
-
-        // Permission first: an actor from outside the ticket's workspace is
-        // refused (403) before the request's label is even considered.
-        requireActorSameWorkspace(ticket, actor);
-        User actingUser = userRepository.getReferenceById(actor.userId());
         requireSameWorkspace(ticket, label);
+        User actingUser = userRepository.getReferenceById(actor.userId());
 
         // Idempotent by design (see Ticket.addLabel): attaching an
         // already-attached label is a no-op, not an error - and no
@@ -121,16 +118,15 @@ public class LabelService {
 
     @Transactional
     public TicketResponse removeLabelFromTicket(AuthenticatedUser actor, UUID ticketId, UUID labelId) {
-        Ticket ticket = ticketRepository.findById(ticketId)
+        // Both sides are looked up inside the caller's workspace, ticket
+        // first: anything outside it is simply not found, and each message
+        // names only the id the caller sent.
+        Ticket ticket = ticketRepository.findByIdAndProjectWorkspaceId(ticketId, actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
-        Label label = labelRepository.findById(labelId)
+        Label label = labelRepository.findByIdAndWorkspaceId(labelId, actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Label not found: " + labelId));
-
-        // Permission first: an actor from outside the ticket's workspace is
-        // refused (403) before the request's label is even considered.
-        requireActorSameWorkspace(ticket, actor);
-        User actingUser = userRepository.getReferenceById(actor.userId());
         requireSameWorkspace(ticket, label);
+        User actingUser = userRepository.getReferenceById(actor.userId());
 
         boolean changed = ticket.removeLabel(label);
         if (changed) {
@@ -140,18 +136,15 @@ public class LabelService {
         return TicketResponse.from(ticket);
     }
 
+    /**
+     * Internal safeguard, unreachable through the API: both sides were found
+     * in the caller's workspace, so they always match.
+     */
     private static void requireSameWorkspace(Ticket ticket, Label label) {
         UUID ticketWorkspaceId = ticket.getProject().getWorkspace().getId();
         UUID labelWorkspaceId = label.getWorkspace().getId();
         if (!ticketWorkspaceId.equals(labelWorkspaceId)) {
             throw new InvalidRelationshipException("Label must belong to the same workspace as the ticket");
-        }
-    }
-
-    private static void requireActorSameWorkspace(Ticket ticket, AuthenticatedUser actor) {
-        UUID ticketWorkspaceId = ticket.getProject().getWorkspace().getId();
-        if (!ticketWorkspaceId.equals(actor.workspaceId())) {
-            throw new ForbiddenOperationException("Actor must belong to the same workspace as the ticket");
         }
     }
 

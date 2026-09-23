@@ -3,24 +3,26 @@ package com.queueflow.user;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.queueflow.config.OpenApiConfig;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.user.dto.UserResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * A workspace's members (its users), addressed as a sub-resource of the
- * workspace. Read-only: inviting, role changes and removal belong to
- * Phase 2. Returns the service's list as-is: ordering (name, then id) and
- * the unknown-workspace check both live in UserService. UserResponse never
- * carries passwordHash.
+ * workspace. Read-only. Returns the service's list as-is: ordering (name,
+ * then id) and the own-workspace check both live in UserService.
+ * UserResponse never carries passwordHash.
  */
 @Tag(name = "Users")
 @RestController
@@ -38,7 +40,8 @@ public class WorkspaceMemberController {
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping
-    public List<UserResponse> getByWorkspace(@PathVariable UUID workspaceId) {
-        return userService.getByWorkspace(workspaceId);
+    public List<UserResponse> getByWorkspace(@AuthenticationPrincipal AuthenticatedUser actor,
+            @Parameter(description = OpenApiConfig.OWN_WORKSPACE_ID) @PathVariable UUID workspaceId) {
+        return userService.getByWorkspace(actor, workspaceId);
     }
 }

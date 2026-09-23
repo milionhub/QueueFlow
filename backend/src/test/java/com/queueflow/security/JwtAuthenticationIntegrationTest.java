@@ -229,8 +229,8 @@ class JwtAuthenticationIntegrationTest {
     @Test
     void rejectedWriteHasNoSideEffect() throws Exception {
         String body = """
-                {"workspaceId": "%s", "name": "Should not exist", "key": "NOPE"}
-                """.formatted(workspaceId);
+                {"name": "Should not exist", "key": "NOPE"}
+                """;
 
         assertUnauthorized(perform(post("/api/projects").contentType(MediaType.APPLICATION_JSON).content(body)),
                 "Authentication required", "Bearer");

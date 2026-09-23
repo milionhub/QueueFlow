@@ -14,5 +14,6 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
      * same created_at. id (a time-ordered uuidv7) is the tie-breaker that
      * makes the order among those rows deterministic.
      */
+    /** Only called for a ticket already resolved inside the caller's workspace. */
     List<Activity> findByTicketIdOrderByCreatedAtAscIdAsc(UUID ticketId);
 }

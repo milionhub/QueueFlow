@@ -85,8 +85,8 @@ class ActingIdentityIntegrationTest {
         pedroToken = accessTokenService.issue(pedroId).tokenValue();
 
         projectId = UUID.fromString(read(perform(juanToken, post("/api/projects"), """
-                {"workspaceId": "%s", "name": "Identity", "key": "IDN"}
-                """.formatted(workspaceId)), "$.id"));
+                {"name": "Identity", "key": "IDN"}
+                """), "$.id"));
         ticketId = UUID.fromString(read(perform(juanToken, post("/api/tickets"), """
                 {"projectId": "%s", "title": "Setup ticket", "status": "TODO", "priority": "LOW"}
                 """.formatted(projectId)), "$.id"));
@@ -152,8 +152,8 @@ class ActingIdentityIntegrationTest {
     @Test
     void labelActivityIsAttributedToTheTokensUser() throws Exception {
         UUID labelId = UUID.fromString(read(perform(juanToken, post("/api/labels"), """
-                {"workspaceId": "%s", "name": "urgent"}
-                """.formatted(workspaceId)), "$.id"));
+                {"name": "urgent"}
+                """), "$.id"));
         String path = "/api/tickets/{ticketId}/labels/{labelId}";
 
         perform(juanToken, put(path, ticketId, labelId).param("actorUserId", pedroId.toString()), null);
@@ -193,12 +193,13 @@ class ActingIdentityIntegrationTest {
     }
 
     // ------------------------------------------------------------------
-    // Existing workspace rules, now applied to the authenticated user.
-    // Temporary status codes: the workspace isolation step replaces them.
+    // Another workspace's resources do not exist for this caller (404), and
+    // writes against them change nothing. WorkspaceIsolationIntegrationTest
+    // covers isolation in depth.
     // ------------------------------------------------------------------
 
     @Test
-    void usersOfAnotherWorkspaceKeepGettingTheExistingRejections() throws Exception {
+    void anotherWorkspaceCannotActOnTheseResources() throws Exception {
         MvcResult other = perform(null, post("/api/auth/register"), """
                 {"name": "Olga", "email": "%s-olga@example.com", "password": "olga-Pa55word",
                  "workspaceName": "%s"}
@@ -206,17 +207,17 @@ class ActingIdentityIntegrationTest {
         workspaces.add(UUID.fromString(read(other, "$.user.workspaceId")));
         String outsider = read(other, "$.accessToken");
         UUID labelId = UUID.fromString(read(perform(juanToken, post("/api/labels"), """
-                {"workspaceId": "%s", "name": "bug"}
-                """.formatted(workspaceId)), "$.id"));
+                {"name": "bug"}
+                """), "$.id"));
 
         assertThat(status(outsider, post("/api/tickets"), """
                 {"projectId": "%s", "title": "x", "status": "TODO", "priority": "LOW"}
-                """.formatted(projectId))).isEqualTo(400);
-        assertThat(status(outsider, patch("/api/tickets/{id}", ticketId), "{\"status\": \"DONE\"}")).isEqualTo(403);
-        assertThat(status(outsider, put("/api/tickets/{t}/labels/{l}", ticketId, labelId), null)).isEqualTo(403);
+                """.formatted(projectId))).isEqualTo(404);
+        assertThat(status(outsider, patch("/api/tickets/{id}", ticketId), "{\"status\": \"DONE\"}")).isEqualTo(404);
+        assertThat(status(outsider, put("/api/tickets/{t}/labels/{l}", ticketId, labelId), null)).isEqualTo(404);
         assertThat(status(outsider, post("/api/comments"), """
                 {"ticketId": "%s", "content": "x"}
-                """.formatted(ticketId))).isEqualTo(400);
+                """.formatted(ticketId))).isEqualTo(404);
 
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM tickets WHERE project_id = ?", Integer.class,
                 projectId)).isEqualTo(1);

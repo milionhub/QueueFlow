@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,6 +19,7 @@ import com.queueflow.config.OpenApiConfig;
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
 import com.queueflow.project.dto.UpdateProjectRequest;
+import com.queueflow.security.AuthenticatedUser;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -43,14 +45,14 @@ public class ProjectController {
     }
 
     @Operation(summary = "Create a project", operationId = "createProject",
-            description = "The key is trimmed and upper-cased, must then be 2-10 characters of A-Z and 0-9, is "
-                    + "unique within the workspace and cannot be changed later.")
+            description = "Created in the caller's workspace. The key is trimmed and upper-cased, must then be "
+                    + "2-10 characters of A-Z and 0-9, is unique within the workspace and cannot be changed later.")
     @ApiResponse(responseCode = "201", description = "Project created", useReturnTypeSchema = true)
-    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @ApiResponse(responseCode = "409", ref = OpenApiConfig.CONFLICT)
     @PostMapping
-    public ResponseEntity<ProjectResponse> create(@Valid @RequestBody CreateProjectRequest request) {
-        ProjectResponse response = projectService.create(request);
+    public ResponseEntity<ProjectResponse> create(@AuthenticationPrincipal AuthenticatedUser actor,
+            @Valid @RequestBody CreateProjectRequest request) {
+        ProjectResponse response = projectService.create(actor, request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{projectId}")
                 .buildAndExpand(response.id())
@@ -62,16 +64,16 @@ public class ProjectController {
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/{projectId}")
-    public ProjectResponse getById(@PathVariable UUID projectId) {
-        return projectService.getById(projectId);
+    public ProjectResponse getById(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID projectId) {
+        return projectService.getById(actor, projectId);
     }
 
     /**
      * Partial update of name and/or description only - the key is
      * immutable. UpdateProjectRequest is a setter-based class (not a
      * record) so Jackson keeps an omitted description distinct from an
-     * explicit null. No actor yet: Phase 2 authorization decides who may
-     * edit a project.
+     * explicit null. Any member of the project's workspace may currently
+     * edit it (role rules are not applied yet).
      */
     @Operation(summary = "Update a project", operationId = "updateProject",
             description = "Partial update of name and description only; the key is immutable. Omit a field to leave "
@@ -79,16 +81,18 @@ public class ProjectController {
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @PatchMapping("/{projectId}")
-    public ProjectResponse update(@PathVariable UUID projectId, @Valid @RequestBody UpdateProjectRequest request) {
-        return projectService.update(projectId, request);
+    public ProjectResponse update(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID projectId,
+            @Valid @RequestBody UpdateProjectRequest request) {
+        return projectService.update(actor, projectId, request);
     }
 
-    @Operation(summary = "Get a project by workspace and key", operationId = "getProjectByKey")
+    @Operation(summary = "Get a project by key", operationId = "getProjectByKey",
+            description = "Looks the key up in the caller's workspace.")
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/by-key")
-    public ProjectResponse getByWorkspaceAndKey(@RequestParam UUID workspaceId,
+    public ProjectResponse getByKey(@AuthenticationPrincipal AuthenticatedUser actor,
             @Parameter(description = "Project key; trimmed and upper-cased before lookup") @RequestParam String key) {
-        return projectService.getByWorkspaceAndKey(workspaceId, key);
+        return projectService.getByKey(actor, key);
     }
 }

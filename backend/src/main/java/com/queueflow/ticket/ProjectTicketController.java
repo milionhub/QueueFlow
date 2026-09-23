@@ -3,12 +3,14 @@ package com.queueflow.ticket;
 import java.util.List;
 import java.util.UUID;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.queueflow.config.OpenApiConfig;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.dto.TicketResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,16 +42,17 @@ public class ProjectTicketController {
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping
-    public List<TicketResponse> getByProject(@PathVariable UUID projectId) {
-        return ticketService.getByProject(projectId);
+    public List<TicketResponse> getByProject(@AuthenticationPrincipal AuthenticatedUser actor,
+            @PathVariable UUID projectId) {
+        return ticketService.getByProject(actor, projectId);
     }
 
     @Operation(summary = "Get a ticket by project and number", operationId = "getTicketByNumber")
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/{ticketNumber}")
-    public TicketResponse getByNumber(@PathVariable UUID projectId,
+    public TicketResponse getByNumber(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID projectId,
             @Parameter(description = "Per-project ticket number, e.g. 7 for CORE-7") @PathVariable long ticketNumber) {
-        return ticketService.getByProjectAndNumber(projectId, ticketNumber);
+        return ticketService.getByProjectAndNumber(actor, projectId, ticketNumber);
     }
 }

@@ -1,6 +1,7 @@
 package com.queueflow.label;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -81,7 +82,7 @@ class LabelControllerTest {
                         .content(json))
                 .andExpect(status().isBadRequest());
 
-        verify(labelService, never()).create(any());
+        verify(labelService, never()).create(any(), any());
     }
 
     // ---------------------------------------------------------------
@@ -92,13 +93,13 @@ class LabelControllerTest {
     void postValidRequestReturns201WithBodyAndLocation() throws Exception {
         UUID id = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
-        when(labelService.create(any())).thenReturn(labelResponse(id, "Backend", workspaceId));
+        when(labelService.create(eq(ACTOR), any())).thenReturn(labelResponse(id, "Backend", workspaceId));
 
         mockMvc.perform(post("/api/labels")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workspaceId": "%s", "name": "Backend"}
-                                """.formatted(workspaceId)))
+                                {"name": "Backend"}
+                                """))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "http://localhost/api/labels/" + id))
                 .andExpect(jsonPath("$.id").value(id.toString()))
@@ -112,39 +113,53 @@ class LabelControllerTest {
     @Test
     void postDelegatesExactRawRequestToService() throws Exception {
         UUID workspaceId = UUID.randomUUID();
-        when(labelService.create(any())).thenReturn(labelResponse(UUID.randomUUID(), "Backend", workspaceId));
+        when(labelService.create(eq(ACTOR), any()))
+                .thenReturn(labelResponse(UUID.randomUUID(), "Backend", workspaceId));
 
         mockMvc.perform(post("/api/labels")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workspaceId": "%s", "name": "  BackEnd  "}
-                                """.formatted(workspaceId)))
+                                {"name": "  BackEnd  "}
+                                """))
                 .andExpect(status().isCreated());
 
         // Name arrives untrimmed and with its original case: normalization
         // is LabelService's job.
-        verify(labelService).create(new CreateLabelRequest(workspaceId, "  BackEnd  "));
+        verify(labelService).create(ACTOR, new CreateLabelRequest("  BackEnd  "));
     }
 
     @Test
     void postBlankNameIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"workspaceId": "%s", "name": "   "}
-                """.formatted(UUID.randomUUID()));
+                {"name": "   "}
+                """);
     }
 
+    /**
+     * There is no workspace input: labels are created in the caller's
+     * workspace. A leftover workspaceId in the body is ignored like any
+     * unknown JSON property and cannot reach the service.
+     */
     @Test
-    void postMissingWorkspaceIdIsRejectedWithoutCallingService() throws Exception {
-        postExpectingBadRequest("""
-                {"name": "Backend"}
-                """);
+    void postCreatesInTheCallersWorkspaceWhateverWorkspaceIdIsSent() throws Exception {
+        when(labelService.create(eq(ACTOR), any()))
+                .thenReturn(labelResponse(UUID.randomUUID(), "Bug", UUID.randomUUID()));
+
+        mockMvc.perform(post("/api/labels")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workspaceId": "%s", "name": "Bug"}
+                                """.formatted(UUID.randomUUID())))
+                .andExpect(status().isCreated());
+
+        verify(labelService).create(ACTOR, new CreateLabelRequest("Bug"));
     }
 
     @Test
     void postOversizedNameIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"workspaceId": "%s", "name": "%s"}
-                """.formatted(UUID.randomUUID(), "a".repeat(51)));
+                {"name": "%s"}
+                """.formatted("a".repeat(51)));
     }
 
     // ---------------------------------------------------------------
@@ -155,7 +170,7 @@ class LabelControllerTest {
     void getByIdReturns200WithExpectedJsonAndDelegatesExactUuid() throws Exception {
         UUID id = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
-        when(labelService.getById(id)).thenReturn(labelResponse(id, "Backend", workspaceId));
+        when(labelService.getById(ACTOR, id)).thenReturn(labelResponse(id, "Backend", workspaceId));
 
         mockMvc.perform(get("/api/labels/{labelId}", id))
                 .andExpect(status().isOk())
@@ -164,21 +179,20 @@ class LabelControllerTest {
                 .andExpect(jsonPath("$.workspaceId").value(workspaceId.toString()))
                 .andExpect(jsonPath("$.workspace").doesNotExist());
 
-        verify(labelService).getById(id);
+        verify(labelService).getById(ACTOR, id);
     }
 
     @Test
-    void getByNameReturns200AndDelegatesExactWorkspaceIdAndRawName() throws Exception {
+    void getByNameReturns200AndDelegatesTheRawNameForTheCallersWorkspace() throws Exception {
         UUID id = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
         // Mixed case with surrounding spaces: if the controller trimmed or
         // changed case, this stub would not match and verify would fail.
         String rawName = "  BackEnd ";
-        when(labelService.getByWorkspaceAndName(workspaceId, rawName))
+        when(labelService.getByName(ACTOR, rawName))
                 .thenReturn(labelResponse(id, "BackEnd", workspaceId));
 
         mockMvc.perform(get("/api/labels/by-name")
-                        .param("workspaceId", workspaceId.toString())
                         .param("name", rawName))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id.toString()))
@@ -186,7 +200,7 @@ class LabelControllerTest {
 
         // Also proves "/by-name" is routed to the literal mapping, never
         // captured by "/{labelId}" as a (bad) UUID path variable.
-        verify(labelService).getByWorkspaceAndName(workspaceId, rawName);
+        verify(labelService).getByName(ACTOR, rawName);
         verifyNoMoreInteractions(labelService);
     }
 
@@ -275,7 +289,7 @@ class LabelControllerTest {
         UUID urgent = UUID.randomUUID();
         UUID bug = UUID.randomUUID();
         // Deliberately not name-sorted: the controller must not re-sort.
-        when(labelService.getByWorkspace(workspaceId)).thenReturn(List.of(
+        when(labelService.getByWorkspace(ACTOR, workspaceId)).thenReturn(List.of(
                 labelResponse(urgent, "urgent", workspaceId), labelResponse(bug, "bug", workspaceId)));
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/labels", workspaceId))
@@ -288,14 +302,14 @@ class LabelControllerTest {
                 .andExpect(jsonPath("$[0].workspaceId").value(workspaceId.toString()))
                 .andExpect(jsonPath("$[*].workspace").doesNotExist());
 
-        verify(labelService).getByWorkspace(workspaceId);
+        verify(labelService).getByWorkspace(ACTOR, workspaceId);
         verifyNoMoreInteractions(labelService);
     }
 
     @Test
     void listByWorkspaceWithNoLabelsReturns200EmptyArray() throws Exception {
         UUID workspaceId = UUID.randomUUID();
-        when(labelService.getByWorkspace(workspaceId)).thenReturn(List.of());
+        when(labelService.getByWorkspace(ACTOR, workspaceId)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/labels", workspaceId))
                 .andExpect(status().isOk())
@@ -307,6 +321,6 @@ class LabelControllerTest {
         mockMvc.perform(get("/api/workspaces/{workspaceId}/labels", "not-a-uuid"))
                 .andExpect(status().isBadRequest());
 
-        verify(labelService, never()).getByWorkspace(any());
+        verify(labelService, never()).getByWorkspace(any(), any());
     }
 }

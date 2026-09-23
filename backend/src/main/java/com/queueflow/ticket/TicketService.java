@@ -11,7 +11,6 @@ import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
 import com.queueflow.common.PatchField;
 import com.queueflow.common.exception.BusinessRuleViolationException;
-import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
@@ -51,20 +50,14 @@ public class TicketService {
         // request never blocks concurrent ticket creation on that project.
         String title = validatedTitle(request.title());
 
-        Project project = projectRepository.findByIdForUpdate(request.projectId())
+        // Only a project of the caller's workspace can be found - and locked.
+        Project project = projectRepository.findByIdAndWorkspaceIdForUpdate(request.projectId(), actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + request.projectId()));
-
-        // Existing rule, now applied to the authenticated creator (the
-        // workspace-wide access policy, and its status code, come later).
-        if (!project.getWorkspace().getId().equals(actor.workspaceId())) {
-            throw new InvalidRelationshipException("Creator must belong to the same workspace as the project");
-        }
         User creator = actingUser(actor);
 
         User assignee = null;
         if (request.assigneeId() != null) {
-            assignee = userRepository.findById(request.assigneeId())
-                    .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.assigneeId()));
+            assignee = visibleUser(actor, request.assigneeId());
             if (!inSameWorkspace(project, assignee)) {
                 throw new InvalidRelationshipException("Assignee must belong to the same workspace as the project");
             }
@@ -94,14 +87,14 @@ public class TicketService {
     }
 
     @Transactional(readOnly = true)
-    public TicketResponse getById(UUID ticketId) {
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
-        return TicketResponse.from(ticket);
+    public TicketResponse getById(AuthenticatedUser actor, UUID ticketId) {
+        return TicketResponse.from(visibleTicket(actor, ticketId));
     }
 
+    /** The project is resolved in the caller's workspace first; only then its ticket numbers. */
     @Transactional(readOnly = true)
-    public TicketResponse getByProjectAndNumber(UUID projectId, long ticketNumber) {
+    public TicketResponse getByProjectAndNumber(AuthenticatedUser actor, UUID projectId, long ticketNumber) {
+        requireVisibleProject(actor, projectId);
         Ticket ticket = ticketRepository.findByProjectIdAndTicketNumber(projectId, ticketNumber)
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Ticket not found: project " + projectId + ", number " + ticketNumber));
@@ -109,16 +102,14 @@ public class TicketService {
     }
 
     /**
-     * All tickets in a project, ordered by ticket number. An unknown
-     * project is a not-found error, never a silent empty list. Mapping
+     * All tickets in a project, ordered by ticket number. An unknown or
+     * foreign project is a not-found error, never a silent empty list. Mapping
      * happens here, inside the transaction, because TicketResponse reads
      * the (lazy) project's key for displayKey/projectKey.
      */
     @Transactional(readOnly = true)
-    public List<TicketResponse> getByProject(UUID projectId) {
-        if (!projectRepository.existsById(projectId)) {
-            throw new ResourceNotFoundException("Project not found: " + projectId);
-        }
+    public List<TicketResponse> getByProject(AuthenticatedUser actor, UUID projectId) {
+        requireVisibleProject(actor, projectId);
         return ticketRepository.findByProjectIdOrderByTicketNumberAsc(projectId).stream()
                 .map(TicketResponse::from)
                 .toList();
@@ -127,14 +118,7 @@ public class TicketService {
     /** Every activity this update records is attributed to the acting user. */
     @Transactional
     public TicketResponse update(AuthenticatedUser actor, UUID ticketId, UpdateTicketRequest request) {
-        Ticket ticket = ticketRepository.findById(ticketId)
-                .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
-
-        // Permission check first: an actor from outside the ticket's
-        // workspace may not mutate it at all, whatever the request contains.
-        if (!ticket.getProject().getWorkspace().getId().equals(actor.workspaceId())) {
-            throw new ForbiddenOperationException("Actor must belong to the same workspace as the ticket");
-        }
+        Ticket ticket = visibleTicket(actor, ticketId);
         User actingUser = actingUser(actor);
 
         if (request.getTitle() != null) {
@@ -189,8 +173,7 @@ public class TicketService {
                     activityService.recordActivity(
                             ActivityType.ASSIGNEE_CHANGED, oldAssigneeId.toString(), null, ticket, actingUser);
                 } else {
-                    User newAssignee = userRepository.findById(newAssigneeId)
-                            .orElseThrow(() -> new ResourceNotFoundException("User not found: " + newAssigneeId));
+                    User newAssignee = visibleUser(actor, newAssigneeId);
                     if (!inSameWorkspace(ticket.getProject(), newAssignee)) {
                         throw new InvalidRelationshipException(
                                 "Assignee must belong to the same workspace as the project");
@@ -219,6 +202,24 @@ public class TicketService {
         return TicketResponse.from(ticket);
     }
 
+    /** A ticket of the caller's workspace; any other is not found. */
+    private Ticket visibleTicket(AuthenticatedUser actor, UUID ticketId) {
+        return ticketRepository.findByIdAndProjectWorkspaceId(ticketId, actor.workspaceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
+    }
+
+    private void requireVisibleProject(AuthenticatedUser actor, UUID projectId) {
+        if (!projectRepository.existsByIdAndWorkspaceId(projectId, actor.workspaceId())) {
+            throw new ResourceNotFoundException("Project not found: " + projectId);
+        }
+    }
+
+    /** A user (e.g. an assignee) of the caller's workspace; any other is not found. */
+    private User visibleUser(AuthenticatedUser actor, UUID userId) {
+        return userRepository.findByIdAndWorkspaceId(userId, actor.workspaceId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
+    }
+
     /**
      * The acting user as an entity reference for the creator/activity
      * associations. No query: the user was loaded for this very request to
@@ -240,8 +241,9 @@ public class TicketService {
 
     /**
      * Whether the assignee belongs to the project's workspace; a mismatch is
-     * an invalid relationship (InvalidRelationshipException). The acting
-     * user's own workspace is checked from the AuthenticatedUser instead.
+     * an invalid relationship (InvalidRelationshipException). An internal
+     * safeguard, unreachable through the API: both were found in the caller's
+     * workspace.
      */
     private static boolean inSameWorkspace(Project project, User user) {
         return project.getWorkspace().getId().equals(user.getWorkspace().getId());

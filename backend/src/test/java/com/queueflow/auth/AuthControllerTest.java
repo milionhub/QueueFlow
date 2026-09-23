@@ -3,6 +3,7 @@ package com.queueflow.auth;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -33,6 +34,7 @@ import com.queueflow.auth.dto.RegisterRequest;
 import com.queueflow.common.exception.InvalidCredentialsException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.security.WebSecurityTestConfiguration;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.user.UserRole;
 import com.queueflow.user.UserService;
@@ -216,7 +218,7 @@ class AuthControllerTest {
         UUID me = UUID.fromString(WithAuthenticatedUser.USER_ID);
         UUID workspaceId = UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID);
         OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
-        when(userService.getById(me)).thenReturn(
+        when(userService.getById(any(), eq(me))).thenReturn(
                 new UserResponse(me, "Ada", "ada@example.com", UserRole.MEMBER, workspaceId, timestamp, timestamp));
 
         mockMvc.perform(get("/api/auth/me").param("userId", UUID.randomUUID().toString()))
@@ -226,7 +228,7 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.role").value("MEMBER"))
                 .andExpect(content().string(not(containsString("password"))));
 
-        verify(userService).getById(me);
+        verify(userService).getById(new AuthenticatedUser(me, workspaceId, UserRole.MEMBER), me);
     }
 
     @Test

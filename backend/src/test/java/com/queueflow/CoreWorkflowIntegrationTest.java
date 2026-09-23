@@ -145,14 +145,14 @@ class CoreWorkflowIntegrationTest {
 
         // --- projects: normalization + per-project numbering ----------------
         MvcResult core = send(post("/api/projects"), """
-                {"workspaceId": "%s", "name": "  Core Platform  ", "key": " core "}
-                """.formatted(workspaceId), 201);
+                {"name": "  Core Platform  ", "key": " core "}
+                """, 201);
         UUID coreId = UUID.fromString(read(core, "$.id"));
         assertThat((String) read(core, "$.key")).isEqualTo("CORE");
         assertThat((String) read(core, "$.name")).isEqualTo("Core Platform");
         UUID opsId = UUID.fromString(read(send(post("/api/projects"), """
-                {"workspaceId": "%s", "name": "Operations", "key": "ops"}
-                """.formatted(workspaceId), 201), "$.id"));
+                {"name": "Operations", "key": "ops"}
+                """, 201), "$.id"));
 
         // No creator in the request: the token's user creates the ticket.
         String ticketJson = """
@@ -186,11 +186,11 @@ class CoreWorkflowIntegrationTest {
 
         // --- labels: attach (idempotent), ordered in the response, detach ---
         UUID urgent = UUID.fromString(read(send(post("/api/labels"), """
-                {"workspaceId": "%s", "name": "urgent"}
-                """.formatted(workspaceId), 201), "$.id"));
+                {"name": "urgent"}
+                """, 201), "$.id"));
         UUID bug = UUID.fromString(read(send(post("/api/labels"), """
-                {"workspaceId": "%s", "name": "Bug"}
-                """.formatted(workspaceId), 201), "$.id"));
+                {"name": "Bug"}
+                """, 201), "$.id"));
         String labelPath = "/api/tickets/{ticketId}/labels/{labelId}";
         call(put(labelPath, ticketId, urgent), 200);
         MvcResult labelled = call(put(labelPath, ticketId, bug), 200);

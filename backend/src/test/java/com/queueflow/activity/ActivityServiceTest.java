@@ -21,6 +21,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.queueflow.activity.dto.ActivityResponse;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.Ticket;
 import com.queueflow.ticket.TicketPriority;
 import com.queueflow.ticket.TicketRepository;
@@ -36,6 +37,10 @@ import com.queueflow.workspace.Workspace;
  */
 @ExtendWith(MockitoExtension.class)
 class ActivityServiceTest {
+
+    /** The caller of every operation below; its workspace is the only one the service can see. */
+    private static final AuthenticatedUser ACTOR =
+            new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), UserRole.MEMBER);
 
     @Mock
     private ActivityRepository activityRepository;
@@ -92,22 +97,22 @@ class ActivityServiceTest {
         Activity second = persistedActivity(UUID.randomUUID(), ActivityType.STATUS_CHANGED, "BACKLOG", "TODO",
                 ticket, user, now.minusMinutes(5));
 
-        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketRepository.existsByIdAndProjectWorkspaceId(ticketId, ACTOR.workspaceId())).thenReturn(true);
         when(activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticketId)).thenReturn(List.of(first, second));
 
-        List<ActivityResponse> responses = activityService.getByTicket(ticketId);
+        List<ActivityResponse> responses = activityService.getByTicket(ACTOR, ticketId);
 
         assertThat(responses).extracting(ActivityResponse::type)
                 .containsExactly(ActivityType.TICKET_CREATED, ActivityType.STATUS_CHANGED);
-        verify(ticketRepository).existsById(ticketId);
+        verify(ticketRepository).existsByIdAndProjectWorkspaceId(ticketId, ACTOR.workspaceId());
     }
 
     @Test
     void getByTicketThrowsResourceNotFoundExceptionWhenTicketMissing() {
         UUID ticketId = UUID.randomUUID();
-        when(ticketRepository.existsById(ticketId)).thenReturn(false);
+        when(ticketRepository.existsByIdAndProjectWorkspaceId(ticketId, ACTOR.workspaceId())).thenReturn(false);
 
-        assertThatThrownBy(() -> activityService.getByTicket(ticketId))
+        assertThatThrownBy(() -> activityService.getByTicket(ACTOR, ticketId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
 
@@ -125,10 +130,10 @@ class ActivityServiceTest {
         Activity activity = persistedActivity(activityId, ActivityType.STATUS_CHANGED, "BACKLOG", "TODO",
                 ticket, user, now);
 
-        when(ticketRepository.existsById(ticketId)).thenReturn(true);
+        when(ticketRepository.existsByIdAndProjectWorkspaceId(ticketId, ACTOR.workspaceId())).thenReturn(true);
         when(activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticketId)).thenReturn(List.of(activity));
 
-        List<ActivityResponse> responses = activityService.getByTicket(ticketId);
+        List<ActivityResponse> responses = activityService.getByTicket(ACTOR, ticketId);
 
         assertThat(responses).containsExactly(new ActivityResponse(
                 activityId, ActivityType.STATUS_CHANGED, "BACKLOG", "TODO", ticketId, user.getId(),

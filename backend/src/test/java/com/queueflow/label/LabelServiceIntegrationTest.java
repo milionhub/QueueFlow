@@ -1,5 +1,6 @@
 package com.queueflow.label;
 
+import static com.queueflow.security.TestActors.actorIn;
 import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,7 +20,7 @@ import com.queueflow.activity.Activity;
 import com.queueflow.activity.ActivityRepository;
 import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
-import com.queueflow.common.exception.InvalidRelationshipException;
+import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.label.dto.CreateLabelRequest;
 import com.queueflow.label.dto.LabelResponse;
 import com.queueflow.project.Project;
@@ -83,7 +84,7 @@ class LabelServiceIntegrationTest {
     void labelPersistsWithDatabaseGeneratedUuidAndTimestamps() {
         Workspace workspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
 
-        LabelResponse response = labelService.create(new CreateLabelRequest(workspace.getId(), "backend"));
+        LabelResponse response = labelService.create(actorIn(workspace), new CreateLabelRequest("backend"));
 
         assertThat(response.id()).isNotNull();
         assertThat(response.createdAt()).isNotNull();
@@ -96,9 +97,9 @@ class LabelServiceIntegrationTest {
         Workspace first = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
         Workspace second = workspaceRepository.saveAndFlush(new Workspace("Globex"));
 
-        labelService.create(new CreateLabelRequest(first.getId(), "backend"));
+        labelService.create(actorIn(first), new CreateLabelRequest("backend"));
         // Same name, different workspace: must succeed.
-        LabelResponse secondResponse = labelService.create(new CreateLabelRequest(second.getId(), "backend"));
+        LabelResponse secondResponse = labelService.create(actorIn(second), new CreateLabelRequest("backend"));
 
         assertThat(secondResponse.id()).isNotNull();
         assertThat(labelRepository.existsByWorkspaceIdAndName(first.getId(), "backend")).isTrue();
@@ -166,7 +167,7 @@ class LabelServiceIntegrationTest {
     }
 
     @Test
-    void crossWorkspaceAssociationIsRejectedAndCreatesNoJoinTableRow() {
+    void aLabelOfAnotherWorkspaceIsNotFoundAndCreatesNoJoinTableRow() {
         Workspace ticketWorkspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
         Workspace labelWorkspace = workspaceRepository.saveAndFlush(new Workspace("Globex"));
         User creator = userRepository.saveAndFlush(
@@ -177,7 +178,8 @@ class LabelServiceIntegrationTest {
         Label label = labelRepository.saveAndFlush(new Label("backend", labelWorkspace));
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(actorOf(creator), ticket.getId(), label.getId()))
-                .isInstanceOf(InvalidRelationshipException.class);
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Label not found: " + label.getId());
         entityManager.flush();
 
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(0L);

@@ -10,6 +10,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface LabelRepository extends JpaRepository<Label, UUID> {
 
+    /** Tenant-scoped: a label of another workspace is simply not found. */
+    Optional<Label> findByIdAndWorkspaceId(UUID id, UUID workspaceId);
+
     Optional<Label> findByWorkspaceIdAndName(UUID workspaceId, String name);
 
     boolean existsByWorkspaceIdAndName(UUID workspaceId, String name);

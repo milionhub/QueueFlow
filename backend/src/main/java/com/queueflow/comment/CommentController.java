@@ -45,7 +45,7 @@ public class CommentController {
     }
 
     @Operation(summary = "Create a comment", operationId = "createComment",
-            description = "The author is the authenticated user, who must belong to the ticket's workspace.")
+            description = "The author is the authenticated user; the ticket must belong to their workspace.")
     @ApiResponse(responseCode = "201", description = "Comment created", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @PostMapping
@@ -63,8 +63,8 @@ public class CommentController {
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/{commentId}")
-    public CommentResponse getById(@PathVariable UUID commentId) {
-        return commentService.getById(commentId);
+    public CommentResponse getById(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID commentId) {
+        return commentService.getById(actor, commentId);
     }
 
     @Operation(summary = "Update a comment", operationId = "updateComment",

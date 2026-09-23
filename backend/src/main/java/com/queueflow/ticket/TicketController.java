@@ -43,8 +43,8 @@ public class TicketController {
 
     @Operation(summary = "Create a ticket", operationId = "createTicket",
             description = "Allocates the next ticket number of the project (e.g. CORE-7) and records a "
-                    + "TICKET_CREATED activity. The creator is the authenticated user; the optional assignee "
-                    + "must belong to the project's workspace.")
+                    + "TICKET_CREATED activity. The creator is the authenticated user; the project and the "
+                    + "optional assignee must belong to the caller's workspace.")
     @ApiResponse(responseCode = "201", description = "Ticket created", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @PostMapping
@@ -62,8 +62,8 @@ public class TicketController {
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/{ticketId}")
-    public TicketResponse getById(@PathVariable UUID ticketId) {
-        return ticketService.getById(ticketId);
+    public TicketResponse getById(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID ticketId) {
+        return ticketService.getById(actor, ticketId);
     }
 
     /**

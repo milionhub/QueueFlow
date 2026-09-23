@@ -31,8 +31,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
 import com.queueflow.project.dto.UpdateProjectRequest;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
+import com.queueflow.user.UserRole;
 
 /**
  * Web-layer slice with ProjectService mocked, same approach as
@@ -47,6 +49,11 @@ class ProjectControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    /** The principal @WithAuthenticatedUser installs: the only possible acting user. */
+    private static final AuthenticatedUser ACTOR = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.ADMIN);
 
     @MockitoBean
     private ProjectService projectService;
@@ -63,7 +70,7 @@ class ProjectControllerTest {
                         .content(json))
                 .andExpect(status().isBadRequest());
 
-        verify(projectService, never()).create(any());
+        verify(projectService, never()).create(any(), any());
     }
 
     // ---------------------------------------------------------------
@@ -74,14 +81,14 @@ class ProjectControllerTest {
     void postValidRequestReturns201WithBodyAndLocation() throws Exception {
         UUID id = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
-        when(projectService.create(any())).thenReturn(projectResponse(id, workspaceId));
+        when(projectService.create(eq(ACTOR), any())).thenReturn(projectResponse(id, workspaceId));
 
         mockMvc.perform(post("/api/projects")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workspaceId": "%s", "name": "QueueFlow Backend", "key": "  back  ",
+                                {"name": "QueueFlow Backend", "key": "  back  ",
                                  "description": "Backend development"}
-                                """.formatted(workspaceId)))
+                                """))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "http://localhost/api/projects/" + id))
                 .andExpect(jsonPath("$.id").value(id.toString()))
@@ -100,47 +107,59 @@ class ProjectControllerTest {
     @Test
     void postDelegatesExactDeserializedRequestWithRawKeyToService() throws Exception {
         UUID workspaceId = UUID.randomUUID();
-        when(projectService.create(any())).thenReturn(projectResponse(UUID.randomUUID(), workspaceId));
+        when(projectService.create(eq(ACTOR), any())).thenReturn(projectResponse(UUID.randomUUID(), workspaceId));
 
         mockMvc.perform(post("/api/projects")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workspaceId": "%s", "name": "QueueFlow Backend", "key": "  back  ",
+                                {"name": "QueueFlow Backend", "key": "  back  ",
                                  "description": "Backend development"}
-                                """.formatted(workspaceId)))
+                                """))
                 .andExpect(status().isCreated());
 
         // Key arrives un-normalized: normalization is ProjectService's job.
-        verify(projectService).create(
-                new CreateProjectRequest(workspaceId, "QueueFlow Backend", "  back  ", "Backend development"));
+        verify(projectService).create(ACTOR, 
+                new CreateProjectRequest("QueueFlow Backend", "  back  ", "Backend development"));
     }
 
     @Test
     void postBlankNameIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"workspaceId": "%s", "name": "   ", "key": "BACK"}
-                """.formatted(UUID.randomUUID()));
+                {"name": "   ", "key": "BACK"}
+                """);
     }
 
     @Test
     void postBlankKeyIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"workspaceId": "%s", "name": "QueueFlow Backend", "key": "   "}
-                """.formatted(UUID.randomUUID()));
+                {"name": "QueueFlow Backend", "key": "   "}
+                """);
     }
 
+    /**
+     * There is no workspace input: projects are created in the caller's
+     * workspace. A leftover workspaceId in the body is ignored like any
+     * unknown JSON property and cannot reach the service.
+     */
     @Test
-    void postMissingWorkspaceIdIsRejectedWithoutCallingService() throws Exception {
-        postExpectingBadRequest("""
-                {"name": "QueueFlow Backend", "key": "BACK"}
-                """);
+    void postCreatesInTheCallersWorkspaceWhateverWorkspaceIdIsSent() throws Exception {
+        when(projectService.create(eq(ACTOR), any())).thenReturn(projectResponse(UUID.randomUUID(), UUID.randomUUID()));
+
+        mockMvc.perform(post("/api/projects")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"workspaceId": "%s", "name": "QueueFlow Backend", "key": "BACK"}
+                                """.formatted(UUID.randomUUID())))
+                .andExpect(status().isCreated());
+
+        verify(projectService).create(ACTOR, new CreateProjectRequest("QueueFlow Backend", "BACK", null));
     }
 
     @Test
     void postOversizedKeyIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"workspaceId": "%s", "name": "QueueFlow Backend", "key": "ABCDEFGHIJK"}
-                """.formatted(UUID.randomUUID()));
+                {"name": "QueueFlow Backend", "key": "ABCDEFGHIJK"}
+                """);
     }
 
     // ---------------------------------------------------------------
@@ -151,7 +170,7 @@ class ProjectControllerTest {
     void getByIdReturns200WithExpectedJsonAndDelegatesExactUuid() throws Exception {
         UUID id = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
-        when(projectService.getById(id)).thenReturn(projectResponse(id, workspaceId));
+        when(projectService.getById(ACTOR, id)).thenReturn(projectResponse(id, workspaceId));
 
         mockMvc.perform(get("/api/projects/{projectId}", id))
                 .andExpect(status().isOk())
@@ -163,7 +182,7 @@ class ProjectControllerTest {
                 .andExpect(jsonPath("$.nextTicketNumber").doesNotExist())
                 .andExpect(jsonPath("$.workspace").doesNotExist());
 
-        verify(projectService).getById(id);
+        verify(projectService).getById(ACTOR, id);
     }
 
     // ---------------------------------------------------------------
@@ -171,16 +190,15 @@ class ProjectControllerTest {
     // ---------------------------------------------------------------
 
     @Test
-    void getByKeyReturns200AndDelegatesExactWorkspaceIdAndRawKey() throws Exception {
+    void getByKeyReturns200AndDelegatesTheRawKeyForTheCallersWorkspace() throws Exception {
         UUID id = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
         // Lowercase with surrounding spaces: if the controller trimmed or
         // upper-cased it, this stub would not match and verify would fail.
         String rawKey = "  back ";
-        when(projectService.getByWorkspaceAndKey(workspaceId, rawKey)).thenReturn(projectResponse(id, workspaceId));
+        when(projectService.getByKey(ACTOR, rawKey)).thenReturn(projectResponse(id, workspaceId));
 
         mockMvc.perform(get("/api/projects/by-key")
-                        .param("workspaceId", workspaceId.toString())
                         .param("key", rawKey))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(id.toString()))
@@ -190,7 +208,7 @@ class ProjectControllerTest {
 
         // Also proves "/by-key" is routed to the literal mapping, never
         // captured by "/{projectId}" as a (bad) UUID path variable.
-        verify(projectService).getByWorkspaceAndKey(workspaceId, rawKey);
+        verify(projectService).getByKey(ACTOR, rawKey);
         verifyNoMoreInteractions(projectService);
     }
 
@@ -204,7 +222,7 @@ class ProjectControllerTest {
         UUID first = UUID.randomUUID();
         UUID second = UUID.randomUUID();
         // Deliberately not name-sorted: the controller must not re-sort.
-        when(projectService.getByWorkspace(workspaceId)).thenReturn(List.of(
+        when(projectService.getByWorkspace(ACTOR, workspaceId)).thenReturn(List.of(
                 projectResponse(first, workspaceId), projectResponse(second, workspaceId)));
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/projects", workspaceId))
@@ -216,14 +234,14 @@ class ProjectControllerTest {
                 .andExpect(jsonPath("$[0].workspaceId").value(workspaceId.toString()))
                 .andExpect(jsonPath("$[*].workspace").doesNotExist());
 
-        verify(projectService).getByWorkspace(workspaceId);
+        verify(projectService).getByWorkspace(ACTOR, workspaceId);
         verifyNoMoreInteractions(projectService);
     }
 
     @Test
     void listByWorkspaceWithNoProjectsReturns200EmptyArray() throws Exception {
         UUID workspaceId = UUID.randomUUID();
-        when(projectService.getByWorkspace(workspaceId)).thenReturn(List.of());
+        when(projectService.getByWorkspace(ACTOR, workspaceId)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/projects", workspaceId))
                 .andExpect(status().isOk())
@@ -235,7 +253,7 @@ class ProjectControllerTest {
         mockMvc.perform(get("/api/workspaces/{workspaceId}/projects", "not-a-uuid"))
                 .andExpect(status().isBadRequest());
 
-        verify(projectService, never()).getByWorkspace(any());
+        verify(projectService, never()).getByWorkspace(any(), any());
     }
 
     // ---------------------------------------------------------------
@@ -243,7 +261,8 @@ class ProjectControllerTest {
     // ---------------------------------------------------------------
 
     private UpdateProjectRequest patchAndCaptureRequest(UUID projectId, String json) throws Exception {
-        when(projectService.update(eq(projectId), any())).thenReturn(projectResponse(projectId, UUID.randomUUID()));
+        when(projectService.update(eq(ACTOR), eq(projectId), any()))
+                .thenReturn(projectResponse(projectId, UUID.randomUUID()));
 
         mockMvc.perform(patch("/api/projects/{projectId}", projectId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -251,7 +270,7 @@ class ProjectControllerTest {
                 .andExpect(status().isOk());
 
         ArgumentCaptor<UpdateProjectRequest> captor = ArgumentCaptor.forClass(UpdateProjectRequest.class);
-        verify(projectService).update(eq(projectId), captor.capture());
+        verify(projectService).update(eq(ACTOR), eq(projectId), captor.capture());
         return captor.getValue();
     }
 
@@ -259,7 +278,7 @@ class ProjectControllerTest {
     void patchReturns200WithProjectResponseAndDelegatesExactUuidAndValues() throws Exception {
         UUID id = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
-        when(projectService.update(eq(id), any())).thenReturn(projectResponse(id, workspaceId));
+        when(projectService.update(eq(ACTOR), eq(id), any())).thenReturn(projectResponse(id, workspaceId));
 
         mockMvc.perform(patch("/api/projects/{projectId}", id)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -278,7 +297,7 @@ class ProjectControllerTest {
                 .andExpect(jsonPath("$.workspace").doesNotExist());
 
         ArgumentCaptor<UpdateProjectRequest> captor = ArgumentCaptor.forClass(UpdateProjectRequest.class);
-        verify(projectService).update(eq(id), captor.capture());
+        verify(projectService).update(eq(ACTOR), eq(id), captor.capture());
         verifyNoMoreInteractions(projectService);
         // Raw name delegated untrimmed: trimming/validation is the service's job.
         assertThat(captor.getValue().getName()).isEqualTo("  QueueFlow Backend  ");
@@ -326,7 +345,7 @@ class ProjectControllerTest {
                         .content("{}"))
                 .andExpect(status().isBadRequest());
 
-        verify(projectService, never()).update(any(), any());
+        verify(projectService, never()).update(any(), any(), any());
     }
 
     @Test
@@ -336,6 +355,6 @@ class ProjectControllerTest {
                         .content("{\"name\": \"" + "a".repeat(256) + "\"}"))
                 .andExpect(status().isBadRequest());
 
-        verify(projectService, never()).update(any(), any());
+        verify(projectService, never()).update(any(), any(), any());
     }
 }

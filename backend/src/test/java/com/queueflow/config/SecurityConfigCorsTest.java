@@ -2,6 +2,7 @@ package com.queueflow.config;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -28,6 +29,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.queueflow.auth.AuthController;
 import com.queueflow.auth.AuthService;
 import com.queueflow.auth.dto.AuthResponse;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.user.UserRole;
@@ -55,6 +57,11 @@ class SecurityConfigCorsTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    /** The principal @WithAuthenticatedUser installs: the only possible acting user. */
+    private static final AuthenticatedUser ACTOR = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.ADMIN);
 
     @MockitoBean
     private WorkspaceService workspaceService;
@@ -97,7 +104,7 @@ class SecurityConfigCorsTest {
     @WithAuthenticatedUser
     void actualGetFromFrontendCarriesCorsHeadersAndExposesLocation() throws Exception {
         UUID id = UUID.randomUUID();
-        when(workspaceService.getById(id)).thenReturn(workspace(id));
+        when(workspaceService.getById(ACTOR, id)).thenReturn(workspace(id));
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}", id).header(HttpHeaders.ORIGIN, FRONTEND))
                 .andExpect(status().isOk())

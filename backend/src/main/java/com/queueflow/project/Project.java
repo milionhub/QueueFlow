@@ -135,7 +135,7 @@ public class Project {
      * current counter value and advances it by one. Deliberately not a
      * public setter - the counter must only ever move forward one step at a
      * time through this method. Callers must have loaded this Project under
-     * a pessimistic write lock (see ProjectRepository.findByIdForUpdate) in
+     * a pessimistic write lock (see ProjectRepository.findByIdAndWorkspaceIdForUpdate) in
      * an active transaction; this method itself performs no locking.
      */
     public long allocateNextTicketNumber() {

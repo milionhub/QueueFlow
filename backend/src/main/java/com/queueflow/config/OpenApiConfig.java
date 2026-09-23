@@ -42,6 +42,10 @@ public class OpenApiConfig {
 
     public static final String BEARER_AUTH = "bearerAuth";
 
+    /** Shared wording for workspace ids in paths. */
+    public static final String OWN_WORKSPACE_ID = "The caller's own workspace. Any other id - another "
+            + "workspace's or one that does not exist - is answered with 404.";
+
     private static final String ERROR_SCHEMA = "ApiErrorResponse";
 
     @Bean

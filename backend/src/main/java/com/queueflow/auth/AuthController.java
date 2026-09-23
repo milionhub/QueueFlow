@@ -84,6 +84,6 @@ public class AuthController {
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @GetMapping("/me")
     public UserResponse me(@AuthenticationPrincipal AuthenticatedUser currentUser) {
-        return userService.getById(currentUser.userId());
+        return userService.getById(currentUser, currentUser.userId());
     }
 }

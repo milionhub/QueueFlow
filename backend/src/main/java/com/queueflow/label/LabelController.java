@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,6 +17,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import com.queueflow.config.OpenApiConfig;
 import com.queueflow.label.dto.CreateLabelRequest;
 import com.queueflow.label.dto.LabelResponse;
+import com.queueflow.security.AuthenticatedUser;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -43,13 +45,14 @@ public class LabelController {
     }
 
     @Operation(summary = "Create a label", operationId = "createLabel",
-            description = "The name is trimmed and must be unique (case-sensitive) within the workspace.")
+            description = "Created in the caller's workspace. The name is trimmed and must be unique "
+                    + "(case-sensitive) within the workspace.")
     @ApiResponse(responseCode = "201", description = "Label created", useReturnTypeSchema = true)
-    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @ApiResponse(responseCode = "409", ref = OpenApiConfig.CONFLICT)
     @PostMapping
-    public ResponseEntity<LabelResponse> create(@Valid @RequestBody CreateLabelRequest request) {
-        LabelResponse response = labelService.create(request);
+    public ResponseEntity<LabelResponse> create(@AuthenticationPrincipal AuthenticatedUser actor,
+            @Valid @RequestBody CreateLabelRequest request) {
+        LabelResponse response = labelService.create(actor, request);
         URI location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{labelId}")
                 .buildAndExpand(response.id())
@@ -61,16 +64,17 @@ public class LabelController {
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/{labelId}")
-    public LabelResponse getById(@PathVariable UUID labelId) {
-        return labelService.getById(labelId);
+    public LabelResponse getById(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID labelId) {
+        return labelService.getById(actor, labelId);
     }
 
-    @Operation(summary = "Get a label by workspace and name", operationId = "getLabelByName")
+    @Operation(summary = "Get a label by name", operationId = "getLabelByName",
+            description = "Looks the name up in the caller's workspace.")
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/by-name")
-    public LabelResponse getByWorkspaceAndName(@RequestParam UUID workspaceId,
+    public LabelResponse getByName(@AuthenticationPrincipal AuthenticatedUser actor,
             @Parameter(description = "Label name; trimmed, case-sensitive") @RequestParam String name) {
-        return labelService.getByWorkspaceAndName(workspaceId, name);
+        return labelService.getByName(actor, name);
     }
 }

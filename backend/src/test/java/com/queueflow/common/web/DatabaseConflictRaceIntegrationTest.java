@@ -1,5 +1,6 @@
 package com.queueflow.common.web;
 
+import static com.queueflow.security.TestActors.actorIn;
 import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -176,7 +177,7 @@ class DatabaseConflictRaceIntegrationTest {
 
         // A: creates "Race" (INSERT executed immediately), stays uncommitted.
         Future<?> a = holdTransactionOpen(
-                () -> labelService.create(new CreateLabelRequest(workspace.getId(), "Race")), aWritten, releaseA);
+                () -> labelService.create(actorIn(workspace), new CreateLabelRequest("Race")), aWritten, releaseA);
         assertThat(aWritten.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS)).isTrue();
 
         // B: the real HTTP request for the same name. Its duplicate pre-check
@@ -185,8 +186,8 @@ class DatabaseConflictRaceIntegrationTest {
                         .header(HttpHeaders.AUTHORIZATION, bearer)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workspaceId": "%s", "name": "Race"}
-                                """.formatted(workspace.getId())))
+                                {"name": "Race"}
+                                """))
                 .andReturn());
         awaitSessionBlockedOnLock();
 
@@ -203,11 +204,11 @@ class DatabaseConflictRaceIntegrationTest {
     @Test
     void concurrentTicketLabelAttachRaceFailingAtCommitBecomes409WithoutDuplicateRowsOrActivities()
             throws Exception {
-        UUID projectId = projectService.create(
-                new CreateProjectRequest(workspace.getId(), "Race Project", "RACE", null)).id();
+        UUID projectId = projectService.create(actorIn(workspace),
+                new CreateProjectRequest("Race Project", "RACE", null)).id();
         UUID ticketId = ticketService.create(actorOf(user), new CreateTicketRequest(projectId, "Race ticket", null,
                 TicketStatus.TODO, TicketPriority.LOW, null)).id();
-        LabelResponse label = labelService.create(new CreateLabelRequest(workspace.getId(), "Bug"));
+        LabelResponse label = labelService.create(actorIn(workspace), new CreateLabelRequest("Bug"));
 
         CountDownLatch aWritten = new CountDownLatch(1);
         CountDownLatch releaseA = new CountDownLatch(1);

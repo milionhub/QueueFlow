@@ -21,9 +21,9 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.queueflow.common.exception.ResourceNotFoundException;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.user.dto.UserResponse;
 import com.queueflow.workspace.Workspace;
-import com.queueflow.workspace.WorkspaceRepository;
 
 /**
  * Fast unit tests with mocked repositories - persistence behavior itself is
@@ -32,17 +32,18 @@ import com.queueflow.workspace.WorkspaceRepository;
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
 
-    @Mock
-    private UserRepository userRepository;
+    /** The caller of every operation below; its workspace is the only one the service can see. */
+    private static final AuthenticatedUser ACTOR =
+            new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), UserRole.MEMBER);
 
     @Mock
-    private WorkspaceRepository workspaceRepository;
+    private UserRepository userRepository;
 
     private UserService userService;
 
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, workspaceRepository);
+        userService = new UserService(userRepository);
     }
 
     private static User persistedUser(UUID id, String name, String email, String passwordHash, UserRole role,
@@ -60,13 +61,13 @@ class UserServiceTest {
     @Test
     void getByIdReturnsMappedResponse() {
         UUID id = UUID.randomUUID();
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         OffsetDateTime timestamp = OffsetDateTime.now();
         User user = persistedUser(id, "Ada Lovelace", "ada@example.com", "hashed-password", UserRole.ADMIN,
                 workspaceId, timestamp);
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndWorkspaceId(id, ACTOR.workspaceId())).thenReturn(Optional.of(user));
 
-        UserResponse response = userService.getById(id);
+        UserResponse response = userService.getById(ACTOR, id);
 
         assertThat(response).isEqualTo(
                 new UserResponse(id, "Ada Lovelace", "ada@example.com", UserRole.ADMIN, workspaceId, timestamp, timestamp));
@@ -75,9 +76,9 @@ class UserServiceTest {
     @Test
     void getByIdThrowsResourceNotFoundExceptionWhenMissing() {
         UUID id = UUID.randomUUID();
-        when(userRepository.findById(id)).thenReturn(Optional.empty());
+        when(userRepository.findByIdAndWorkspaceId(id, ACTOR.workspaceId())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> userService.getById(id))
+        assertThatThrownBy(() -> userService.getById(ACTOR, id))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(id.toString());
     }
@@ -85,13 +86,14 @@ class UserServiceTest {
     @Test
     void getByEmailReturnsMappedResponse() {
         UUID id = UUID.randomUUID();
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         OffsetDateTime timestamp = OffsetDateTime.now();
         User user = persistedUser(id, "Grace Hopper", "grace@example.com", "hashed-password", UserRole.MEMBER,
                 workspaceId, timestamp);
-        when(userRepository.findByEmail("grace@example.com")).thenReturn(Optional.of(user));
+        when(userRepository.findByEmailAndWorkspaceId("grace@example.com", ACTOR.workspaceId()))
+                .thenReturn(Optional.of(user));
 
-        UserResponse response = userService.getByEmail("grace@example.com");
+        UserResponse response = userService.getByEmail(ACTOR, "grace@example.com");
 
         assertThat(response).isEqualTo(
                 new UserResponse(id, "Grace Hopper", "grace@example.com", UserRole.MEMBER, workspaceId, timestamp, timestamp));
@@ -99,9 +101,10 @@ class UserServiceTest {
 
     @Test
     void getByEmailThrowsResourceNotFoundExceptionWhenMissing() {
-        when(userRepository.findByEmail("missing@example.com")).thenReturn(Optional.empty());
+        when(userRepository.findByEmailAndWorkspaceId("missing@example.com", ACTOR.workspaceId()))
+                .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> userService.getByEmail("missing@example.com"))
+        assertThatThrownBy(() -> userService.getByEmail(ACTOR, "missing@example.com"))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("missing@example.com");
     }
@@ -117,9 +120,9 @@ class UserServiceTest {
         UUID id = UUID.randomUUID();
         User user = persistedUser(id, "Ada Lovelace", "ada@example.com", "super-secret-hash", UserRole.ADMIN,
                 UUID.randomUUID(), OffsetDateTime.now());
-        when(userRepository.findById(id)).thenReturn(Optional.of(user));
+        when(userRepository.findByIdAndWorkspaceId(id, ACTOR.workspaceId())).thenReturn(Optional.of(user));
 
-        UserResponse response = userService.getById(id);
+        UserResponse response = userService.getById(ACTOR, id);
 
         assertThat(response.toString()).doesNotContain("super-secret-hash");
     }
@@ -130,17 +133,16 @@ class UserServiceTest {
 
     @Test
     void getByWorkspaceReturnsMappedMembersPreservingRepositoryOrderWithoutPasswordHash() {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
         User zoe = persistedUser(UUID.randomUUID(), "Zoe", "zoe@example.com", "hash-zoe", UserRole.ADMIN,
                 workspaceId, timestamp);
         User ada = persistedUser(UUID.randomUUID(), "Ada", "ada@example.com", "hash-ada", UserRole.MEMBER,
                 workspaceId, timestamp);
-        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
         // Deliberately not name-sorted: the service must not re-sort.
         when(userRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of(zoe, ada));
 
-        List<UserResponse> responses = userService.getByWorkspace(workspaceId);
+        List<UserResponse> responses = userService.getByWorkspace(ACTOR, workspaceId);
 
         assertThat(responses).extracting(UserResponse::id).containsExactly(zoe.getId(), ada.getId());
         assertThat(responses.get(0)).isEqualTo(new UserResponse(zoe.getId(), "Zoe", "zoe@example.com",
@@ -149,21 +151,19 @@ class UserServiceTest {
 
     @Test
     void getByWorkspaceReturnsEmptyListForExistingWorkspaceWithoutMembers() {
-        UUID workspaceId = UUID.randomUUID();
-        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
+        UUID workspaceId = ACTOR.workspaceId();
         when(userRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of());
 
-        assertThat(userService.getByWorkspace(workspaceId)).isEmpty();
+        assertThat(userService.getByWorkspace(ACTOR, workspaceId)).isEmpty();
     }
 
     @Test
-    void getByWorkspaceThrowsResourceNotFoundExceptionForUnknownWorkspaceWithoutQueryingMembers() {
-        UUID workspaceId = UUID.randomUUID();
-        when(workspaceRepository.existsById(workspaceId)).thenReturn(false);
+    void getByWorkspaceOfAnyOtherWorkspaceIsNotFoundWithoutQueryingMembers() {
+        UUID otherWorkspaceId = UUID.randomUUID();
 
-        assertThatThrownBy(() -> userService.getByWorkspace(workspaceId))
+        assertThatThrownBy(() -> userService.getByWorkspace(ACTOR, otherWorkspaceId))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(workspaceId.toString());
+                .hasMessage("Workspace not found: " + otherWorkspaceId);
 
         verify(userRepository, never()).findAllInWorkspaceSortedByName(any());
     }

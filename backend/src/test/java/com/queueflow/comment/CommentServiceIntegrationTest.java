@@ -1,5 +1,6 @@
 package com.queueflow.comment;
 
+import static com.queueflow.security.TestActors.actorIn;
 import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -19,7 +20,7 @@ import org.springframework.context.annotation.Import;
 import com.queueflow.comment.dto.CommentResponse;
 import com.queueflow.comment.dto.CreateCommentRequest;
 import com.queueflow.comment.dto.UpdateCommentRequest;
-import com.queueflow.common.exception.InvalidRelationshipException;
+import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
 import com.queueflow.ticket.Ticket;
@@ -115,7 +116,8 @@ class CommentServiceIntegrationTest {
                 .executeUpdate();
         entityManager.clear();
 
-        List<CommentResponse> responses = commentService.getByTicket(ticket.getId());
+        List<CommentResponse> responses = commentService.getByTicket(
+                actorIn(ticket.getProject().getWorkspace()), ticket.getId());
 
         assertThat(responses).extracting(CommentResponse::id).containsExactly(first.getId(), second.getId());
     }
@@ -199,7 +201,7 @@ class CommentServiceIntegrationTest {
     }
 
     @Test
-    void crossWorkspaceCommentCreationIsRejectedAndPersistsNothing() {
+    void commentOnATicketOfAnotherWorkspaceIsNotFoundAndPersistsNothing() {
         Workspace ticketWorkspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
         Workspace authorWorkspace = workspaceRepository.saveAndFlush(new Workspace("Globex"));
         User creator = userRepository.saveAndFlush(
@@ -212,7 +214,8 @@ class CommentServiceIntegrationTest {
 
         assertThatThrownBy(() -> commentService.create(actorOf(outsider),
                 new CreateCommentRequest(ticket.getId(), "Should fail")))
-                .isInstanceOf(InvalidRelationshipException.class);
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Ticket not found: " + ticket.getId());
         entityManager.flush();
 
         assertThat(commentRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId())).isEmpty();

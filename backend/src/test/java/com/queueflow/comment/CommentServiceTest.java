@@ -3,6 +3,7 @@ package com.queueflow.comment;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -25,7 +26,6 @@ import com.queueflow.comment.dto.CreateCommentRequest;
 import com.queueflow.comment.dto.UpdateCommentRequest;
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ForbiddenOperationException;
-import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
 import com.queueflow.security.AuthenticatedUser;
@@ -116,7 +116,8 @@ class CommentServiceTest {
         Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
         User author = persistedUser(UUID.randomUUID(), "Ada Lovelace", workspace);
 
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticket.getId()), any()))
+                .thenReturn(Optional.of(ticket));
         when(userRepository.getReferenceById(author.getId())).thenReturn(author);
 
         UUID generatedId = UUID.randomUUID();
@@ -147,7 +148,7 @@ class CommentServiceTest {
     @Test
     void createThrowsResourceNotFoundExceptionWhenTicketMissing() {
         UUID ticketId = UUID.randomUUID();
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticketId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.create(actorWithId(UUID.randomUUID()),
                 new CreateCommentRequest(ticketId, "Hello")))
@@ -166,7 +167,8 @@ class CommentServiceTest {
         Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
         User actor = persistedUser(UUID.randomUUID(), "Juan", workspace);
 
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticket.getId()), any()))
+                .thenReturn(Optional.of(ticket));
         when(userRepository.getReferenceById(actor.getId())).thenReturn(actor);
         when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -177,21 +179,18 @@ class CommentServiceTest {
         verify(userRepository, never()).findById(any());
     }
 
+    /** A ticket of another workspace is not found for the caller - it cannot be commented on. */
     @Test
-    void createThrowsInvalidRelationshipExceptionWhenAuthorInDifferentWorkspace() {
-        Workspace ticketWorkspace = persistedWorkspace(UUID.randomUUID());
+    void commentOnATicketOfAnotherWorkspaceIsNotFound() {
+        UUID ticketId = UUID.randomUUID();
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), ticketWorkspace);
-        User creator = persistedUser(UUID.randomUUID(), "Creator", ticketWorkspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
         User author = persistedUser(UUID.randomUUID(), "Outsider", otherWorkspace);
+        when(ticketRepository.findByIdAndProjectWorkspaceId(ticketId, otherWorkspace.getId()))
+                .thenReturn(Optional.empty());
 
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-
-        assertThatThrownBy(() -> commentService.create(actorOf(author),
-                new CreateCommentRequest(ticket.getId(), "Hello")))
-                .isInstanceOf(InvalidRelationshipException.class)
-                .hasMessageContaining("workspace");
+        assertThatThrownBy(() -> commentService.create(actorOf(author), new CreateCommentRequest(ticketId, "Hello")))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Ticket not found: " + ticketId);
         verify(userRepository, never()).getReferenceById(any());
 
         verify(commentRepository, never()).save(any());
@@ -205,7 +204,8 @@ class CommentServiceTest {
         Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
 
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticket.getId()), any()))
+                .thenReturn(Optional.of(ticket));
         when(userRepository.getReferenceById(author.getId())).thenReturn(author);
 
         assertThatThrownBy(() -> commentService.create(actorOf(author),
@@ -223,7 +223,8 @@ class CommentServiceTest {
         Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
 
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticket.getId()), any()))
+                .thenReturn(Optional.of(ticket));
         when(userRepository.getReferenceById(author.getId())).thenReturn(author);
 
         assertThatThrownBy(() -> commentService.create(actorOf(author),
@@ -247,9 +248,10 @@ class CommentServiceTest {
         UUID commentId = UUID.randomUUID();
         Comment comment = persistedComment(commentId, "Hello", ticket, author, OffsetDateTime.now());
 
-        when(commentRepository.findById(commentId)).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(commentId), any()))
+                .thenReturn(Optional.of(comment));
 
-        CommentResponse response = commentService.getById(commentId);
+        CommentResponse response = commentService.getById(actorWithId(UUID.randomUUID()), commentId);
 
         assertThat(response.id()).isEqualTo(commentId);
         assertThat(response.authorName()).isEqualTo("Ada");
@@ -258,9 +260,9 @@ class CommentServiceTest {
     @Test
     void getByIdThrowsResourceNotFoundExceptionWhenMissing() {
         UUID commentId = UUID.randomUUID();
-        when(commentRepository.findById(commentId)).thenReturn(Optional.empty());
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(commentId), any())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> commentService.getById(commentId))
+        assertThatThrownBy(() -> commentService.getById(actorWithId(UUID.randomUUID()), commentId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(commentId.toString());
     }
@@ -275,22 +277,22 @@ class CommentServiceTest {
         Comment first = persistedComment(UUID.randomUUID(), "First", ticket, author, OffsetDateTime.now());
         Comment second = persistedComment(UUID.randomUUID(), "Second", ticket, author, OffsetDateTime.now());
 
-        when(ticketRepository.existsById(ticket.getId())).thenReturn(true);
+        when(ticketRepository.existsByIdAndProjectWorkspaceId(eq(ticket.getId()), any())).thenReturn(true);
         when(commentRepository.findByTicketIdOrderByCreatedAtAsc(ticket.getId()))
                 .thenReturn(List.of(first, second));
 
-        List<CommentResponse> responses = commentService.getByTicket(ticket.getId());
+        List<CommentResponse> responses = commentService.getByTicket(actorWithId(UUID.randomUUID()), ticket.getId());
 
         assertThat(responses).extracting(CommentResponse::content).containsExactly("First", "Second");
-        verify(ticketRepository).existsById(ticket.getId());
+        verify(ticketRepository).existsByIdAndProjectWorkspaceId(eq(ticket.getId()), any());
     }
 
     @Test
     void getByTicketThrowsResourceNotFoundExceptionWhenTicketMissing() {
         UUID ticketId = UUID.randomUUID();
-        when(ticketRepository.existsById(ticketId)).thenReturn(false);
+        when(ticketRepository.existsByIdAndProjectWorkspaceId(eq(ticketId), any())).thenReturn(false);
 
-        assertThatThrownBy(() -> commentService.getByTicket(ticketId))
+        assertThatThrownBy(() -> commentService.getByTicket(actorWithId(UUID.randomUUID()), ticketId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
 
@@ -310,7 +312,8 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
         Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
 
-        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(comment.getId()), any()))
+                .thenReturn(Optional.of(comment));
 
         CommentResponse response = commentService.update(
                 actorOf(author), comment.getId(), new UpdateCommentRequest("Updated content"));
@@ -323,12 +326,32 @@ class CommentServiceTest {
     void updateThrowsResourceNotFoundExceptionWhenCommentMissing() {
         UUID commentId = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
-        when(commentRepository.findById(commentId)).thenReturn(Optional.empty());
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(commentId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.update(actorWithId(actorId), commentId,
                 new UpdateCommentRequest("New")))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(commentId.toString());
+    }
+
+    /**
+     * The order matters: a comment outside the caller's workspace is not
+     * found (404) - only inside the workspace does authorship decide (403).
+     */
+    @Test
+    void editOrDeleteOfACommentOfAnotherWorkspaceIsNotFoundNotForbidden() {
+        UUID commentId = UUID.randomUUID();
+        AuthenticatedUser outsider = actorWithId(UUID.randomUUID());
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(commentId, outsider.workspaceId()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> commentService.update(outsider, commentId, new UpdateCommentRequest("Edited")))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Comment not found: " + commentId);
+        assertThatThrownBy(() -> commentService.delete(outsider, commentId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Comment not found: " + commentId);
+        verify(commentRepository, never()).delete(any());
     }
 
     @Test
@@ -341,7 +364,8 @@ class CommentServiceTest {
         Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
         UUID differentActorId = UUID.randomUUID();
 
-        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(comment.getId()), any()))
+                .thenReturn(Optional.of(comment));
 
         assertThatThrownBy(() -> commentService.update(
                 actorWithId(differentActorId), comment.getId(), new UpdateCommentRequest("Updated")))
@@ -358,7 +382,8 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
         Ticket ticket = persistedTicket(UUID.randomUUID(), project, author);
         Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
-        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(comment.getId()), any()))
+                .thenReturn(Optional.of(comment));
         AuthenticatedUser admin = new AuthenticatedUser(UUID.randomUUID(), workspace.getId(), UserRole.ADMIN);
 
         assertThatThrownBy(() -> commentService.update(admin, comment.getId(), new UpdateCommentRequest("Edited")))
@@ -379,7 +404,8 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
         Ticket ticket = persistedTicket(UUID.randomUUID(), project, author);
         Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
-        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(comment.getId()), any()))
+                .thenReturn(Optional.of(comment));
 
         assertThatThrownBy(() -> commentService.update(
                 actorWithId(UUID.randomUUID()), comment.getId(), new UpdateCommentRequest("   ")))
@@ -397,7 +423,8 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
         Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
 
-        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(comment.getId()), any()))
+                .thenReturn(Optional.of(comment));
 
         assertThatThrownBy(() -> commentService.update(
                 actorOf(author), comment.getId(), new UpdateCommentRequest("   ")))
@@ -415,7 +442,8 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
         Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
 
-        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(comment.getId()), any()))
+                .thenReturn(Optional.of(comment));
 
         commentService.update(actorOf(author), comment.getId(), new UpdateCommentRequest("Updated"));
 
@@ -432,7 +460,8 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
         Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
 
-        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(comment.getId()), any()))
+                .thenReturn(Optional.of(comment));
 
         commentService.update(actorOf(author), comment.getId(), new UpdateCommentRequest("Updated"));
 
@@ -452,7 +481,8 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
         Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
 
-        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(comment.getId()), any()))
+                .thenReturn(Optional.of(comment));
 
         commentService.delete(actorOf(author), comment.getId());
 
@@ -465,7 +495,7 @@ class CommentServiceTest {
     void deleteThrowsResourceNotFoundExceptionWhenCommentMissing() {
         UUID commentId = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
-        when(commentRepository.findById(commentId)).thenReturn(Optional.empty());
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(commentId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.delete(actorWithId(actorId), commentId))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -484,7 +514,8 @@ class CommentServiceTest {
         Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
         UUID differentActorId = UUID.randomUUID();
 
-        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        when(commentRepository.findByIdAndTicketProjectWorkspaceId(eq(comment.getId()), any()))
+                .thenReturn(Optional.of(comment));
 
         assertThatThrownBy(() -> commentService.delete(actorWithId(differentActorId), comment.getId()))
                 .isInstanceOf(ForbiddenOperationException.class)

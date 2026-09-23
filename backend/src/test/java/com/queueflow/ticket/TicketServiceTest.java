@@ -3,6 +3,7 @@ package com.queueflow.ticket;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
@@ -26,7 +27,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
 import com.queueflow.common.exception.BusinessRuleViolationException;
-import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
@@ -123,7 +123,8 @@ class TicketServiceTest {
         User actor = persistedUser(UUID.randomUUID(), workspace);
         Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, title, description, status, priority, project,
                 actor, assignee, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdAndProjectWorkspaceId(ticket.getId(), workspace.getId()))
+                .thenReturn(Optional.of(ticket));
         when(userRepository.getReferenceById(actor.getId())).thenReturn(actor);
         return new Fixture(workspace, project, actor, ticket);
     }
@@ -141,20 +142,22 @@ class TicketServiceTest {
         UUID creatorId = UUID.randomUUID();
         User creator = persistedUser(creatorId, workspace);
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(eq(projectId), any())).thenReturn(Optional.of(project));
         when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         ticketService.create(actorOf(creator), requestFor(projectId, null));
 
-        verify(projectRepository).findByIdForUpdate(projectId);
+        // Locked and looked up in one query, scoped to the caller's workspace.
+        verify(projectRepository).findByIdAndWorkspaceIdForUpdate(projectId, workspaceId);
         verify(projectRepository, never()).findById(any());
+        verify(projectRepository, never()).findByIdAndWorkspaceId(any(), any());
     }
 
     @Test
     void createThrowsResourceNotFoundExceptionWhenProjectMissing() {
         UUID projectId = UUID.randomUUID();
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.empty());
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(eq(projectId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> ticketService.create(anyActor(), requestFor(projectId, null)))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -172,7 +175,7 @@ class TicketServiceTest {
         Project project = persistedProject(projectId, "ECOM", workspace, 1L);
         User actor = persistedUser(UUID.randomUUID(), workspace);
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(eq(projectId), any())).thenReturn(Optional.of(project));
         when(userRepository.getReferenceById(actor.getId())).thenReturn(actor);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -183,23 +186,21 @@ class TicketServiceTest {
         verify(userRepository, never()).findById(any());
     }
 
+    /** A project of another workspace is not found for the caller - exactly like a missing one. */
     @Test
-    void createThrowsInvalidRelationshipExceptionWhenCreatorInDifferentWorkspace() {
-        Workspace projectWorkspace = persistedWorkspace(UUID.randomUUID());
+    void createInAProjectOfAnotherWorkspaceIsNotFound() {
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         UUID projectId = UUID.randomUUID();
-        Project project = persistedProject(projectId, "ECOM", projectWorkspace, 1L);
         User creator = persistedUser(UUID.randomUUID(), otherWorkspace);
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(projectId, otherWorkspace.getId()))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> ticketService.create(actorOf(creator), requestFor(projectId, null)))
-                .isInstanceOf(InvalidRelationshipException.class)
-                .hasMessageContaining("Creator");
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Project not found: " + projectId);
         verify(userRepository, never()).getReferenceById(any());
-
         verify(ticketRepository, never()).save(any());
-        assertThat(project.getNextTicketNumber()).isEqualTo(1L);
     }
 
     @Test
@@ -210,7 +211,7 @@ class TicketServiceTest {
         UUID creatorId = UUID.randomUUID();
         User creator = persistedUser(creatorId, workspace);
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(eq(projectId), any())).thenReturn(Optional.of(project));
         when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -230,15 +231,15 @@ class TicketServiceTest {
         UUID assigneeId = UUID.randomUUID();
         User assignee = persistedUser(assigneeId, workspace);
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(eq(projectId), any())).thenReturn(Optional.of(project));
         when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
-        when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
+        when(userRepository.findByIdAndWorkspaceId(eq(assigneeId), any())).thenReturn(Optional.of(assignee));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         TicketResponse response = ticketService.create(actorOf(creator), requestFor(projectId, assigneeId));
 
         assertThat(response.assigneeId()).isEqualTo(assigneeId);
-        verify(userRepository).findById(assigneeId);
+        verify(userRepository).findByIdAndWorkspaceId(eq(assigneeId), any());
     }
 
     @Test
@@ -250,9 +251,9 @@ class TicketServiceTest {
         User creator = persistedUser(creatorId, workspace);
         UUID assigneeId = UUID.randomUUID();
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(eq(projectId), any())).thenReturn(Optional.of(project));
         when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
-        when(userRepository.findById(assigneeId)).thenReturn(Optional.empty());
+        when(userRepository.findByIdAndWorkspaceId(eq(assigneeId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> ticketService.create(actorOf(creator), requestFor(projectId, assigneeId)))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -262,24 +263,49 @@ class TicketServiceTest {
         assertThat(project.getNextTicketNumber()).isEqualTo(1L);
     }
 
+    /**
+     * Internal safeguard, unreachable through the API (both lookups are
+     * scoped to the caller's workspace): should inconsistent data ever hand
+     * back an assignee from another workspace, the relationship is refused.
+     */
     @Test
-    void createThrowsInvalidRelationshipExceptionWhenAssigneeInDifferentWorkspace() {
+    void createStillRefusesAnInconsistentCrossWorkspaceAssignee() {
         Workspace projectWorkspace = persistedWorkspace(UUID.randomUUID());
-        Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
+        UUID projectId = UUID.randomUUID();
+        Project project = persistedProject(projectId, "ECOM", projectWorkspace, 1L);
+        User creator = persistedUser(UUID.randomUUID(), projectWorkspace);
+        User foreignAssignee = persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID()));
+
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(projectId, projectWorkspace.getId()))
+                .thenReturn(Optional.of(project));
+        when(userRepository.getReferenceById(creator.getId())).thenReturn(creator);
+        when(userRepository.findByIdAndWorkspaceId(foreignAssignee.getId(), projectWorkspace.getId()))
+                .thenReturn(Optional.of(foreignAssignee));
+
+        assertThatThrownBy(() -> ticketService.create(actorOf(creator), requestFor(projectId, foreignAssignee.getId())))
+                .isInstanceOf(InvalidRelationshipException.class);
+        verify(ticketRepository, never()).save(any());
+    }
+
+    /** An assignee of another workspace is not found - the answer never reveals that the user exists. */
+    @Test
+    void createWithAnAssigneeOfAnotherWorkspaceIsNotFound() {
+        Workspace projectWorkspace = persistedWorkspace(UUID.randomUUID());
         UUID projectId = UUID.randomUUID();
         Project project = persistedProject(projectId, "ECOM", projectWorkspace, 1L);
         UUID creatorId = UUID.randomUUID();
         User creator = persistedUser(creatorId, projectWorkspace);
         UUID assigneeId = UUID.randomUUID();
-        User assignee = persistedUser(assigneeId, otherWorkspace);
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(projectId, projectWorkspace.getId()))
+                .thenReturn(Optional.of(project));
         when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
-        when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
+        when(userRepository.findByIdAndWorkspaceId(assigneeId, projectWorkspace.getId()))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> ticketService.create(actorOf(creator), requestFor(projectId, assigneeId)))
-                .isInstanceOf(InvalidRelationshipException.class)
-                .hasMessageContaining("Assignee");
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("User not found: " + assigneeId);
 
         verify(ticketRepository, never()).save(any());
         assertThat(project.getNextTicketNumber()).isEqualTo(1L);
@@ -293,7 +319,7 @@ class TicketServiceTest {
         UUID creatorId = UUID.randomUUID();
         User creator = persistedUser(creatorId, workspace);
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(eq(projectId), any())).thenReturn(Optional.of(project));
         when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -313,9 +339,9 @@ class TicketServiceTest {
         UUID assigneeId = UUID.randomUUID();
         User assignee = persistedUser(assigneeId, workspace);
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(eq(projectId), any())).thenReturn(Optional.of(project));
         when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
-        when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
+        when(userRepository.findByIdAndWorkspaceId(eq(assigneeId), any())).thenReturn(Optional.of(assignee));
 
         UUID generatedId = UUID.randomUUID();
         OffsetDateTime timestamp = OffsetDateTime.now();
@@ -360,7 +386,7 @@ class TicketServiceTest {
         UUID creatorId = UUID.randomUUID();
         User creator = persistedUser(creatorId, workspace);
 
-        when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceIdForUpdate(eq(projectId), any())).thenReturn(Optional.of(project));
         when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -381,7 +407,7 @@ class TicketServiceTest {
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("title");
 
-        verify(projectRepository, never()).findByIdForUpdate(any());
+        verify(projectRepository, never()).findByIdAndWorkspaceIdForUpdate(any(), any());
         verify(ticketRepository, never()).save(any());
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
@@ -411,9 +437,9 @@ class TicketServiceTest {
         Ticket ticket = persistedTicket(ticketId, 1L, "Fix bug", "Details", TicketStatus.BACKLOG,
                 TicketPriority.LOW, project, creator, null, OffsetDateTime.now());
 
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticketId), any())).thenReturn(Optional.of(ticket));
 
-        TicketResponse response = ticketService.getById(ticketId);
+        TicketResponse response = ticketService.getById(anyActor(), ticketId);
 
         assertThat(response.id()).isEqualTo(ticketId);
         assertThat(response.displayKey()).isEqualTo("ECOM-1");
@@ -422,9 +448,9 @@ class TicketServiceTest {
     @Test
     void getByIdThrowsResourceNotFoundExceptionWhenMissing() {
         UUID ticketId = UUID.randomUUID();
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticketId), any())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.getById(ticketId))
+        assertThatThrownBy(() -> ticketService.getById(anyActor(), ticketId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
     }
@@ -438,9 +464,10 @@ class TicketServiceTest {
         Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Fix bug", null, TicketStatus.BACKLOG,
                 TicketPriority.LOW, project, creator, null, OffsetDateTime.now());
 
+        when(projectRepository.existsByIdAndWorkspaceId(projectId, workspace.getId())).thenReturn(true);
         when(ticketRepository.findByProjectIdAndTicketNumber(projectId, 1L)).thenReturn(Optional.of(ticket));
 
-        TicketResponse response = ticketService.getByProjectAndNumber(projectId, 1L);
+        TicketResponse response = ticketService.getByProjectAndNumber(actorOf(creator), projectId, 1L);
 
         assertThat(response.ticketNumber()).isEqualTo(1L);
         assertThat(response.projectId()).isEqualTo(projectId);
@@ -449,12 +476,40 @@ class TicketServiceTest {
     @Test
     void getByProjectAndNumberThrowsResourceNotFoundExceptionWhenMissing() {
         UUID projectId = UUID.randomUUID();
+        AuthenticatedUser actor = anyActor();
+        when(projectRepository.existsByIdAndWorkspaceId(projectId, actor.workspaceId())).thenReturn(true);
         when(ticketRepository.findByProjectIdAndTicketNumber(projectId, 5L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.getByProjectAndNumber(projectId, 5L))
+        assertThatThrownBy(() -> ticketService.getByProjectAndNumber(actor, projectId, 5L))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(projectId.toString())
                 .hasMessageContaining("5");
+    }
+
+    /** The project must be visible first: its ticket numbers are never probed otherwise. */
+    @Test
+    void getByProjectAndNumberInAProjectOfAnotherWorkspaceIsNotFound() {
+        UUID projectId = UUID.randomUUID();
+        AuthenticatedUser actor = anyActor();
+        when(projectRepository.existsByIdAndWorkspaceId(projectId, actor.workspaceId())).thenReturn(false);
+
+        assertThatThrownBy(() -> ticketService.getByProjectAndNumber(actor, projectId, 1L))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Project not found: " + projectId);
+        verify(ticketRepository, never()).findByProjectIdAndTicketNumber(any(), anyLong());
+    }
+
+    @Test
+    void getByIdLooksTheTicketUpInTheCallersWorkspaceOnly() {
+        UUID ticketId = UUID.randomUUID();
+        AuthenticatedUser actor = anyActor();
+        when(ticketRepository.findByIdAndProjectWorkspaceId(ticketId, actor.workspaceId()))
+                .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> ticketService.getById(actor, ticketId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Ticket not found: " + ticketId);
+        verify(ticketRepository, never()).findById(any());
     }
 
     // ---------------------------------------------------------------
@@ -464,28 +519,27 @@ class TicketServiceTest {
     @Test
     void updateThrowsResourceNotFoundExceptionWhenTicketMissing() {
         UUID ticketId = UUID.randomUUID();
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticketId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> ticketService.update(anyActor(), ticketId, new UpdateTicketRequest()))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
     }
 
+    /** A ticket of another workspace is not found for the caller - not forbidden, which would confirm it. */
     @Test
-    void updateThrowsForbiddenOperationExceptionWhenActorInDifferentWorkspace() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L);
-        User creator = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, project, creator, null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+    void updateOfATicketOfAnotherWorkspaceIsNotFound() {
+        UUID ticketId = UUID.randomUUID();
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         User outsider = persistedUser(UUID.randomUUID(), otherWorkspace);
+        when(ticketRepository.findByIdAndProjectWorkspaceId(ticketId, otherWorkspace.getId()))
+                .thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.update(actorOf(outsider), ticket.getId(), new UpdateTicketRequest()))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Actor");
+        assertThatThrownBy(() -> ticketService.update(actorOf(outsider), ticketId, new UpdateTicketRequest()))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Ticket not found: " + ticketId);
         verify(userRepository, never()).getReferenceById(any());
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
@@ -498,7 +552,7 @@ class TicketServiceTest {
         Ticket ticket = persistedTicket(ticketId, 1L, "Original title", "Original description",
                 TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, originalAssignee, OffsetDateTime.now());
 
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticketId), any())).thenReturn(Optional.of(ticket));
         when(userRepository.getReferenceById(creator.getId())).thenReturn(creator);
 
         ticketService.update(actorOf(creator), ticketId, new UpdateTicketRequest());
@@ -687,7 +741,7 @@ class TicketServiceTest {
         Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
         UUID newAssigneeId = UUID.randomUUID();
         User newAssignee = persistedUser(newAssigneeId, fixture.workspace());
-        when(userRepository.findById(newAssigneeId)).thenReturn(Optional.of(newAssignee));
+        when(userRepository.findByIdAndWorkspaceId(eq(newAssigneeId), any())).thenReturn(Optional.of(newAssignee));
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(newAssigneeId);
@@ -708,7 +762,7 @@ class TicketServiceTest {
                 originalAssignee);
         UUID newAssigneeId = UUID.randomUUID();
         User newAssignee = persistedUser(newAssigneeId, workspace);
-        when(userRepository.findById(newAssigneeId)).thenReturn(Optional.of(newAssignee));
+        when(userRepository.findByIdAndWorkspaceId(eq(newAssigneeId), any())).thenReturn(Optional.of(newAssignee));
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(newAssigneeId);
@@ -770,7 +824,7 @@ class TicketServiceTest {
     void updateThrowsResourceNotFoundExceptionWhenAssigneeMissing() {
         Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
         UUID missingAssigneeId = UUID.randomUUID();
-        when(userRepository.findById(missingAssigneeId)).thenReturn(Optional.empty());
+        when(userRepository.findByIdAndWorkspaceId(eq(missingAssigneeId), any())).thenReturn(Optional.empty());
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(missingAssigneeId);
@@ -783,19 +837,19 @@ class TicketServiceTest {
     }
 
     @Test
-    void updateThrowsInvalidRelationshipExceptionWhenAssigneeInDifferentWorkspace() {
+    void updateWithAnAssigneeOfAnotherWorkspaceIsNotFound() {
         Fixture fixture = newFixture("Title", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
-        Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         UUID assigneeId = UUID.randomUUID();
-        User assigneeFromOtherWorkspace = persistedUser(assigneeId, otherWorkspace);
-        when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assigneeFromOtherWorkspace));
+        when(userRepository.findByIdAndWorkspaceId(assigneeId, fixture.workspace().getId()))
+                .thenReturn(Optional.empty());
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(assigneeId);
 
         assertThatThrownBy(() -> ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request))
-                .isInstanceOf(InvalidRelationshipException.class)
-                .hasMessageContaining("Assignee");
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("User not found: " + assigneeId);
+        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
 
         assertThat(fixture.ticket().getAssignee()).isNull();
     }
@@ -809,7 +863,7 @@ class TicketServiceTest {
         Ticket ticket = persistedTicket(UUID.randomUUID(), 5L, "Title", null, TicketStatus.BACKLOG,
                 TicketPriority.LOW, project, creator, null, createdAt);
         UUID originalId = ticket.getId();
-        when(ticketRepository.findById(originalId)).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(originalId), any())).thenReturn(Optional.of(ticket));
         when(userRepository.getReferenceById(creator.getId())).thenReturn(creator);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
@@ -862,7 +916,8 @@ class TicketServiceTest {
         User actor = persistedUser(UUID.randomUUID(), workspace);
         Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, title, description, status, priority, project,
                 actor, assignee, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        when(ticketRepository.findByIdAndProjectWorkspaceId(ticket.getId(), workspace.getId()))
+                .thenReturn(Optional.of(ticket));
         when(userRepository.getReferenceById(actor.getId())).thenReturn(actor);
         return new Fixture(workspace, project, actor, ticket);
     }
@@ -882,11 +937,11 @@ class TicketServiceTest {
                 TicketPriority.LOW, project, creator, null, timestamp);
         Ticket one = persistedTicket(UUID.randomUUID(), 1L, "First", "Details", TicketStatus.BACKLOG,
                 TicketPriority.HIGH, project, creator, creator, timestamp);
-        when(projectRepository.existsById(projectId)).thenReturn(true);
+        when(projectRepository.existsByIdAndWorkspaceId(eq(projectId), any())).thenReturn(true);
         // Deliberately not number-sorted: the service must not re-sort.
         when(ticketRepository.findByProjectIdOrderByTicketNumberAsc(projectId)).thenReturn(List.of(two, one));
 
-        List<TicketResponse> responses = ticketService.getByProject(projectId);
+        List<TicketResponse> responses = ticketService.getByProject(anyActor(), projectId);
 
         assertThat(responses).extracting(TicketResponse::id).containsExactly(two.getId(), one.getId());
         assertThat(responses.get(1)).isEqualTo(new TicketResponse(one.getId(), 1L, "ECOM-1", "First", "Details",
@@ -897,18 +952,18 @@ class TicketServiceTest {
     @Test
     void getByProjectReturnsEmptyListForExistingProjectWithoutTickets() {
         UUID projectId = UUID.randomUUID();
-        when(projectRepository.existsById(projectId)).thenReturn(true);
+        when(projectRepository.existsByIdAndWorkspaceId(eq(projectId), any())).thenReturn(true);
         when(ticketRepository.findByProjectIdOrderByTicketNumberAsc(projectId)).thenReturn(List.of());
 
-        assertThat(ticketService.getByProject(projectId)).isEmpty();
+        assertThat(ticketService.getByProject(anyActor(), projectId)).isEmpty();
     }
 
     @Test
     void getByProjectThrowsResourceNotFoundExceptionForUnknownProjectWithoutQueryingTickets() {
         UUID projectId = UUID.randomUUID();
-        when(projectRepository.existsById(projectId)).thenReturn(false);
+        when(projectRepository.existsByIdAndWorkspaceId(eq(projectId), any())).thenReturn(false);
 
-        assertThatThrownBy(() -> ticketService.getByProject(projectId))
+        assertThatThrownBy(() -> ticketService.getByProject(anyActor(), projectId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(projectId.toString());
 

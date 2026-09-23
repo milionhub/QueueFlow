@@ -1,6 +1,7 @@
 package com.queueflow.comment;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -165,7 +166,7 @@ class CommentControllerTest {
     @Test
     void getByIdReturns200WithExpectedJsonAndDelegatesExactUuid() throws Exception {
         UUID id = UUID.randomUUID();
-        when(commentService.getById(id)).thenReturn(commentResponse(id, "Hello"));
+        when(commentService.getById(ACTOR, id)).thenReturn(commentResponse(id, "Hello"));
 
         ResultActions result = mockMvc.perform(get("/api/comments/{commentId}", id))
                 .andExpect(status().isOk())
@@ -174,7 +175,7 @@ class CommentControllerTest {
                 .andExpect(jsonPath("$.authorName").value("Ada Lovelace"));
         expectNoEntityLeakage(result, "$");
 
-        verify(commentService).getById(id);
+        verify(commentService).getById(ACTOR, id);
     }
 
     // ---------------------------------------------------------------
@@ -188,7 +189,7 @@ class CommentControllerTest {
         UUID third = UUID.randomUUID();
         // Deliberately NOT sorted by createdAt or id: if the controller
         // re-sorted anything, the JSON order would differ from this list.
-        when(commentService.getByTicket(TICKET_ID)).thenReturn(List.of(
+        when(commentService.getByTicket(ACTOR, TICKET_ID)).thenReturn(List.of(
                 commentResponse(first, "first", OffsetDateTime.parse("2026-09-23T12:00:00Z")),
                 commentResponse(second, "second", OffsetDateTime.parse("2026-09-23T09:00:00Z")),
                 commentResponse(third, "third", OffsetDateTime.parse("2026-09-23T10:00:00Z"))));
@@ -203,13 +204,13 @@ class CommentControllerTest {
                 .andExpect(jsonPath("$[0].ticketId").value(TICKET_ID.toString()));
         expectNoEntityLeakage(result, "$[0]");
 
-        verify(commentService).getByTicket(TICKET_ID);
+        verify(commentService).getByTicket(ACTOR, TICKET_ID);
         verifyNoMoreInteractions(commentService);
     }
 
     @Test
     void getByTicketWithNoCommentsReturns200EmptyArray() throws Exception {
-        when(commentService.getByTicket(TICKET_ID)).thenReturn(List.of());
+        when(commentService.getByTicket(ACTOR, TICKET_ID)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/tickets/{ticketId}/comments", TICKET_ID))
                 .andExpect(status().isOk())

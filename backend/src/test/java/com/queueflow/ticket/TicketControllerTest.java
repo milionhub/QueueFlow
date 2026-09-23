@@ -217,7 +217,7 @@ class TicketControllerTest {
     @Test
     void getByIdReturns200WithExpectedJsonAndDelegatesExactUuid() throws Exception {
         UUID id = UUID.randomUUID();
-        when(ticketService.getById(id)).thenReturn(ticketResponse(id));
+        when(ticketService.getById(ACTOR, id)).thenReturn(ticketResponse(id));
 
         ResultActions result = mockMvc.perform(get("/api/tickets/{ticketId}", id))
                 .andExpect(status().isOk())
@@ -226,7 +226,7 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.projectId").value(PROJECT_ID.toString()));
         expectNoEntityLeakage(result);
 
-        verify(ticketService).getById(id);
+        verify(ticketService).getById(ACTOR, id);
     }
 
     @Test
@@ -240,7 +240,7 @@ class TicketControllerTest {
                 TicketStatus.TODO, TicketPriority.LOW, PROJECT_ID, "BACK", CREATOR_ID, null, timestamp, timestamp,
                 List.of(new LabelResponse(api, "api", workspaceId, timestamp, timestamp),
                         new LabelResponse(bug, "Bug", workspaceId, timestamp, timestamp)));
-        when(ticketService.getById(id)).thenReturn(withLabels);
+        when(ticketService.getById(ACTOR, id)).thenReturn(withLabels);
 
         mockMvc.perform(get("/api/tickets/{ticketId}", id))
                 .andExpect(status().isOk())
@@ -263,7 +263,7 @@ class TicketControllerTest {
     @Test
     void getByProjectAndNumberReturns200AndDelegatesExactProjectIdAndTicketNumber() throws Exception {
         UUID id = UUID.randomUUID();
-        when(ticketService.getByProjectAndNumber(PROJECT_ID, 42L)).thenReturn(ticketResponse(id));
+        when(ticketService.getByProjectAndNumber(ACTOR, PROJECT_ID, 42L)).thenReturn(ticketResponse(id));
 
         mockMvc.perform(get("/api/projects/{projectId}/tickets/{ticketNumber}", PROJECT_ID, 42))
                 .andExpect(status().isOk())
@@ -271,14 +271,14 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.displayKey").value("BACK-1"))
                 .andExpect(jsonPath("$.labels").isArray());
 
-        verify(ticketService).getByProjectAndNumber(PROJECT_ID, 42L);
+        verify(ticketService).getByProjectAndNumber(ACTOR, PROJECT_ID, 42L);
         verifyNoMoreInteractions(ticketService);
     }
 
     @Test
     void projectTicketCollectionAndSingleTicketRoutesDoNotConflict() throws Exception {
-        when(ticketService.getByProject(PROJECT_ID)).thenReturn(List.of());
-        when(ticketService.getByProjectAndNumber(PROJECT_ID, 7L)).thenReturn(ticketResponse(UUID.randomUUID()));
+        when(ticketService.getByProject(ACTOR, PROJECT_ID)).thenReturn(List.of());
+        when(ticketService.getByProjectAndNumber(ACTOR, PROJECT_ID, 7L)).thenReturn(ticketResponse(UUID.randomUUID()));
 
         mockMvc.perform(get("/api/projects/{projectId}/tickets", PROJECT_ID))
                 .andExpect(status().isOk())
@@ -288,8 +288,8 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.id").isNotEmpty());
 
         // Each URL reached exactly its own handler, once.
-        verify(ticketService).getByProject(PROJECT_ID);
-        verify(ticketService).getByProjectAndNumber(PROJECT_ID, 7L);
+        verify(ticketService).getByProject(ACTOR, PROJECT_ID);
+        verify(ticketService).getByProjectAndNumber(ACTOR, PROJECT_ID, 7L);
         verifyNoMoreInteractions(ticketService);
     }
 
@@ -298,7 +298,7 @@ class TicketControllerTest {
         mockMvc.perform(get("/api/projects/{projectId}/tickets/{ticketNumber}", PROJECT_ID, "BACK-1"))
                 .andExpect(status().isBadRequest());
 
-        verify(ticketService, never()).getByProjectAndNumber(any(), anyLong());
+        verify(ticketService, never()).getByProjectAndNumber(any(), any(), anyLong());
     }
 
     @Test
@@ -424,7 +424,8 @@ class TicketControllerTest {
         UUID second = UUID.randomUUID();
         UUID first = UUID.randomUUID();
         // Deliberately not number-sorted: the controller must not re-sort.
-        when(ticketService.getByProject(PROJECT_ID)).thenReturn(List.of(ticketResponse(second), ticketResponse(first)));
+        when(ticketService.getByProject(ACTOR, PROJECT_ID))
+                .thenReturn(List.of(ticketResponse(second), ticketResponse(first)));
 
         ResultActions result = mockMvc.perform(get("/api/projects/{projectId}/tickets", PROJECT_ID))
                 .andExpect(status().isOk())
@@ -440,13 +441,13 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$[1].labels").isArray())
                 .andExpect(jsonPath("$[*].labels[*].workspace").doesNotExist());
 
-        verify(ticketService).getByProject(PROJECT_ID);
+        verify(ticketService).getByProject(ACTOR, PROJECT_ID);
         verifyNoMoreInteractions(ticketService);
     }
 
     @Test
     void listByProjectWithNoTicketsReturns200EmptyArray() throws Exception {
-        when(ticketService.getByProject(PROJECT_ID)).thenReturn(List.of());
+        when(ticketService.getByProject(ACTOR, PROJECT_ID)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/projects/{projectId}/tickets", PROJECT_ID))
                 .andExpect(status().isOk())
@@ -458,6 +459,6 @@ class TicketControllerTest {
         mockMvc.perform(get("/api/projects/{projectId}/tickets", "ECOM"))
                 .andExpect(status().isBadRequest());
 
-        verify(ticketService, never()).getByProject(any());
+        verify(ticketService, never()).getByProject(any(), any());
     }
 }

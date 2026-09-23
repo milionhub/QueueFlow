@@ -1,5 +1,6 @@
 package com.queueflow.workspace;
 
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -20,8 +21,10 @@ import org.springframework.security.test.context.support.WithAnonymousUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
+import com.queueflow.user.UserRole;
 import com.queueflow.workspace.dto.WorkspaceResponse;
 
 /**
@@ -39,6 +42,11 @@ class WorkspaceControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    /** The principal @WithAuthenticatedUser installs: the only possible acting user. */
+    private static final AuthenticatedUser ACTOR = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.ADMIN);
+
     @MockitoBean
     private WorkspaceService workspaceService;
 
@@ -50,7 +58,7 @@ class WorkspaceControllerTest {
     @Test
     void getExistingWorkspaceReturns200WithExpectedJson() throws Exception {
         UUID id = UUID.randomUUID();
-        when(workspaceService.getById(id)).thenReturn(workspaceResponse(id, "Acme Inc."));
+        when(workspaceService.getById(ACTOR, id)).thenReturn(workspaceResponse(id, "Acme Inc."));
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}", id))
                 .andExpect(status().isOk())
@@ -59,7 +67,7 @@ class WorkspaceControllerTest {
                 .andExpect(jsonPath("$.createdAt").isNotEmpty())
                 .andExpect(jsonPath("$.updatedAt").isNotEmpty());
 
-        verify(workspaceService).getById(id);
+        verify(workspaceService).getById(ACTOR, id);
     }
 
     /** Replaced by POST /api/auth/register: a workspace never exists without its first user. */

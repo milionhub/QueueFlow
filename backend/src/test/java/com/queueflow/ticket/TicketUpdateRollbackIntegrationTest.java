@@ -1,5 +1,6 @@
 package com.queueflow.ticket;
 
+import static com.queueflow.security.TestActors.actorIn;
 import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -15,7 +16,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-import com.queueflow.common.exception.InvalidRelationshipException;
+import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.ProjectService;
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.ticket.dto.CreateTicketRequest;
@@ -71,8 +72,8 @@ class TicketUpdateRollbackIntegrationTest {
                 UserRole.MEMBER, workspace));
         outsider = userRepository.save(new User("Outsider", "outsider-" + UUID.randomUUID() + "@example.com",
                 "hash", UserRole.MEMBER, otherWorkspace));
-        UUID projectId = projectService.create(
-                new CreateProjectRequest(workspace.getId(), "Rollback", "RLB", null)).id();
+        UUID projectId = projectService.create(actorIn(workspace),
+                new CreateProjectRequest("Rollback", "RLB", null)).id();
         ticketId = ticketService.create(actorOf(alice), new CreateTicketRequest(projectId, "Original title",
                 "Original description", TicketStatus.BACKLOG, TicketPriority.LOW, null)).id();
     }
@@ -106,7 +107,7 @@ class TicketUpdateRollbackIntegrationTest {
         assertThat(activityTypes()).containsExactly("TICKET_CREATED");
 
         // Four valid changes are applied (each recording an Activity) before
-        // the cross-workspace assignee is rejected.
+        // the assignee from another workspace is rejected as not found.
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Changed title");
         request.setDescription(null);
@@ -115,7 +116,8 @@ class TicketUpdateRollbackIntegrationTest {
         request.setAssigneeId(outsider.getId());
 
         assertThatThrownBy(() -> ticketService.update(actorOf(alice), ticketId, request))
-                .isInstanceOf(InvalidRelationshipException.class);
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("User not found: " + outsider.getId());
 
         // Nothing of the PATCH survived: fields, updated_at and activities
         // are exactly as before.

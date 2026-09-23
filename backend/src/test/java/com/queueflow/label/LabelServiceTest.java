@@ -3,6 +3,7 @@ package com.queueflow.label;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -20,7 +21,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import com.queueflow.activity.ActivityService;
 import com.queueflow.activity.ActivityType;
-import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
@@ -45,6 +45,10 @@ import com.queueflow.workspace.WorkspaceRepository;
  */
 @ExtendWith(MockitoExtension.class)
 class LabelServiceTest {
+
+    /** The caller of the create/read tests; its workspace is the only one the service can see. */
+    private static final AuthenticatedUser ACTOR =
+            new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), UserRole.MEMBER);
 
     @Mock
     private LabelRepository labelRepository;
@@ -119,7 +123,9 @@ class LabelServiceTest {
         User creator = persistedUser(UUID.randomUUID(), workspace);
         Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
         User actor = persistedUser(UUID.randomUUID(), workspace);
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
+        org.mockito.Mockito.lenient()
+                .when(ticketRepository.findByIdAndProjectWorkspaceId(ticket.getId(), workspace.getId()))
+                .thenReturn(Optional.of(ticket));
         // lenient: some tests using this shared fixture act as someone else
         // or fail before the acting user's reference is taken (e.g. a
         // missing label short-circuits first).
@@ -133,52 +139,39 @@ class LabelServiceTest {
 
     @Test
     void createNormalizesWhitespaceAndLoadsCorrectWorkspace() {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId);
-        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(workspaceRepository.getReferenceById(workspaceId)).thenReturn(workspace);
         when(labelRepository.existsByWorkspaceIdAndName(workspaceId, "backend")).thenReturn(false);
         when(labelRepository.save(any(Label.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        LabelResponse response = labelService.create(new CreateLabelRequest(workspaceId, "  backend  "));
+        LabelResponse response = labelService.create(ACTOR, new CreateLabelRequest("  backend  "));
 
         assertThat(response.name()).isEqualTo("backend");
-        verify(workspaceRepository).findById(workspaceId);
+        verify(workspaceRepository).getReferenceById(workspaceId);
         verify(labelRepository).existsByWorkspaceIdAndName(workspaceId, "backend");
     }
 
     @Test
     void createPreservesLetterCase() {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId);
-        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(workspaceRepository.getReferenceById(workspaceId)).thenReturn(workspace);
         when(labelRepository.existsByWorkspaceIdAndName(workspaceId, "Backend")).thenReturn(false);
         when(labelRepository.save(any(Label.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        LabelResponse response = labelService.create(new CreateLabelRequest(workspaceId, "  Backend  "));
+        LabelResponse response = labelService.create(ACTOR, new CreateLabelRequest("  Backend  "));
 
         assertThat(response.name()).isEqualTo("Backend");
     }
 
     @Test
-    void createThrowsResourceNotFoundExceptionWhenWorkspaceMissing() {
-        UUID workspaceId = UUID.randomUUID();
-        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> labelService.create(new CreateLabelRequest(workspaceId, "backend")))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(workspaceId.toString());
-
-        verify(labelRepository, never()).save(any());
-    }
-
-    @Test
     void createThrowsResourceAlreadyExistsExceptionWhenDuplicate() {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId);
-        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
         when(labelRepository.existsByWorkspaceIdAndName(workspaceId, "backend")).thenReturn(true);
 
-        assertThatThrownBy(() -> labelService.create(new CreateLabelRequest(workspaceId, "backend")))
+        assertThatThrownBy(() -> labelService.create(ACTOR, new CreateLabelRequest("backend")))
                 .isInstanceOf(ResourceAlreadyExistsException.class)
                 .hasMessageContaining("backend");
 
@@ -190,9 +183,9 @@ class LabelServiceTest {
         Workspace workspace = persistedWorkspace(UUID.randomUUID());
         UUID labelId = UUID.randomUUID();
         Label label = persistedLabel(labelId, "backend", workspace);
-        when(labelRepository.findById(labelId)).thenReturn(Optional.of(label));
+        when(labelRepository.findByIdAndWorkspaceId(labelId, ACTOR.workspaceId())).thenReturn(Optional.of(label));
 
-        LabelResponse response = labelService.getById(labelId);
+        LabelResponse response = labelService.getById(ACTOR, labelId);
 
         assertThat(response.id()).isEqualTo(labelId);
         assertThat(response.name()).isEqualTo("backend");
@@ -201,21 +194,21 @@ class LabelServiceTest {
     @Test
     void getByIdThrowsResourceNotFoundExceptionWhenMissing() {
         UUID labelId = UUID.randomUUID();
-        when(labelRepository.findById(labelId)).thenReturn(Optional.empty());
+        when(labelRepository.findByIdAndWorkspaceId(labelId, ACTOR.workspaceId())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> labelService.getById(labelId))
+        assertThatThrownBy(() -> labelService.getById(ACTOR, labelId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(labelId.toString());
     }
 
     @Test
-    void getByWorkspaceAndNameTrimsInputBeforeQuerying() {
-        UUID workspaceId = UUID.randomUUID();
+    void getByNameTrimsInputBeforeQuerying() {
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId);
         Label label = persistedLabel(UUID.randomUUID(), "backend", workspace);
         when(labelRepository.findByWorkspaceIdAndName(workspaceId, "backend")).thenReturn(Optional.of(label));
 
-        LabelResponse response = labelService.getByWorkspaceAndName(workspaceId, "  backend  ");
+        LabelResponse response = labelService.getByName(ACTOR, "  backend  ");
 
         assertThat(response.name()).isEqualTo("backend");
         verify(labelRepository).findByWorkspaceIdAndName(workspaceId, "backend");
@@ -230,7 +223,7 @@ class LabelServiceTest {
         UUID ticketId = UUID.randomUUID();
         UUID labelId = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticketId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(actorWithId(actorId), ticketId, labelId))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -241,7 +234,7 @@ class LabelServiceTest {
     void addLabelToTicketThrowsResourceNotFoundExceptionWhenLabelMissing() {
         Fixture fixture = newFixture();
         UUID labelId = UUID.randomUUID();
-        when(labelRepository.findById(labelId)).thenReturn(Optional.empty());
+        when(labelRepository.findByIdAndWorkspaceId(eq(labelId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(
                 actorOf(fixture.actor()), fixture.ticket().getId(), labelId))
@@ -249,51 +242,49 @@ class LabelServiceTest {
                 .hasMessageContaining(labelId.toString());
     }
 
+    /** For a caller of another workspace, the ticket does not exist (not 403, which would confirm it). */
     @Test
-    void addLabelToTicketThrowsForbiddenOperationExceptionWhenActorInDifferentWorkspace() {
+    void addLabelToATicketOfAnotherWorkspaceIsNotFound() {
         Fixture fixture = newFixture();
         Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
-        Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
-        User outsider = persistedUser(UUID.randomUUID(), otherWorkspace);
-        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        User outsider = persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID()));
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(
                 actorOf(outsider), fixture.ticket().getId(), label.getId()))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Actor");
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Ticket not found: " + fixture.ticket().getId());
 
         assertThat(fixture.ticket().getLabels()).isEmpty();
     }
 
+    /** A label of another workspace is not found for the caller, like a missing one. */
     @Test
-    void addLabelToTicketThrowsInvalidRelationshipExceptionWhenLabelCrossWorkspace() {
+    void addALabelOfAnotherWorkspaceIsNotFound() {
         Fixture fixture = newFixture();
-        Workspace labelWorkspace = persistedWorkspace(UUID.randomUUID());
-        Label label = persistedLabel(UUID.randomUUID(), "backend", labelWorkspace);
-
-        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        UUID foreignLabelId = UUID.randomUUID();
+        when(labelRepository.findByIdAndWorkspaceId(foreignLabelId, fixture.workspace().getId()))
+                .thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(
-                actorOf(fixture.actor()), fixture.ticket().getId(), label.getId()))
-                .isInstanceOf(InvalidRelationshipException.class)
-                .hasMessageContaining("Label");
+                actorOf(fixture.actor()), fixture.ticket().getId(), foreignLabelId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Label not found: " + foreignLabelId);
 
         assertThat(fixture.ticket().getLabels()).isEmpty();
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
     @Test
-    void addLabelToTicketChecksThePermissionBeforeTheLabelRelationship() {
-        // Outsider actor AND a foreign label: the actor is refused (403)
-        // before the request's label is even considered.
+    void whenBothSidesAreForeignOnlyTheTicketIsReportedAndTheLabelNeverLookedUp() {
         Fixture fixture = newFixture();
         Label foreignLabel = persistedLabel(UUID.randomUUID(), "backend", persistedWorkspace(UUID.randomUUID()));
         User outsider = persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID()));
-        when(labelRepository.findById(foreignLabel.getId())).thenReturn(Optional.of(foreignLabel));
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(
                 actorOf(outsider), fixture.ticket().getId(), foreignLabel.getId()))
-                .isInstanceOf(ForbiddenOperationException.class);
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Ticket not found: " + fixture.ticket().getId());
+        verify(labelRepository, never()).findByIdAndWorkspaceId(any(), any());
 
         assertThat(fixture.ticket().getLabels()).isEmpty();
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
@@ -303,7 +294,7 @@ class LabelServiceTest {
     void addLabelToTicketAttachesLabelReturnsMappedResponseAndRecordsLabelAddedActivity() {
         Fixture fixture = newFixture();
         Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
-        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        when(labelRepository.findByIdAndWorkspaceId(eq(label.getId()), any())).thenReturn(Optional.of(label));
 
         TicketResponse response = labelService.addLabelToTicket(
                 actorOf(fixture.actor()), fixture.ticket().getId(), label.getId());
@@ -324,7 +315,8 @@ class LabelServiceTest {
         // Membership must be detected by id, not by object/Set identity.
         Label firstLoad = persistedLabel(labelId, "backend", fixture.workspace());
         Label secondLoad = persistedLabel(labelId, "backend", fixture.workspace());
-        when(labelRepository.findById(labelId)).thenReturn(Optional.of(firstLoad), Optional.of(secondLoad));
+        when(labelRepository.findByIdAndWorkspaceId(eq(labelId), any()))
+                .thenReturn(Optional.of(firstLoad), Optional.of(secondLoad));
 
         labelService.addLabelToTicket(actorOf(fixture.actor()), fixture.ticket().getId(), labelId);
         labelService.addLabelToTicket(actorOf(fixture.actor()), fixture.ticket().getId(), labelId);
@@ -346,7 +338,7 @@ class LabelServiceTest {
         UUID ticketId = UUID.randomUUID();
         UUID labelId = UUID.randomUUID();
         UUID actorId = UUID.randomUUID();
-        when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
+        when(ticketRepository.findByIdAndProjectWorkspaceId(eq(ticketId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> labelService.removeLabelFromTicket(actorWithId(actorId), ticketId, labelId))
                 .isInstanceOf(ResourceNotFoundException.class)
@@ -357,7 +349,7 @@ class LabelServiceTest {
     void removeLabelFromTicketThrowsResourceNotFoundExceptionWhenLabelMissing() {
         Fixture fixture = newFixture();
         UUID labelId = UUID.randomUUID();
-        when(labelRepository.findById(labelId)).thenReturn(Optional.empty());
+        when(labelRepository.findByIdAndWorkspaceId(eq(labelId), any())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> labelService.removeLabelFromTicket(
                 actorOf(fixture.actor()), fixture.ticket().getId(), labelId))
@@ -366,25 +358,31 @@ class LabelServiceTest {
     }
 
     @Test
-    void removeLabelFromTicketThrowsForbiddenOperationExceptionWhenActorInDifferentWorkspace() {
+    void removeLabelFromATicketOfAnotherWorkspaceIsNotFound() {
         Fixture fixture = newFixture();
         Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
-        Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
-        User outsider = persistedUser(UUID.randomUUID(), otherWorkspace);
-        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        fixture.ticket().addLabel(label);
+        User outsider = persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID()));
 
         assertThatThrownBy(() -> labelService.removeLabelFromTicket(
                 actorOf(outsider), fixture.ticket().getId(), label.getId()))
-                .isInstanceOf(ForbiddenOperationException.class)
-                .hasMessageContaining("Actor");
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessage("Ticket not found: " + fixture.ticket().getId());
+        assertThat(fixture.ticket().getLabels()).containsExactly(label);
     }
 
+    /**
+     * Internal safeguard, unreachable through the API (both lookups are
+     * scoped to the caller's workspace): should inconsistent data ever hand
+     * back a label from another workspace, the relationship is refused.
+     */
     @Test
-    void removeLabelFromTicketThrowsInvalidRelationshipExceptionWhenLabelCrossWorkspace() {
+    void removeStillRefusesAnInconsistentCrossWorkspaceLabel() {
         Fixture fixture = newFixture();
         Workspace labelWorkspace = persistedWorkspace(UUID.randomUUID());
         Label label = persistedLabel(UUID.randomUUID(), "backend", labelWorkspace);
-        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        when(labelRepository.findByIdAndWorkspaceId(label.getId(), fixture.workspace().getId()))
+                .thenReturn(Optional.of(label));
 
         assertThatThrownBy(() -> labelService.removeLabelFromTicket(
                 actorOf(fixture.actor()), fixture.ticket().getId(), label.getId()))
@@ -397,7 +395,7 @@ class LabelServiceTest {
         Fixture fixture = newFixture();
         Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
         fixture.ticket().addLabel(label);
-        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        when(labelRepository.findByIdAndWorkspaceId(eq(label.getId()), any())).thenReturn(Optional.of(label));
 
         TicketResponse response = labelService.removeLabelFromTicket(
                 actorOf(fixture.actor()), fixture.ticket().getId(), label.getId());
@@ -413,7 +411,7 @@ class LabelServiceTest {
     void removingUnattachedLabelIsIdempotentAndRecordsNoActivity() {
         Fixture fixture = newFixture();
         Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
-        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
+        when(labelRepository.findByIdAndWorkspaceId(eq(label.getId()), any())).thenReturn(Optional.of(label));
 
         labelService.removeLabelFromTicket(actorOf(fixture.actor()), fixture.ticket().getId(), label.getId());
 
@@ -428,15 +426,14 @@ class LabelServiceTest {
 
     @Test
     void getByWorkspaceReturnsMappedLabelsPreservingRepositoryOrder() {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId);
         Label urgent = persistedLabel(UUID.randomUUID(), "urgent", workspace);
         Label bug = persistedLabel(UUID.randomUUID(), "bug", workspace);
-        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
         // Deliberately not name-sorted: the service must not re-sort.
         when(labelRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of(urgent, bug));
 
-        List<LabelResponse> responses = labelService.getByWorkspace(workspaceId);
+        List<LabelResponse> responses = labelService.getByWorkspace(ACTOR, workspaceId);
 
         assertThat(responses).extracting(LabelResponse::id).containsExactly(urgent.getId(), bug.getId());
         assertThat(responses).extracting(LabelResponse::name).containsExactly("urgent", "bug");
@@ -445,21 +442,19 @@ class LabelServiceTest {
 
     @Test
     void getByWorkspaceReturnsEmptyListForExistingWorkspaceWithoutLabels() {
-        UUID workspaceId = UUID.randomUUID();
-        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
+        UUID workspaceId = ACTOR.workspaceId();
         when(labelRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of());
 
-        assertThat(labelService.getByWorkspace(workspaceId)).isEmpty();
+        assertThat(labelService.getByWorkspace(ACTOR, workspaceId)).isEmpty();
     }
 
     @Test
-    void getByWorkspaceThrowsResourceNotFoundExceptionForUnknownWorkspaceWithoutQueryingLabels() {
-        UUID workspaceId = UUID.randomUUID();
-        when(workspaceRepository.existsById(workspaceId)).thenReturn(false);
+    void getByWorkspaceOfAnyOtherWorkspaceIsNotFoundWithoutQueryingLabels() {
+        UUID otherWorkspaceId = UUID.randomUUID();
 
-        assertThatThrownBy(() -> labelService.getByWorkspace(workspaceId))
+        assertThatThrownBy(() -> labelService.getByWorkspace(ACTOR, otherWorkspaceId))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(workspaceId.toString());
+                .hasMessage("Workspace not found: " + otherWorkspaceId);
 
         verify(labelRepository, never()).findAllInWorkspaceSortedByName(any());
     }

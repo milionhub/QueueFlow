@@ -11,7 +11,6 @@ import com.queueflow.comment.dto.CreateCommentRequest;
 import com.queueflow.comment.dto.UpdateCommentRequest;
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ForbiddenOperationException;
-import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.Ticket;
@@ -36,15 +35,9 @@ public class CommentService {
     /** The author is the acting user - never a client-supplied id. */
     @Transactional
     public CommentResponse create(AuthenticatedUser actor, CreateCommentRequest request) {
-        Ticket ticket = ticketRepository.findById(request.ticketId())
+        // Only a ticket of the caller's workspace can be commented on.
+        Ticket ticket = ticketRepository.findByIdAndProjectWorkspaceId(request.ticketId(), actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + request.ticketId()));
-
-        // Existing rule, now applied to the authenticated author (the
-        // workspace-wide access policy, and its status code, come later).
-        UUID ticketWorkspaceId = ticket.getProject().getWorkspace().getId();
-        if (!ticketWorkspaceId.equals(actor.workspaceId())) {
-            throw new InvalidRelationshipException("Comment author must belong to the same workspace as the ticket");
-        }
         // A reference, no query: the user was loaded to authenticate this request.
         User author = userRepository.getReferenceById(actor.userId());
 
@@ -58,15 +51,13 @@ public class CommentService {
     }
 
     @Transactional(readOnly = true)
-    public CommentResponse getById(UUID commentId) {
-        Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Comment not found: " + commentId));
-        return CommentResponse.from(comment);
+    public CommentResponse getById(AuthenticatedUser actor, UUID commentId) {
+        return CommentResponse.from(visibleComment(actor, commentId));
     }
 
     @Transactional(readOnly = true)
-    public List<CommentResponse> getByTicket(UUID ticketId) {
-        if (!ticketRepository.existsById(ticketId)) {
+    public List<CommentResponse> getByTicket(AuthenticatedUser actor, UUID ticketId) {
+        if (!ticketRepository.existsByIdAndProjectWorkspaceId(ticketId, actor.workspaceId())) {
             throw new ResourceNotFoundException("Ticket not found: " + ticketId);
         }
         return commentRepository.findByTicketIdOrderByCreatedAtAsc(ticketId).stream()
@@ -74,11 +65,13 @@ public class CommentService {
                 .toList();
     }
 
-    /** Only the author, identified by the authenticated principal, may edit - whatever their role. */
+    /**
+     * A comment outside the caller's workspace is not found (404). Inside it,
+     * only the author may edit - whatever their role (403).
+     */
     @Transactional
     public CommentResponse update(AuthenticatedUser actor, UUID commentId, UpdateCommentRequest request) {
-        Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Comment not found: " + commentId));
+        Comment comment = visibleComment(actor, commentId);
 
         if (!comment.getAuthor().getId().equals(actor.userId())) {
             throw new ForbiddenOperationException("Only the comment author can edit this comment");
@@ -96,17 +89,22 @@ public class CommentService {
         return CommentResponse.from(comment);
     }
 
-    /** Only the author, identified by the authenticated principal, may delete - whatever their role. */
+    /** Same order as update: not found outside the workspace, then author-only. */
     @Transactional
     public void delete(AuthenticatedUser actor, UUID commentId) {
-        Comment comment = commentRepository.findById(commentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Comment not found: " + commentId));
+        Comment comment = visibleComment(actor, commentId);
 
         if (!comment.getAuthor().getId().equals(actor.userId())) {
             throw new ForbiddenOperationException("Only the comment author can delete this comment");
         }
 
         commentRepository.delete(comment);
+    }
+
+    /** A comment of the caller's workspace; any other is not found. */
+    private Comment visibleComment(AuthenticatedUser actor, UUID commentId) {
+        return commentRepository.findByIdAndTicketProjectWorkspaceId(commentId, actor.workspaceId())
+                .orElseThrow(() -> new ResourceNotFoundException("Comment not found: " + commentId));
     }
 
     private static String validatedContent(String content) {

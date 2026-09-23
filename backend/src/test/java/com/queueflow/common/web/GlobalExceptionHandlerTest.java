@@ -54,11 +54,13 @@ import com.queueflow.label.LabelService;
 import com.queueflow.project.ProjectController;
 import com.queueflow.project.ProjectService;
 import com.queueflow.project.dto.ProjectResponse;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.ticket.ProjectTicketController;
 import com.queueflow.ticket.TicketController;
 import com.queueflow.ticket.TicketService;
+import com.queueflow.user.UserRole;
 
 import jakarta.servlet.ServletException;
 
@@ -79,6 +81,11 @@ class GlobalExceptionHandlerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    /** The principal @WithAuthenticatedUser installs: the only possible acting user. */
+    private static final AuthenticatedUser ACTOR = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.ADMIN);
 
     @MockitoBean
     private ProjectService projectService;
@@ -121,7 +128,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void resourceNotFoundBecomes404WithStandardBody() throws Exception {
-        when(projectService.getById(ID)).thenThrow(new ResourceNotFoundException("Project not found: " + ID));
+        when(projectService.getById(ACTOR, ID)).thenThrow(new ResourceNotFoundException("Project not found: " + ID));
 
         expectApiError(mockMvc.perform(get("/api/projects/{projectId}", ID)),
                 404, "Not Found", "Project not found: " + ID, "/api/projects/" + ID);
@@ -129,27 +136,27 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void resourceAlreadyExistsBecomes409WithStandardBody() throws Exception {
-        when(projectService.create(any()))
+        when(projectService.create(eq(ACTOR), any()))
                 .thenThrow(new ResourceAlreadyExistsException("Project key already exists in workspace: QF"));
 
         expectApiError(mockMvc.perform(post("/api/projects")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workspaceId": "%s", "name": "QueueFlow", "key": "qf"}
-                                """.formatted(ID))),
+                                {"name": "QueueFlow", "key": "qf"}
+                                """)),
                 409, "Conflict", "Project key already exists in workspace: QF", "/api/projects");
     }
 
     @Test
     void duplicateLabelFromAnotherControllerUsesTheSameMapping() throws Exception {
-        when(labelService.create(any()))
+        when(labelService.create(eq(ACTOR), any()))
                 .thenThrow(new ResourceAlreadyExistsException("Label already exists in workspace: Bug"));
 
         expectApiError(mockMvc.perform(post("/api/labels")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workspaceId": "%s", "name": "Bug"}
-                                """.formatted(ID))),
+                                {"name": "Bug"}
+                                """)),
                 409, "Conflict", "Label already exists in workspace: Bug", "/api/labels");
     }
 
@@ -158,23 +165,23 @@ class GlobalExceptionHandlerTest {
         expectApiError(mockMvc.perform(post("/api/projects")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name": "QueueFlow", "key": "QF"}
+                                {"key": "QF"}
                                 """)),
-                400, "Bad Request", "workspaceId is required", "/api/projects");
+                400, "Bad Request", "name must not be blank", "/api/projects");
 
         verifyNoInteractions(projectService);
     }
 
     @Test
     void multipleValidationErrorsAreSortedAndJoinedDeterministically() throws Exception {
-        // {} violates three constraints; the validator's own ordering is not
+        // {} violates two constraints; the validator's own ordering is not
         // guaranteed, so the handler sorts the messages.
         for (int attempt = 0; attempt < 3; attempt++) {
             expectApiError(mockMvc.perform(post("/api/projects")
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("{}")),
                     400, "Bad Request",
-                    "key must not be blank; name must not be blank; workspaceId is required",
+                    "key must not be blank; name must not be blank",
                     "/api/projects");
         }
 
@@ -209,7 +216,7 @@ class GlobalExceptionHandlerTest {
                         MethodArgumentTypeMismatchException.class, "Invalid value for parameter: ticketNumber",
                         "/api/projects/" + ID + "/tickets/not-a-number"),
                 Arguments.of("missing required query parameter",
-                        get("/api/projects/by-key").param("workspaceId", ID.toString()),
+                        get("/api/projects/by-key"),
                         MissingServletRequestParameterException.class, "Missing required parameter: key",
                         "/api/projects/by-key"));
     }
@@ -225,15 +232,14 @@ class GlobalExceptionHandlerTest {
     }
 
     @Test
-    void invalidQueryParameterIsReportedWithoutEchoingTheQueryString() throws Exception {
-        MvcResult result = expectApiError(mockMvc.perform(get("/api/projects/by-key")
-                        .param("workspaceId", "not-a-uuid")
-                        .param("key", "QF")),
-                400, "Bad Request", "Invalid value for parameter: workspaceId", "/api/projects/by-key");
+    void invalidParameterIsReportedWithoutEchoingTheQueryString() throws Exception {
+        MvcResult result = expectApiError(mockMvc.perform(get("/api/projects/{projectId}", "not-a-uuid")
+                        .param("secret", "query-value")),
+                400, "Bad Request", "Invalid value for parameter: projectId", "/api/projects/not-a-uuid");
 
         assertThat(result.getResolvedException()).isInstanceOf(MethodArgumentTypeMismatchException.class);
         String path = JsonPath.read(result.getResponse().getContentAsString(), "$.path");
-        assertThat(path).doesNotContain("?", "workspaceId=", "key=");
+        assertThat(path).doesNotContain("?", "secret=", "query-value");
     }
 
     // ---------------------------------------------------------------
@@ -286,18 +292,15 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void pathIsTheUriPathOnlyWithoutTheQueryString() throws Exception {
-        UUID workspaceId = UUID.randomUUID();
-        when(projectService.getByWorkspaceAndKey(workspaceId, "QF"))
-                .thenThrow(new ResourceNotFoundException("Project not found in workspace " + workspaceId + " with key: QF"));
+        when(projectService.getByKey(ACTOR, "QF"))
+                .thenThrow(new ResourceNotFoundException("Project not found with key: QF"));
 
         ResultActions result = mockMvc.perform(get("/api/projects/by-key")
-                .param("workspaceId", workspaceId.toString())
                 .param("key", "QF"));
 
-        expectApiError(result, 404, "Not Found", "Project not found in workspace " + workspaceId + " with key: QF",
-                "/api/projects/by-key");
+        expectApiError(result, 404, "Not Found", "Project not found with key: QF", "/api/projects/by-key");
         String path = JsonPath.read(result.andReturn().getResponse().getContentAsString(), "$.path");
-        assertThat(path).doesNotContain("?", "workspaceId=", "key=", "http");
+        assertThat(path).doesNotContain("?", "key=", "http");
     }
 
     // ---------------------------------------------------------------
@@ -306,14 +309,14 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void businessRuleViolationBecomes400() throws Exception {
-        when(projectService.create(any())).thenThrow(new BusinessRuleViolationException(
+        when(projectService.create(eq(ACTOR), any())).thenThrow(new BusinessRuleViolationException(
                 "key must be 2-10 characters, using only letters A-Z and digits 0-9: A-B"));
 
         expectApiError(mockMvc.perform(post("/api/projects")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"workspaceId": "%s", "name": "QueueFlow", "key": "A-B"}
-                                """.formatted(ID))),
+                                {"name": "QueueFlow", "key": "A-B"}
+                                """)),
                 400, "Bad Request", "key must be 2-10 characters, using only letters A-Z and digits 0-9: A-B",
                 "/api/projects");
     }
@@ -361,15 +364,15 @@ class GlobalExceptionHandlerTest {
     }
 
     private void postProjectExpecting(DataIntegrityViolationException exception) {
-        when(projectService.create(any())).thenThrow(exception);
+        when(projectService.create(eq(ACTOR), any())).thenThrow(exception);
     }
 
     private ResultActions postProject() throws Exception {
         return mockMvc.perform(post("/api/projects")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
-                        {"workspaceId": "%s", "name": "QueueFlow", "key": "QF"}
-                        """.formatted(ID)));
+                        {"name": "QueueFlow", "key": "QF"}
+                        """));
     }
 
     @Test
@@ -406,7 +409,7 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void validRequestIsUnaffected() throws Exception {
-        when(projectService.getById(ID)).thenReturn(new ProjectResponse(ID, "QueueFlow",
+        when(projectService.getById(ACTOR, ID)).thenReturn(new ProjectResponse(ID, "QueueFlow",
                 "QF", null, UUID.randomUUID(), OffsetDateTime.parse("2026-09-23T10:15:30Z"),
                 OffsetDateTime.parse("2026-09-23T10:15:30Z")));
 

@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.RecordComponent;
@@ -35,6 +36,8 @@ import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
 import com.queueflow.project.dto.UpdateProjectRequest;
+import com.queueflow.security.AuthenticatedUser;
+import com.queueflow.user.UserRole;
 import com.queueflow.workspace.Workspace;
 import com.queueflow.workspace.WorkspaceRepository;
 
@@ -44,6 +47,10 @@ import com.queueflow.workspace.WorkspaceRepository;
  */
 @ExtendWith(MockitoExtension.class)
 class ProjectServiceTest {
+
+    /** The caller of every operation below; its workspace is the only one the service can see. */
+    private static final AuthenticatedUser ACTOR =
+            new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), UserRole.MEMBER);
 
     @Mock
     private ProjectRepository projectRepository;
@@ -76,11 +83,11 @@ class ProjectServiceTest {
 
     @Test
     void createLoadsWorkspaceNormalizesKeyAndSavesProjectWithCorrectFields() {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId, "Acme Inc.");
-        CreateProjectRequest request = new CreateProjectRequest(workspaceId, "E-Commerce", "  ecom  ", "Storefront");
+        CreateProjectRequest request = new CreateProjectRequest("E-Commerce", "  ecom  ", "Storefront");
 
-        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(workspaceRepository.getReferenceById(workspaceId)).thenReturn(workspace);
         when(projectRepository.existsByWorkspaceIdAndKey(workspaceId, "ECOM")).thenReturn(false);
 
         UUID generatedId = UUID.randomUUID();
@@ -94,9 +101,9 @@ class ProjectServiceTest {
             return argument;
         });
 
-        ProjectResponse response = projectService.create(request);
+        ProjectResponse response = projectService.create(ACTOR, request);
 
-        verify(workspaceRepository).findById(workspaceId);
+        verify(workspaceRepository).getReferenceById(workspaceId);
 
         ArgumentCaptor<Project> captor = ArgumentCaptor.forClass(Project.class);
         verify(projectRepository).save(captor.capture());
@@ -111,30 +118,16 @@ class ProjectServiceTest {
     }
 
     @Test
-    void createThrowsResourceNotFoundExceptionWhenWorkspaceMissing() {
-        UUID workspaceId = UUID.randomUUID();
-        CreateProjectRequest request = new CreateProjectRequest(workspaceId, "E-Commerce", "ECOM", null);
-        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> projectService.create(request))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(workspaceId.toString());
-
-        verify(projectRepository, never()).save(any());
-    }
-
-    @Test
     void createThrowsResourceAlreadyExistsExceptionWhenNormalizedKeyIsDuplicate() {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId, "Acme Inc.");
         // Raw key deliberately not already normalized - proves the duplicate
         // check happens against "ECOM", not the raw "  ecom  ".
-        CreateProjectRequest request = new CreateProjectRequest(workspaceId, "E-Commerce", "  ecom  ", null);
+        CreateProjectRequest request = new CreateProjectRequest("E-Commerce", "  ecom  ", null);
 
-        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
         when(projectRepository.existsByWorkspaceIdAndKey(workspaceId, "ECOM")).thenReturn(true);
 
-        assertThatThrownBy(() -> projectService.create(request))
+        assertThatThrownBy(() -> projectService.create(ACTOR, request))
                 .isInstanceOf(ResourceAlreadyExistsException.class)
                 .hasMessageContaining("ECOM");
 
@@ -144,33 +137,47 @@ class ProjectServiceTest {
 
     @Test
     void getByIdReturnsMappedResponse() {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId, "Acme Inc.");
         UUID projectId = UUID.randomUUID();
         OffsetDateTime timestamp = OffsetDateTime.now();
         Project project = persistedProject(projectId, "E-Commerce", "ECOM", "Storefront", workspace, 5L, timestamp);
 
-        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceId(projectId, ACTOR.workspaceId())).thenReturn(Optional.of(project));
 
-        ProjectResponse response = projectService.getById(projectId);
+        ProjectResponse response = projectService.getById(ACTOR, projectId);
 
         assertThat(response).isEqualTo(
                 new ProjectResponse(projectId, "E-Commerce", "ECOM", "Storefront", workspaceId, timestamp, timestamp));
     }
 
     @Test
+    void createNeverLooksAtAnyWorkspaceButTheCallers() {
+        UUID workspaceId = ACTOR.workspaceId();
+        when(projectRepository.existsByWorkspaceIdAndKey(workspaceId, "OPS")).thenReturn(false);
+        when(workspaceRepository.getReferenceById(workspaceId)).thenReturn(persistedWorkspace(workspaceId, "Acme"));
+        when(projectRepository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        projectService.create(ACTOR, new CreateProjectRequest("Operations", "ops", null));
+
+        verify(projectRepository).existsByWorkspaceIdAndKey(workspaceId, "OPS");
+        verify(workspaceRepository).getReferenceById(workspaceId);
+        verifyNoMoreInteractions(workspaceRepository);
+    }
+
+    @Test
     void getByIdThrowsResourceNotFoundExceptionWhenMissing() {
         UUID projectId = UUID.randomUUID();
-        when(projectRepository.findById(projectId)).thenReturn(Optional.empty());
+        when(projectRepository.findByIdAndWorkspaceId(projectId, ACTOR.workspaceId())).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> projectService.getById(projectId))
+        assertThatThrownBy(() -> projectService.getById(ACTOR, projectId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(projectId.toString());
     }
 
     @Test
-    void getByWorkspaceAndKeyNormalizesKeyAndReturnsResponse() {
-        UUID workspaceId = UUID.randomUUID();
+    void getByKeyNormalizesKeyAndReturnsResponse() {
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId, "Acme Inc.");
         UUID projectId = UUID.randomUUID();
         OffsetDateTime timestamp = OffsetDateTime.now();
@@ -178,18 +185,18 @@ class ProjectServiceTest {
 
         when(projectRepository.findByWorkspaceIdAndKey(workspaceId, "ECOM")).thenReturn(Optional.of(project));
 
-        ProjectResponse response = projectService.getByWorkspaceAndKey(workspaceId, "  ecom  ");
+        ProjectResponse response = projectService.getByKey(ACTOR, "  ecom  ");
 
         assertThat(response.key()).isEqualTo("ECOM");
         verify(projectRepository).findByWorkspaceIdAndKey(workspaceId, "ECOM");
     }
 
     @Test
-    void getByWorkspaceAndKeyThrowsResourceNotFoundExceptionWhenMissing() {
-        UUID workspaceId = UUID.randomUUID();
+    void getByKeyThrowsResourceNotFoundExceptionWhenMissing() {
+        UUID workspaceId = ACTOR.workspaceId();
         when(projectRepository.findByWorkspaceIdAndKey(workspaceId, "ECOM")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> projectService.getByWorkspaceAndKey(workspaceId, "ecom"))
+        assertThatThrownBy(() -> projectService.getByKey(ACTOR, "ecom"))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining("ECOM");
     }
@@ -213,16 +220,15 @@ class ProjectServiceTest {
 
     @Test
     void getByWorkspaceReturnsMappedProjectsPreservingRepositoryOrder() {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId, "Acme Inc.");
         OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
         Project zeta = persistedProject(UUID.randomUUID(), "Zeta", "ZETA", "Last", workspace, 4L, timestamp);
         Project alpha = persistedProject(UUID.randomUUID(), "Alpha", "ALPHA", null, workspace, 1L, timestamp);
-        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
         // Deliberately not name-sorted: the service must not re-sort.
         when(projectRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of(zeta, alpha));
 
-        List<ProjectResponse> responses = projectService.getByWorkspace(workspaceId);
+        List<ProjectResponse> responses = projectService.getByWorkspace(ACTOR, workspaceId);
 
         assertThat(responses).extracting(ProjectResponse::id).containsExactly(zeta.getId(), alpha.getId());
         assertThat(responses.get(0)).isEqualTo(new ProjectResponse(zeta.getId(), "Zeta", "ZETA", "Last",
@@ -231,23 +237,21 @@ class ProjectServiceTest {
 
     @Test
     void getByWorkspaceReturnsEmptyListForExistingWorkspaceWithoutProjects() {
-        UUID workspaceId = UUID.randomUUID();
-        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
+        UUID workspaceId = ACTOR.workspaceId();
         when(projectRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of());
 
-        assertThat(projectService.getByWorkspace(workspaceId)).isEmpty();
+        assertThat(projectService.getByWorkspace(ACTOR, workspaceId)).isEmpty();
     }
 
     @Test
-    void getByWorkspaceThrowsResourceNotFoundExceptionForUnknownWorkspaceWithoutQueryingProjects() {
-        UUID workspaceId = UUID.randomUUID();
-        when(workspaceRepository.existsById(workspaceId)).thenReturn(false);
+    void getByWorkspaceOfAnyOtherWorkspaceIsNotFoundWithoutQueryingAnything() {
+        UUID otherWorkspaceId = UUID.randomUUID();
 
-        assertThatThrownBy(() -> projectService.getByWorkspace(workspaceId))
+        assertThatThrownBy(() -> projectService.getByWorkspace(ACTOR, otherWorkspaceId))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(workspaceId.toString());
+                .hasMessage("Workspace not found: " + otherWorkspaceId);
 
-        verify(projectRepository, never()).findAllInWorkspaceSortedByName(any());
+        verifyNoInteractions(workspaceRepository, projectRepository);
     }
 
     // ---------------------------------------------------------------
@@ -263,14 +267,14 @@ class ProjectServiceTest {
             "ab, AB",
             "abcdefghij, ABCDEFGHIJ"})
     void createAcceptsValidKeysAndStoresTheNormalizedValue(String rawKey, String expectedKey) {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
         Workspace workspace = persistedWorkspace(workspaceId, "Acme Inc.");
-        when(workspaceRepository.findById(workspaceId)).thenReturn(Optional.of(workspace));
+        when(workspaceRepository.getReferenceById(workspaceId)).thenReturn(workspace);
         when(projectRepository.existsByWorkspaceIdAndKey(workspaceId, expectedKey)).thenReturn(false);
         when(projectRepository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ProjectResponse response = projectService.create(
-                new CreateProjectRequest(workspaceId, "Project", rawKey, null));
+        ProjectResponse response = projectService.create(ACTOR, 
+                new CreateProjectRequest("Project", rawKey, null));
 
         assertThat(response.key()).isEqualTo(expectedKey);
         ArgumentCaptor<Project> captor = ArgumentCaptor.forClass(Project.class);
@@ -290,9 +294,9 @@ class ProjectServiceTest {
             "\u00DF\u00DF\u00DF\u00DF\u00DF\u00DF", // "ßßßßßß": 6 chars, upper-cases to 12 ("SS" x 6)
             "   "})         // blank
     void createRejectsInvalidKeysBeforeAnyDatabaseAccess(String rawKey) {
-        UUID workspaceId = UUID.randomUUID();
+        UUID workspaceId = ACTOR.workspaceId();
 
-        assertThatThrownBy(() -> projectService.create(new CreateProjectRequest(workspaceId, "Project", rawKey, null)))
+        assertThatThrownBy(() -> projectService.create(ACTOR, new CreateProjectRequest("Project", rawKey, null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("key");
 
@@ -310,8 +314,8 @@ class ProjectServiceTest {
         assertThat(sharpS).hasSize(6);
         assertThat(sharpS.toUpperCase(Locale.ROOT)).isEqualTo("SSSSSSSSSSSS");
 
-        assertThatThrownBy(() -> projectService.create(
-                new CreateProjectRequest(UUID.randomUUID(), "Project", sharpS, null)))
+        assertThatThrownBy(() -> projectService.create(ACTOR, 
+                new CreateProjectRequest("Project", sharpS, null)))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         verify(projectRepository, never()).save(any());
@@ -319,7 +323,7 @@ class ProjectServiceTest {
 
     @Test
     void createRejectsNullKey() {
-        assertThatThrownBy(() -> projectService.create(new CreateProjectRequest(UUID.randomUUID(), "Project", null, null)))
+        assertThatThrownBy(() -> projectService.create(ACTOR, new CreateProjectRequest("Project", null, null)))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         verifyNoInteractions(workspaceRepository, projectRepository);
@@ -330,13 +334,13 @@ class ProjectServiceTest {
     // ---------------------------------------------------------------
 
     private Project createAndCaptureSaved(String rawName, String description) {
-        UUID workspaceId = UUID.randomUUID();
-        when(workspaceRepository.findById(workspaceId))
-                .thenReturn(Optional.of(persistedWorkspace(workspaceId, "Acme Inc.")));
+        UUID workspaceId = ACTOR.workspaceId();
+        when(workspaceRepository.getReferenceById(workspaceId))
+                .thenReturn(persistedWorkspace(workspaceId, "Acme Inc."));
         when(projectRepository.existsByWorkspaceIdAndKey(workspaceId, "QF")).thenReturn(false);
         when(projectRepository.save(any(Project.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        projectService.create(new CreateProjectRequest(workspaceId, rawName, "qf", description));
+        projectService.create(ACTOR, new CreateProjectRequest(rawName, "qf", description));
 
         ArgumentCaptor<Project> captor = ArgumentCaptor.forClass(Project.class);
         verify(projectRepository).save(captor.capture());
@@ -360,8 +364,8 @@ class ProjectServiceTest {
 
     @Test
     void createRejectsNameLongerThanTheLimitAfterTrimming() {
-        assertThatThrownBy(() -> projectService.create(
-                new CreateProjectRequest(UUID.randomUUID(), "a".repeat(256), "qf", null)))
+        assertThatThrownBy(() -> projectService.create(ACTOR, 
+                new CreateProjectRequest("a".repeat(256), "qf", null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("255");
 
@@ -372,8 +376,8 @@ class ProjectServiceTest {
     @NullSource
     @ValueSource(strings = {"", "   "})
     void createRejectsBlankNameBeforeAnyDatabaseAccess(String blankName) {
-        assertThatThrownBy(() -> projectService.create(
-                new CreateProjectRequest(UUID.randomUUID(), blankName, "qf", null)))
+        assertThatThrownBy(() -> projectService.create(ACTOR, 
+                new CreateProjectRequest(blankName, "qf", null)))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("name");
 
@@ -386,11 +390,11 @@ class ProjectServiceTest {
 
     private static final OffsetDateTime ORIGINAL_TIMESTAMP = OffsetDateTime.parse("2026-01-01T09:00:00Z");
 
-    /** A persisted-looking project with a fixed past timestamp, returned by findById. */
+    /** A persisted-looking project with a fixed past timestamp, found in the caller's workspace. */
     private Project existingProject(UUID projectId, Workspace workspace) {
         Project project = persistedProject(projectId, "Original Name", "ECOM", "Original description", workspace, 8L,
                 ORIGINAL_TIMESTAMP);
-        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(projectRepository.findByIdAndWorkspaceId(projectId, ACTOR.workspaceId())).thenReturn(Optional.of(project));
         return project;
     }
 
@@ -419,7 +423,7 @@ class ProjectServiceTest {
         UpdateProjectRequest request = patch();
         request.setName("  Storefront v2  ");
 
-        ProjectResponse response = projectService.update(projectId, request);
+        ProjectResponse response = projectService.update(ACTOR, projectId, request);
 
         assertThat(project.getName()).isEqualTo("Storefront v2");
         assertThat(project.getDescription()).isEqualTo("Original description");
@@ -437,7 +441,7 @@ class ProjectServiceTest {
         UpdateProjectRequest request = patch();
         request.setDescription("New description");
 
-        ProjectResponse response = projectService.update(projectId, request);
+        ProjectResponse response = projectService.update(ACTOR, projectId, request);
 
         assertThat(project.getName()).isEqualTo("Original Name");
         assertThat(project.getDescription()).isEqualTo("New description");
@@ -455,7 +459,7 @@ class ProjectServiceTest {
         request.setName("Renamed");
         request.setDescription("Described");
 
-        ProjectResponse response = projectService.update(projectId, request);
+        ProjectResponse response = projectService.update(ACTOR, projectId, request);
 
         assertThat(response.name()).isEqualTo("Renamed");
         assertThat(response.description()).isEqualTo("Described");
@@ -475,7 +479,7 @@ class ProjectServiceTest {
         UpdateProjectRequest request = patch();
         request.setDescription(null);
 
-        ProjectResponse response = projectService.update(projectId, request);
+        ProjectResponse response = projectService.update(ACTOR, projectId, request);
 
         assertThat(project.getDescription()).isNull();
         assertThat(response.description()).isNull();
@@ -489,7 +493,7 @@ class ProjectServiceTest {
         UUID projectId = UUID.randomUUID();
         Project project = existingProject(projectId, workspace);
 
-        ProjectResponse response = projectService.update(projectId, patch());
+        ProjectResponse response = projectService.update(ACTOR, projectId, patch());
 
         assertThat(project.getName()).isEqualTo("Original Name");
         assertThat(project.getDescription()).isEqualTo("Original description");
@@ -508,7 +512,7 @@ class ProjectServiceTest {
         request.setName("  Original Name ");   // equal after trimming
         request.setDescription("Original description");
 
-        projectService.update(projectId, request);
+        projectService.update(ACTOR, projectId, request);
 
         assertThat(project.getUpdatedAt()).isEqualTo(ORIGINAL_TIMESTAMP);
     }
@@ -523,7 +527,7 @@ class ProjectServiceTest {
         request.setName(blankName);
         request.setDescription("Would change");
 
-        assertThatThrownBy(() -> projectService.update(projectId, request))
+        assertThatThrownBy(() -> projectService.update(ACTOR, projectId, request))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("name");
 
@@ -542,7 +546,7 @@ class ProjectServiceTest {
         UpdateProjectRequest request = patch();
         request.setName("a".repeat(256));
 
-        assertThatThrownBy(() -> projectService.update(projectId, request))
+        assertThatThrownBy(() -> projectService.update(ACTOR, projectId, request))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("255");
 
@@ -558,7 +562,7 @@ class ProjectServiceTest {
         UpdateProjectRequest request = patch();
         request.setName(" " + "a".repeat(255) + " ");
 
-        projectService.update(projectId, request);
+        projectService.update(ACTOR, projectId, request);
 
         assertThat(project.getName()).hasSize(255);
     }
@@ -566,11 +570,11 @@ class ProjectServiceTest {
     @Test
     void updateThrowsResourceNotFoundExceptionForUnknownProject() {
         UUID projectId = UUID.randomUUID();
-        when(projectRepository.findById(projectId)).thenReturn(Optional.empty());
+        when(projectRepository.findByIdAndWorkspaceId(projectId, ACTOR.workspaceId())).thenReturn(Optional.empty());
         UpdateProjectRequest request = patch();
         request.setName("Anything");
 
-        assertThatThrownBy(() -> projectService.update(projectId, request))
+        assertThatThrownBy(() -> projectService.update(ACTOR, projectId, request))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(projectId.toString());
     }

@@ -1,5 +1,6 @@
 package com.queueflow.project;
 
+import static com.queueflow.security.TestActors.actorIn;
 import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -86,8 +87,8 @@ class ProjectUpdateIntegrationTest {
     void createStoresTheNormalizedKeyAndTrimmedName() {
         Workspace workspace = workspace();
 
-        ProjectResponse response = projectService.create(
-                new CreateProjectRequest(workspace.getId(), "  QueueFlow Core  ", " crm ", null));
+        ProjectResponse response = projectService.create(actorIn(workspace),
+                new CreateProjectRequest("  QueueFlow Core  ", " crm ", null));
         newRequest();
 
         assertThat(response.key()).isEqualTo("CRM");
@@ -104,8 +105,8 @@ class ProjectUpdateIntegrationTest {
         // "ßßßßßß" upper-cases to "SSSSSSSSSSSS" (12): without the service
         // check this would fail inside PostgreSQL (VARCHAR(10)). It must be a
         // clean business-rule rejection with no SQL issued for the project.
-        assertThatThrownBy(() -> projectService.create(new CreateProjectRequest(
-                workspace.getId(), "Sharp S", "ßßßßßß", null)))
+        assertThatThrownBy(() -> projectService.create(actorIn(workspace),new CreateProjectRequest(
+                "Sharp S", "ßßßßßß", null)))
                 .isExactlyInstanceOf(BusinessRuleViolationException.class);
         newRequest();
 
@@ -123,7 +124,7 @@ class ProjectUpdateIntegrationTest {
         UpdateProjectRequest request = new UpdateProjectRequest();
         request.setName("  Storefront  ");
         request.setDescription("Storefront and checkout");
-        ProjectResponse response = projectService.update(project.getId(), request);
+        ProjectResponse response = projectService.update(actorIn(project.getWorkspace()), project.getId(), request);
 
         assertThat(response.name()).isEqualTo("Storefront");
         assertThat(response.updatedAt()).isAfter(updatedAtBefore);
@@ -151,7 +152,7 @@ class ProjectUpdateIntegrationTest {
 
         UpdateProjectRequest request = new UpdateProjectRequest();
         request.setDescription(null);
-        projectService.update(project.getId(), request);
+        projectService.update(actorIn(project.getWorkspace()), project.getId(), request);
         newRequest();
 
         assertThat(rawColumn("description", project.getId())).isNull();
@@ -177,7 +178,7 @@ class ProjectUpdateIntegrationTest {
 
         UpdateProjectRequest request = new UpdateProjectRequest();
         request.setName("Renamed");
-        projectService.update(project.getId(), request);
+        projectService.update(actorIn(project.getWorkspace()), project.getId(), request);
         newRequest();
 
         TicketResponse second = ticketService.create(actorOf(creator),

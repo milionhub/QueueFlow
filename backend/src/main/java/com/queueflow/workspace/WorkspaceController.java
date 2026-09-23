@@ -2,15 +2,18 @@ package com.queueflow.workspace;
 
 import java.util.UUID;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.queueflow.config.OpenApiConfig;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.workspace.dto.WorkspaceResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -33,7 +36,8 @@ public class WorkspaceController {
     @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/{workspaceId}")
-    public WorkspaceResponse getById(@PathVariable UUID workspaceId) {
-        return workspaceService.getById(workspaceId);
+    public WorkspaceResponse getById(@AuthenticationPrincipal AuthenticatedUser actor,
+            @Parameter(description = OpenApiConfig.OWN_WORKSPACE_ID) @PathVariable UUID workspaceId) {
+        return workspaceService.getById(actor, workspaceId);
     }
 }

@@ -3,6 +3,7 @@ package com.queueflow.workspace;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
@@ -17,6 +18,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.queueflow.common.exception.ResourceNotFoundException;
+import com.queueflow.security.AuthenticatedUser;
+import com.queueflow.user.UserRole;
 import com.queueflow.workspace.dto.WorkspaceResponse;
 
 /**
@@ -26,6 +29,10 @@ import com.queueflow.workspace.dto.WorkspaceResponse;
  */
 @ExtendWith(MockitoExtension.class)
 class WorkspaceServiceTest {
+
+    /** The caller of every operation below; its workspace is the only one the service can see. */
+    private static final AuthenticatedUser ACTOR =
+            new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), UserRole.MEMBER);
 
     @Mock
     private WorkspaceRepository workspaceRepository;
@@ -47,23 +54,24 @@ class WorkspaceServiceTest {
 
     @Test
     void getByIdReturnsMappedResponse() {
-        UUID id = UUID.randomUUID();
+        UUID id = ACTOR.workspaceId();
         OffsetDateTime timestamp = OffsetDateTime.now();
         Workspace workspace = persistedWorkspace(id, "Acme Inc.", timestamp);
         when(workspaceRepository.findById(id)).thenReturn(Optional.of(workspace));
 
-        WorkspaceResponse response = workspaceService.getById(id);
+        WorkspaceResponse response = workspaceService.getById(ACTOR, id);
 
         assertThat(response).isEqualTo(new WorkspaceResponse(id, "Acme Inc.", timestamp, timestamp));
     }
 
     @Test
-    void getByIdThrowsResourceNotFoundExceptionWhenMissing() {
+    void anyWorkspaceButTheCallersIsNotFoundWithoutALookup() {
         UUID id = UUID.randomUUID();
-        when(workspaceRepository.findById(id)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> workspaceService.getById(id))
+        assertThatThrownBy(() -> workspaceService.getById(ACTOR, id))
                 .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(id.toString());
+                .hasMessage("Workspace not found: " + id);
+
+        verifyNoInteractions(workspaceRepository);
     }
 }

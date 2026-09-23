@@ -15,6 +15,11 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
 
     boolean existsByWorkspaceIdAndKey(UUID workspaceId, String key);
 
+    /** Tenant-scoped: a project of another workspace is simply not found. */
+    Optional<Project> findByIdAndWorkspaceId(UUID id, UUID workspaceId);
+
+    boolean existsByIdAndWorkspaceId(UUID id, UUID workspaceId);
+
     Optional<Project> findByWorkspaceIdAndKey(UUID workspaceId, String key);
 
     /**
@@ -37,6 +42,7 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
      * non-locking semantics.
      */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT p FROM Project p WHERE p.id = :id")
-    Optional<Project> findByIdForUpdate(@Param("id") UUID id);
+    @Query("SELECT p FROM Project p WHERE p.id = :id AND p.workspace.id = :workspaceId")
+    Optional<Project> findByIdAndWorkspaceIdForUpdate(@Param("id") UUID id,
+            @Param("workspaceId") UUID workspaceId);
 }

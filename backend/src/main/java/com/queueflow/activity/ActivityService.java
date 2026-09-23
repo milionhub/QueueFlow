@@ -8,6 +8,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.queueflow.activity.dto.ActivityResponse;
 import com.queueflow.common.exception.ResourceNotFoundException;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.Ticket;
 import com.queueflow.ticket.TicketRepository;
 import com.queueflow.user.User;
@@ -24,8 +25,8 @@ public class ActivityService {
     }
 
     @Transactional(readOnly = true)
-    public List<ActivityResponse> getByTicket(UUID ticketId) {
-        if (!ticketRepository.existsById(ticketId)) {
+    public List<ActivityResponse> getByTicket(AuthenticatedUser actor, UUID ticketId) {
+        if (!ticketRepository.existsByIdAndProjectWorkspaceId(ticketId, actor.workspaceId())) {
             throw new ResourceNotFoundException("Ticket not found: " + ticketId);
         }
         return activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticketId).stream()

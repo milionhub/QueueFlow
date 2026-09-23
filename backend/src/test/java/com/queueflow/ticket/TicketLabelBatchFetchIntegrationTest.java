@@ -1,5 +1,6 @@
 package com.queueflow.ticket;
 
+import static com.queueflow.security.TestActors.actorIn;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
@@ -108,7 +109,7 @@ class TicketLabelBatchFetchIntegrationTest {
         Statistics statistics = entityManagerFactory.unwrap(SessionFactory.class).getStatistics();
         statistics.clear();
 
-        List<TicketResponse> responses = ticketService.getByProject(project.getId());
+        List<TicketResponse> responses = ticketService.getByProject(actorIn(project.getWorkspace()), project.getId());
 
         long statements = statistics.getPrepareStatementCount();
         // Expected: 1 project existence check + 1 ticket list + 1 project

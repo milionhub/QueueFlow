@@ -140,6 +140,27 @@ class OpenApiContractTest {
                         .isEqualTo(OpenApiConfig.UNAUTHORIZED));
     }
 
+    /**
+     * The tenant is the caller's own workspace: no request body or query
+     * parameter can choose one. Workspace ids remain only as path
+     * identifiers, documented as "own workspace only".
+     */
+    @Test
+    void noRequestLetsTheClientChooseAWorkspace() {
+        Map<String, Map<String, Object>> schemas = doc.read("$.components.schemas");
+        schemas.forEach((name, schema) -> {
+            if (name.endsWith("Request")) {
+                Map<?, ?> properties = (Map<?, ?>) schema.getOrDefault("properties", Map.of());
+                assertThat(properties.containsKey("workspaceId")).as(name).isFalse();
+            }
+        });
+        List<Map<String, Object>> workspaceParameters = doc.read("$.paths.*.*.parameters[?(@.name == 'workspaceId')]");
+        assertThat(workspaceParameters).hasSize(4).allSatisfy(parameter -> {
+            assertThat(parameter).containsEntry("in", "path");
+            assertThat((String) parameter.get("description")).contains("own workspace");
+        });
+    }
+
     /** The authenticated principal is resolved from the token, never a request parameter. */
     @Test
     void currentUserIsNotARequestParameter() {

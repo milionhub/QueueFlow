@@ -15,7 +15,9 @@ import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
 import com.queueflow.project.dto.UpdateProjectRequest;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.workspace.Workspace;
+import com.queueflow.workspace.WorkspaceAccess;
 import com.queueflow.workspace.WorkspaceRepository;
 
 @Service
@@ -45,8 +47,9 @@ public class ProjectService {
         this.workspaceRepository = workspaceRepository;
     }
 
+    /** Always created in the caller's workspace: the request cannot choose another. */
     @Transactional
-    public ProjectResponse create(CreateProjectRequest request) {
+    public ProjectResponse create(AuthenticatedUser actor, CreateProjectRequest request) {
         // Validated before any database access, so an invalid key or name can
         // never reach PostgreSQL as a length/constraint failure. The name
         // follows the same rule as update(): trimmed, not blank, max length
@@ -55,16 +58,16 @@ public class ProjectService {
         String normalizedKey = validatedKey(request.key());
         String name = validatedName(request.name());
 
-        Workspace workspace = workspaceRepository.findById(request.workspaceId())
-                .orElseThrow(() -> new ResourceNotFoundException("Workspace not found: " + request.workspaceId()));
-
         // Business-level pre-check for a clean error on the normal path.
         // Not the concurrency guarantee - see ProjectRepository's
-        // UNIQUE(workspace_id, key) constraint for that.
-        if (projectRepository.existsByWorkspaceIdAndKey(request.workspaceId(), normalizedKey)) {
+        // UNIQUE(workspace_id, key) constraint for that. Keys are unique per
+        // workspace: another workspace may use the same key.
+        if (projectRepository.existsByWorkspaceIdAndKey(actor.workspaceId(), normalizedKey)) {
             throw new ResourceAlreadyExistsException(
                     "Project key already exists in workspace: " + normalizedKey);
         }
+        // A reference, no query: the caller's workspace was loaded to authenticate them.
+        Workspace workspace = workspaceRepository.getReferenceById(actor.workspaceId());
 
         Project project = new Project(name, normalizedKey, request.description(), workspace);
         Project saved = projectRepository.save(project);
@@ -72,32 +75,30 @@ public class ProjectService {
     }
 
     @Transactional(readOnly = true)
-    public ProjectResponse getById(UUID projectId) {
-        Project project = projectRepository.findById(projectId)
+    public ProjectResponse getById(AuthenticatedUser actor, UUID projectId) {
+        Project project = projectRepository.findByIdAndWorkspaceId(projectId, actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
         return ProjectResponse.from(project);
     }
 
+    /** Keys are unique per workspace, so the key is looked up in the caller's workspace only. */
     @Transactional(readOnly = true)
-    public ProjectResponse getByWorkspaceAndKey(UUID workspaceId, String key) {
+    public ProjectResponse getByKey(AuthenticatedUser actor, String key) {
         String normalizedKey = normalizeKey(key);
-        Project project = projectRepository.findByWorkspaceIdAndKey(workspaceId, normalizedKey)
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Project not found in workspace " + workspaceId + " with key: " + normalizedKey));
+        Project project = projectRepository.findByWorkspaceIdAndKey(actor.workspaceId(), normalizedKey)
+                .orElseThrow(() -> new ResourceNotFoundException("Project not found with key: " + normalizedKey));
         return ProjectResponse.from(project);
     }
 
     /**
      * All projects in a workspace, ordered case-insensitively by name
-     * (see the repository query for tie-breaking). An unknown
-     * workspace is a not-found error, never a silent empty list.
+     * (see the repository query for tie-breaking). Any workspace other than
+     * the caller's is not found, never a silent empty list.
      */
     @Transactional(readOnly = true)
-    public List<ProjectResponse> getByWorkspace(UUID workspaceId) {
-        if (!workspaceRepository.existsById(workspaceId)) {
-            throw new ResourceNotFoundException("Workspace not found: " + workspaceId);
-        }
-        return projectRepository.findAllInWorkspaceSortedByName(workspaceId).stream()
+    public List<ProjectResponse> getByWorkspace(AuthenticatedUser actor, UUID workspaceId) {
+        WorkspaceAccess.requireOwnWorkspace(actor, workspaceId);
+        return projectRepository.findAllInWorkspaceSortedByName(actor.workspaceId()).stream()
                 .map(ProjectResponse::from)
                 .toList();
     }
@@ -110,8 +111,8 @@ public class ProjectService {
      * empty or same-value PATCH changes nothing (not even updatedAt).
      */
     @Transactional
-    public ProjectResponse update(UUID projectId, UpdateProjectRequest request) {
-        Project project = projectRepository.findById(projectId)
+    public ProjectResponse update(AuthenticatedUser actor, UUID projectId, UpdateProjectRequest request) {
+        Project project = projectRepository.findByIdAndWorkspaceId(projectId, actor.workspaceId())
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + projectId));
 
         String newName = request.getName() != null ? validatedName(request.getName()) : null;

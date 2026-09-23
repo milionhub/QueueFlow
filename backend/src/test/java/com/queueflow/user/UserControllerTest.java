@@ -1,6 +1,7 @@
 package com.queueflow.user;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -21,8 +22,10 @@ import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
+import com.queueflow.user.UserRole;
 import com.queueflow.user.dto.UserResponse;
 
 /**
@@ -39,6 +42,11 @@ class UserControllerTest {
     @Autowired
     private MockMvc mockMvc;
 
+    /** The principal @WithAuthenticatedUser installs: the only possible acting user. */
+    private static final AuthenticatedUser ACTOR = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.ADMIN);
+
     @MockitoBean
     private UserService userService;
 
@@ -51,7 +59,7 @@ class UserControllerTest {
     void getByIdReturns200WithExpectedJson() throws Exception {
         UUID id = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
-        when(userService.getById(id)).thenReturn(userResponse(id, "ada@example.com", workspaceId));
+        when(userService.getById(ACTOR, id)).thenReturn(userResponse(id, "ada@example.com", workspaceId));
 
         mockMvc.perform(get("/api/users/{userId}", id))
                 .andExpect(status().isOk())
@@ -64,14 +72,15 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.updatedAt").isNotEmpty())
                 .andExpect(jsonPath("$.passwordHash").doesNotExist());
 
-        verify(userService).getById(id);
+        verify(userService).getById(ACTOR, id);
     }
 
     @Test
     void getByEmailReturns200WithExpectedJson() throws Exception {
         UUID id = UUID.randomUUID();
         UUID workspaceId = UUID.randomUUID();
-        when(userService.getByEmail("ada@example.com")).thenReturn(userResponse(id, "ada@example.com", workspaceId));
+        when(userService.getByEmail(ACTOR, "ada@example.com"))
+                .thenReturn(userResponse(id, "ada@example.com", workspaceId));
 
         mockMvc.perform(get("/api/users/by-email").param("email", "ada@example.com"))
                 .andExpect(status().isOk())
@@ -87,14 +96,15 @@ class UserControllerTest {
         // trim or otherwise rewrite the value (that is a service/Phase 2
         // concern), and "+" must survive query-string decoding.
         String email = "Ada.Lovelace+queue@Example.com";
-        when(userService.getByEmail(email)).thenReturn(userResponse(UUID.randomUUID(), email, UUID.randomUUID()));
+        when(userService.getByEmail(ACTOR, email))
+                .thenReturn(userResponse(UUID.randomUUID(), email, UUID.randomUUID()));
 
         mockMvc.perform(get("/api/users/by-email").param("email", email))
                 .andExpect(status().isOk());
 
         // Also proves "/by-email" is routed to the literal mapping, never
         // captured by "/{userId}" as a (bad) UUID path variable.
-        verify(userService).getByEmail(email);
+        verify(userService).getByEmail(ACTOR, email);
         verifyNoMoreInteractions(userService);
     }
 
@@ -108,7 +118,7 @@ class UserControllerTest {
         UUID zoe = UUID.randomUUID();
         UUID ada = UUID.randomUUID();
         // Deliberately not name-sorted: the controller must not re-sort.
-        when(userService.getByWorkspace(workspaceId)).thenReturn(List.of(
+        when(userService.getByWorkspace(ACTOR, workspaceId)).thenReturn(List.of(
                 userResponse(zoe, "zoe@example.com", workspaceId), userResponse(ada, "ada@example.com", workspaceId)));
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/members", workspaceId))
@@ -122,14 +132,14 @@ class UserControllerTest {
                 .andExpect(jsonPath("$[*].passwordHash").doesNotExist())
                 .andExpect(jsonPath("$[*].workspace").doesNotExist());
 
-        verify(userService).getByWorkspace(workspaceId);
+        verify(userService).getByWorkspace(ACTOR, workspaceId);
         verifyNoMoreInteractions(userService);
     }
 
     @Test
     void listMembersWithNoMembersReturns200EmptyArray() throws Exception {
         UUID workspaceId = UUID.randomUUID();
-        when(userService.getByWorkspace(workspaceId)).thenReturn(List.of());
+        when(userService.getByWorkspace(ACTOR, workspaceId)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/workspaces/{workspaceId}/members", workspaceId))
                 .andExpect(status().isOk())
@@ -141,6 +151,6 @@ class UserControllerTest {
         mockMvc.perform(get("/api/workspaces/{workspaceId}/members", "not-a-uuid"))
                 .andExpect(status().isBadRequest());
 
-        verify(userService, never()).getByWorkspace(any());
+        verify(userService, never()).getByWorkspace(any(), any());
     }
 }

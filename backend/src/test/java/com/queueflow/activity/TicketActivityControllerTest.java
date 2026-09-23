@@ -3,6 +3,7 @@ package com.queueflow.activity;
 import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
@@ -27,8 +28,10 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import com.queueflow.activity.dto.ActivityResponse;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
+import com.queueflow.user.UserRole;
 
 /**
  * Web-layer slice with ActivityService mocked, same approach as the other
@@ -42,6 +45,11 @@ class TicketActivityControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    /** The principal @WithAuthenticatedUser installs: the only possible acting user. */
+    private static final AuthenticatedUser ACTOR = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.ADMIN);
 
     @MockitoBean
     private ActivityService activityService;
@@ -62,7 +70,7 @@ class TicketActivityControllerTest {
         UUID labelAdded = UUID.randomUUID();
         // Deliberately NOT sorted by createdAt: if the controller re-sorted
         // anything, the JSON order would differ from this list.
-        when(activityService.getByTicket(TICKET_ID)).thenReturn(List.of(
+        when(activityService.getByTicket(ACTOR, TICKET_ID)).thenReturn(List.of(
                 activity(created, ActivityType.TICKET_CREATED, null, null, "2026-09-23T10:00:00Z"),
                 activity(statusChanged, ActivityType.STATUS_CHANGED, "BACKLOG", "IN_PROGRESS",
                         "2026-09-23T12:00:00Z"),
@@ -96,13 +104,13 @@ class TicketActivityControllerTest {
                 .andExpect(jsonPath("$[*].user").doesNotExist())
                 .andExpect(jsonPath("$[*].passwordHash").doesNotExist());
 
-        verify(activityService).getByTicket(TICKET_ID);
+        verify(activityService).getByTicket(ACTOR, TICKET_ID);
         verifyNoMoreInteractions(activityService);
     }
 
     @Test
     void getWithNoActivitiesReturns200EmptyArray() throws Exception {
-        when(activityService.getByTicket(TICKET_ID)).thenReturn(List.of());
+        when(activityService.getByTicket(ACTOR, TICKET_ID)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/tickets/{ticketId}/activities", TICKET_ID))
                 .andExpect(status().isOk())
@@ -114,7 +122,7 @@ class TicketActivityControllerTest {
         mockMvc.perform(get("/api/tickets/{ticketId}/activities", "BACK-1"))
                 .andExpect(status().isBadRequest());
 
-        verify(activityService, never()).getByTicket(any());
+        verify(activityService, never()).getByTicket(any(), any());
     }
 
     @Test
