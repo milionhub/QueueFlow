@@ -21,6 +21,24 @@ This project is currently under development. The backend REST API (Spring Boot +
 - **Workspace isolation:** every user belongs to one workspace and only sees its data; anything in another workspace answers 404, exactly like something that does not exist.
 - **Roles:** only an ADMIN can create and update projects and create members (always as MEMBER, who then log in themselves). ADMIN and MEMBER otherwise collaborate equally; comments can only be edited or deleted by their author.
 
-Not implemented yet: refresh tokens, logout, password reset, invitations, rate limiting, role management, the frontend and deployment.
+The frontend has its foundation in place (Phase 3.1: routing, styling, API client and a backend connectivity page); its screens are not built yet.
+
+Not implemented yet: the frontend application screens (login, projects, tickets, ...), refresh tokens, logout, password reset, invitations, rate limiting, role management and deployment.
 
 With the backend running locally, the API is documented at `http://localhost:8080/swagger-ui.html` (OpenAPI JSON at `/v3/api-docs`); use its Authorize button with a token from register or login.
+
+## Frontend (local development)
+
+Requires Node.js; the backend must be running for the connectivity check.
+
+1. Set `VITE_API_BASE_URL` (the backend origin, e.g. `http://localhost:8080`) in the repository root `.env` (copied from `.env.example`). The frontend reads that same file; only `VITE_`-prefixed variables reach the browser.
+2. From `frontend/`:
+
+   ```sh
+   npm install
+   npm run dev
+   ```
+
+3. Open `http://localhost:5173` (the origin the backend's CORS allows). `/health` shows the backend connectivity.
+
+Other scripts: `npm run lint` (oxlint) and `npm run build` (type-check and production build).
