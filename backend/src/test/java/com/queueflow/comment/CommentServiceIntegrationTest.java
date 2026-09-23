@@ -2,10 +2,9 @@ package com.queueflow.comment;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.assertj.core.api.Assertions.within;
 
 import java.time.OffsetDateTime;
-import java.time.temporal.ChronoUnit;
+import java.time.ZoneOffset;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
@@ -150,7 +149,7 @@ class CommentServiceIntegrationTest {
     }
 
     @Test
-    void updateResponseCarriesTheAdvancedUpdatedAtNotTheStalePreUpdateValue() {
+    void updateResponseCarriesTheAdvancedUpdatedAtExactlyAsPersisted() {
         Workspace workspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
         User author = userRepository.saveAndFlush(
                 new User("Ada Lovelace", "ada6@example.com", "hash", UserRole.MEMBER, workspace));
@@ -167,12 +166,17 @@ class CommentServiceIntegrationTest {
                 comment.getId(), author.getId(), new UpdateCommentRequest("Updated content"));
 
         assertThat(response.updatedAt()).isAfter(updatedAtBeforeUpdate);
+        // Same representation TIMESTAMPTZ stores and reads back: UTC, and
+        // no precision finer than PostgreSQL's microseconds.
+        assertThat(response.updatedAt().getOffset()).isEqualTo(ZoneOffset.UTC);
+        assertThat(response.updatedAt().getNano() % 1_000).isZero();
 
         entityManager.flush();
         entityManager.clear();
         Comment reloaded = commentRepository.findById(comment.getId()).orElseThrow();
-        assertThat(response.updatedAt().toInstant())
-                .isCloseTo(reloaded.getUpdatedAt().toInstant(), within(1, ChronoUnit.MILLIS));
+        // Exact OffsetDateTime equality (same instant AND same offset), not a
+        // tolerance: the response must serialize identically to a later GET.
+        assertThat(response.updatedAt()).isEqualTo(reloaded.getUpdatedAt());
     }
 
     @Test

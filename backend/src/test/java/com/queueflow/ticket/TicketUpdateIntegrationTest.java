@@ -1,10 +1,9 @@
 package com.queueflow.ticket;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.within;
 
 import java.time.OffsetDateTime;
-import java.time.temporal.ChronoUnit;
+import java.time.ZoneOffset;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -176,7 +175,7 @@ class TicketUpdateIntegrationTest {
     }
 
     @Test
-    void updateResponseCarriesTheAdvancedUpdatedAtNotTheStalePreUpdateValue() {
+    void updateResponseCarriesTheAdvancedUpdatedAtExactlyAsPersisted() {
         Workspace workspace = workspaceRepository.saveAndFlush(new Workspace("Acme Inc."));
         User creator = userRepository.saveAndFlush(
                 new User("Creator", "creator5@example.com", "hash", UserRole.MEMBER, workspace));
@@ -194,11 +193,16 @@ class TicketUpdateIntegrationTest {
         TicketResponse response = ticketService.update(ticket.getId(), creator.getId(), request);
 
         assertThat(response.updatedAt()).isAfter(updatedAtBeforeUpdate);
+        // Same representation TIMESTAMPTZ stores and reads back: UTC, and
+        // no precision finer than PostgreSQL's microseconds.
+        assertThat(response.updatedAt().getOffset()).isEqualTo(ZoneOffset.UTC);
+        assertThat(response.updatedAt().getNano() % 1_000).isZero();
 
         entityManager.flush();
         entityManager.clear();
         Ticket reloaded = ticketRepository.findById(ticket.getId()).orElseThrow();
-        assertThat(response.updatedAt().toInstant())
-                .isCloseTo(reloaded.getUpdatedAt().toInstant(), within(1, ChronoUnit.MILLIS));
+        // Exact OffsetDateTime equality (same instant AND same offset), not a
+        // tolerance: the response must serialize identically to a later GET.
+        assertThat(response.updatedAt()).isEqualTo(reloaded.getUpdatedAt());
     }
 }

@@ -1,6 +1,8 @@
 package com.queueflow.comment;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 import org.hibernate.annotations.Generated;
@@ -96,11 +98,12 @@ public class Comment {
      * it on UPDATE. This fires immediately before Hibernate issues an
      * UPDATE for this entity (i.e. only when changeContent() actually
      * dirtied the field), refreshing updatedAt with the real wall-clock
-     * time.
+     * time - in UTC, truncated to microseconds, for the same TIMESTAMPTZ
+     * round-trip reason as Ticket.
      */
     @PreUpdate
     private void onUpdate() {
-        this.updatedAt = OffsetDateTime.now();
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
     }
 
     @Override

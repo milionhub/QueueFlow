@@ -1,6 +1,8 @@
 package com.queueflow.ticket;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.Set;
@@ -231,10 +233,14 @@ public class Ticket {
      * (i.e. whenever a change* method actually dirtied a field), refreshing
      * updatedAt with the real wall-clock time. It does not fire, and
      * updatedAt does not change, when nothing was actually modified.
+     *
+     * UTC and truncated to microseconds to match exactly what a
+     * TIMESTAMPTZ column stores and reads back, so the in-memory value
+     * (returned in the update response) is identical to a later read.
      */
     @PreUpdate
     private void onUpdate() {
-        this.updatedAt = OffsetDateTime.now();
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
     }
 
     @Override
