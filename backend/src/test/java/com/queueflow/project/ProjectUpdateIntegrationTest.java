@@ -1,5 +1,6 @@
 package com.queueflow.project;
 
+import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -166,8 +167,8 @@ class ProjectUpdateIntegrationTest {
         OffsetDateTime updatedAtAtCreation = project.getUpdatedAt();
         newRequest();
 
-        TicketResponse first = ticketService.create(new CreateTicketRequest(project.getId(), "First", null, TicketStatus.TODO,
-                TicketPriority.LOW, creator.getId(), null));
+        TicketResponse first = ticketService.create(actorOf(creator),
+                new CreateTicketRequest(project.getId(), "First", null, TicketStatus.TODO, TicketPriority.LOW, null));
         newRequest();
         // Allocating a ticket number UPDATEs the projects row, but it is not
         // a project edit: updatedAt stays put.
@@ -179,8 +180,8 @@ class ProjectUpdateIntegrationTest {
         projectService.update(project.getId(), request);
         newRequest();
 
-        TicketResponse second = ticketService.create(new CreateTicketRequest(project.getId(), "Second", null, TicketStatus.TODO,
-                TicketPriority.LOW, creator.getId(), null));
+        TicketResponse second = ticketService.create(actorOf(creator),
+                new CreateTicketRequest(project.getId(), "Second", null, TicketStatus.TODO, TicketPriority.LOW, null));
         newRequest();
 
         assertThat(first.displayKey()).isEqualTo("QF-1");

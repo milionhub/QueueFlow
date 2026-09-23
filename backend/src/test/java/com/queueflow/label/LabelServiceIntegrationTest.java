@@ -1,5 +1,6 @@
 package com.queueflow.label;
 
+import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -114,14 +115,14 @@ class LabelServiceIntegrationTest {
                 new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
         Label label = labelRepository.saveAndFlush(new Label("backend", workspace));
 
-        labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.addLabelToTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
 
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(1L);
 
         // Re-attaching the same label must not create a duplicate row, nor
         // a second LABEL_ADDED activity.
-        TicketResponse response = labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
+        TicketResponse response = labelService.addLabelToTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
 
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(1L);
@@ -141,17 +142,17 @@ class LabelServiceIntegrationTest {
                 new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
         Label label = labelRepository.saveAndFlush(new Label("backend", workspace));
 
-        labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.addLabelToTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(1L);
 
-        labelService.removeLabelFromTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.removeLabelFromTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(0L);
 
         // Removing again: no error, still zero rows, and no second
         // LABEL_REMOVED activity.
-        labelService.removeLabelFromTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.removeLabelFromTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
         assertThat(ticketLabelRowCount(ticket.getId(), label.getId())).isEqualTo(0L);
 
@@ -175,7 +176,7 @@ class LabelServiceIntegrationTest {
                 new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
         Label label = labelRepository.saveAndFlush(new Label("backend", labelWorkspace));
 
-        assertThatThrownBy(() -> labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId()))
+        assertThatThrownBy(() -> labelService.addLabelToTicket(actorOf(creator), ticket.getId(), label.getId()))
                 .isInstanceOf(InvalidRelationshipException.class);
         entityManager.flush();
 
@@ -193,7 +194,7 @@ class LabelServiceIntegrationTest {
         Label label = labelRepository.saveAndFlush(new Label("backend", workspace));
         OffsetDateTime updatedAtBefore = ticket.getUpdatedAt();
 
-        labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.addLabelToTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
         entityManager.clear();
 
@@ -235,29 +236,28 @@ class LabelServiceIntegrationTest {
         Label api = labelRepository.saveAndFlush(new Label("api", workspace));
         Label bug = labelRepository.saveAndFlush(new Label("Bug", workspace));
         OffsetDateTime updatedAtBefore = ticket.getUpdatedAt();
-        labelService.addLabelToTicket(ticket.getId(), urgent.getId(), actor.getId());
-        labelService.addLabelToTicket(ticket.getId(), api.getId(), actor.getId());
+        labelService.addLabelToTicket(actorOf(actor), ticket.getId(), urgent.getId());
+        labelService.addLabelToTicket(actorOf(actor), ticket.getId(), api.getId());
 
         // PUT: the response already contains the newly attached label, in
         // case-insensitive order - built from the managed state, no flush.
         newRequest();
-        TicketResponse added = labelService.addLabelToTicket(ticket.getId(), bug.getId(), actor.getId());
+        TicketResponse added = labelService.addLabelToTicket(actorOf(actor), ticket.getId(), bug.getId());
         assertThat(labelNames(added)).containsExactly("api", "Bug", "urgent");
 
         // Repeated PUT: same labels, no duplicate LABEL_ADDED.
         newRequest();
-        TicketResponse addedAgain = labelService.addLabelToTicket(ticket.getId(), bug.getId(), actor.getId());
+        TicketResponse addedAgain = labelService.addLabelToTicket(actorOf(actor), ticket.getId(), bug.getId());
         assertThat(labelNames(addedAgain)).containsExactly("api", "Bug", "urgent");
 
         // DELETE: the response no longer contains the removed label.
         newRequest();
-        TicketResponse removed = labelService.removeLabelFromTicket(ticket.getId(), bug.getId(), actor.getId());
+        TicketResponse removed = labelService.removeLabelFromTicket(actorOf(actor), ticket.getId(), bug.getId());
         assertThat(labelNames(removed)).containsExactly("api", "urgent");
 
         // Repeated DELETE: unchanged, no duplicate LABEL_REMOVED.
         newRequest();
-        TicketResponse removedAgain = labelService.removeLabelFromTicket(ticket.getId(), bug.getId(),
-                actor.getId());
+        TicketResponse removedAgain = labelService.removeLabelFromTicket(actorOf(actor), ticket.getId(), bug.getId());
         assertThat(labelNames(removedAgain)).containsExactly("api", "urgent");
 
         newRequest();

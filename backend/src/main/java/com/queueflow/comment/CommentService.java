@@ -13,6 +13,7 @@ import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.Ticket;
 import com.queueflow.ticket.TicketRepository;
 import com.queueflow.user.User;
@@ -32,18 +33,20 @@ public class CommentService {
         this.userRepository = userRepository;
     }
 
+    /** The author is the acting user - never a client-supplied id. */
     @Transactional
-    public CommentResponse create(CreateCommentRequest request) {
+    public CommentResponse create(AuthenticatedUser actor, CreateCommentRequest request) {
         Ticket ticket = ticketRepository.findById(request.ticketId())
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + request.ticketId()));
-        User author = userRepository.findById(request.authorId())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.authorId()));
 
+        // Existing rule, now applied to the authenticated author (the
+        // workspace-wide access policy, and its status code, come later).
         UUID ticketWorkspaceId = ticket.getProject().getWorkspace().getId();
-        UUID authorWorkspaceId = author.getWorkspace().getId();
-        if (!ticketWorkspaceId.equals(authorWorkspaceId)) {
+        if (!ticketWorkspaceId.equals(actor.workspaceId())) {
             throw new InvalidRelationshipException("Comment author must belong to the same workspace as the ticket");
         }
+        // A reference, no query: the user was loaded to authenticate this request.
+        User author = userRepository.getReferenceById(actor.userId());
 
         String content = validatedContent(request.content());
 
@@ -71,12 +74,13 @@ public class CommentService {
                 .toList();
     }
 
+    /** Only the author, identified by the authenticated principal, may edit - whatever their role. */
     @Transactional
-    public CommentResponse update(UUID commentId, UUID actorUserId, UpdateCommentRequest request) {
+    public CommentResponse update(AuthenticatedUser actor, UUID commentId, UpdateCommentRequest request) {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found: " + commentId));
 
-        if (!comment.getAuthor().getId().equals(actorUserId)) {
+        if (!comment.getAuthor().getId().equals(actor.userId())) {
             throw new ForbiddenOperationException("Only the comment author can edit this comment");
         }
 
@@ -92,12 +96,13 @@ public class CommentService {
         return CommentResponse.from(comment);
     }
 
+    /** Only the author, identified by the authenticated principal, may delete - whatever their role. */
     @Transactional
-    public void delete(UUID commentId, UUID actorUserId) {
+    public void delete(AuthenticatedUser actor, UUID commentId) {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Comment not found: " + commentId));
 
-        if (!comment.getAuthor().getId().equals(actorUserId)) {
+        if (!comment.getAuthor().getId().equals(actor.userId())) {
             throw new ForbiddenOperationException("Only the comment author can delete this comment");
         }
 

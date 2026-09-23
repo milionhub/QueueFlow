@@ -1,5 +1,6 @@
 package com.queueflow.ticket;
 
+import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -72,8 +73,8 @@ class TicketUpdateRollbackIntegrationTest {
                 "hash", UserRole.MEMBER, otherWorkspace));
         UUID projectId = projectService.create(
                 new CreateProjectRequest(workspace.getId(), "Rollback", "RLB", null)).id();
-        ticketId = ticketService.create(new CreateTicketRequest(projectId, "Original title", "Original description",
-                TicketStatus.BACKLOG, TicketPriority.LOW, alice.getId(), null)).id();
+        ticketId = ticketService.create(actorOf(alice), new CreateTicketRequest(projectId, "Original title",
+                "Original description", TicketStatus.BACKLOG, TicketPriority.LOW, null)).id();
     }
 
     @AfterEach
@@ -113,7 +114,7 @@ class TicketUpdateRollbackIntegrationTest {
         request.setPriority(TicketPriority.CRITICAL);
         request.setAssigneeId(outsider.getId());
 
-        assertThatThrownBy(() -> ticketService.update(ticketId, alice.getId(), request))
+        assertThatThrownBy(() -> ticketService.update(actorOf(alice), ticketId, request))
                 .isInstanceOf(InvalidRelationshipException.class);
 
         // Nothing of the PATCH survived: fields, updated_at and activities
@@ -132,7 +133,7 @@ class TicketUpdateRollbackIntegrationTest {
         request.setStatus(TicketStatus.DONE);
         request.setPriority(TicketPriority.CRITICAL);
 
-        ticketService.update(ticketId, alice.getId(), request);
+        ticketService.update(actorOf(alice), ticketId, request);
 
         Map<String, Object> after = ticketRow();
         assertThat(after.get("title")).isEqualTo("Changed title");

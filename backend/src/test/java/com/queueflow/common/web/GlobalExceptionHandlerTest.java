@@ -187,7 +187,7 @@ class GlobalExceptionHandlerTest {
 
     static Stream<Arguments> frameworkBadRequests() {
         String ticketBody = """
-                {"projectId": "%s", "title": "t", "status": "%s", "priority": "LOW", "creatorId": "%s"}
+                {"projectId": "%s", "title": "t", "status": "%s", "priority": "LOW"}
                 """;
         return Stream.of(
                 Arguments.of("malformed JSON",
@@ -198,7 +198,7 @@ class GlobalExceptionHandlerTest {
                         HttpMessageNotReadableException.class, "Malformed or missing request body", "/api/projects"),
                 Arguments.of("unknown enum value in body",
                         post("/api/tickets").contentType(MediaType.APPLICATION_JSON)
-                                .content(ticketBody.formatted(ID, "NOT_A_STATUS", ID)),
+                                .content(ticketBody.formatted(ID, "NOT_A_STATUS")),
                         HttpMessageNotReadableException.class, "Malformed or missing request body", "/api/tickets"),
                 Arguments.of("invalid UUID path variable",
                         get("/api/projects/{projectId}", "not-a-uuid"),
@@ -209,9 +209,9 @@ class GlobalExceptionHandlerTest {
                         MethodArgumentTypeMismatchException.class, "Invalid value for parameter: ticketNumber",
                         "/api/projects/" + ID + "/tickets/not-a-number"),
                 Arguments.of("missing required query parameter",
-                        patch("/api/tickets/{ticketId}", ID).contentType(MediaType.APPLICATION_JSON).content("{}"),
-                        MissingServletRequestParameterException.class, "Missing required parameter: actorUserId",
-                        "/api/tickets/" + ID));
+                        get("/api/projects/by-key").param("workspaceId", ID.toString()),
+                        MissingServletRequestParameterException.class, "Missing required parameter: key",
+                        "/api/projects/by-key"));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -320,12 +320,10 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void invalidRelationshipBecomes400WithThePathOnly() throws Exception {
-        UUID actorUserId = UUID.randomUUID();
-        when(ticketService.update(eq(ID), eq(actorUserId), any())).thenThrow(
+        when(ticketService.update(any(), eq(ID), any())).thenThrow(
                 new InvalidRelationshipException("Assignee must belong to the same workspace as the project"));
 
         expectApiError(mockMvc.perform(patch("/api/tickets/{ticketId}", ID)
-                        .param("actorUserId", actorUserId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"assigneeId": "%s"}
@@ -336,12 +334,11 @@ class GlobalExceptionHandlerTest {
 
     @Test
     void forbiddenOperationBecomes403WithThePathOnly() throws Exception {
-        UUID actorUserId = UUID.randomUUID();
-        when(ticketService.update(eq(ID), eq(actorUserId), any())).thenThrow(
+        when(ticketService.update(any(), eq(ID), any())).thenThrow(
                 new ForbiddenOperationException("Actor must belong to the same workspace as the ticket"));
 
         MvcResult result = expectApiError(mockMvc.perform(patch("/api/tickets/{ticketId}", ID)
-                        .param("actorUserId", actorUserId.toString())
+                        .param("unrelated", "query-value")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"status": "DONE"}
@@ -349,7 +346,7 @@ class GlobalExceptionHandlerTest {
                 403, "Forbidden", "Actor must belong to the same workspace as the ticket", "/api/tickets/" + ID);
 
         String path = JsonPath.read(result.getResponse().getContentAsString(), "$.path");
-        assertThat(path).doesNotContain("?", "actorUserId");
+        assertThat(path).doesNotContain("?", "unrelated");
     }
 
     // ---------------------------------------------------------------

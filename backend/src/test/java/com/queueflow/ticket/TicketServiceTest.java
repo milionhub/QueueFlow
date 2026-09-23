@@ -31,6 +31,7 @@ import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.dto.CreateTicketRequest;
 import com.queueflow.ticket.dto.TicketResponse;
 import com.queueflow.ticket.dto.UpdateTicketRequest;
@@ -87,9 +88,18 @@ class TicketServiceTest {
         return user;
     }
 
-    private static CreateTicketRequest requestFor(UUID projectId, UUID creatorId, UUID assigneeId) {
+    private static CreateTicketRequest requestFor(UUID projectId, UUID assigneeId) {
         return new CreateTicketRequest(projectId, "Fix checkout bug", "Details", TicketStatus.BACKLOG,
-                TicketPriority.HIGH, creatorId, assigneeId);
+                TicketPriority.HIGH, assigneeId);
+    }
+
+    /** The principal the security layer would build for this user. */
+    private static AuthenticatedUser actorOf(User user) {
+        return new AuthenticatedUser(user.getId(), user.getWorkspace().getId(), user.getRole());
+    }
+
+    private static AuthenticatedUser anyActor() {
+        return new AuthenticatedUser(UUID.randomUUID(), UUID.randomUUID(), UserRole.MEMBER);
     }
 
     private static Ticket persistedTicket(UUID id, long ticketNumber, String title, String description,
@@ -114,7 +124,7 @@ class TicketServiceTest {
         Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, title, description, status, priority, project,
                 actor, assignee, OffsetDateTime.now());
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-        when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        when(userRepository.getReferenceById(actor.getId())).thenReturn(actor);
         return new Fixture(workspace, project, actor, ticket);
     }
 
@@ -132,10 +142,10 @@ class TicketServiceTest {
         User creator = persistedUser(creatorId, workspace);
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ticketService.create(requestFor(projectId, creatorId, null));
+        ticketService.create(actorOf(creator), requestFor(projectId, null));
 
         verify(projectRepository).findByIdForUpdate(projectId);
         verify(projectRepository, never()).findById(any());
@@ -144,10 +154,9 @@ class TicketServiceTest {
     @Test
     void createThrowsResourceNotFoundExceptionWhenProjectMissing() {
         UUID projectId = UUID.randomUUID();
-        UUID creatorId = UUID.randomUUID();
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.create(requestFor(projectId, creatorId, null)))
+        assertThatThrownBy(() -> ticketService.create(anyActor(), requestFor(projectId, null)))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(projectId.toString());
 
@@ -155,24 +164,23 @@ class TicketServiceTest {
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
 
+    /** The creator is always the authenticated actor: attached by reference, never looked up by a request id. */
     @Test
-    void createThrowsResourceNotFoundExceptionWhenCreatorMissing() {
-        UUID workspaceId = UUID.randomUUID();
-        Workspace workspace = persistedWorkspace(workspaceId);
+    void createUsesTheAuthenticatedActorAsCreator() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
         UUID projectId = UUID.randomUUID();
         Project project = persistedProject(projectId, "ECOM", workspace, 1L);
-        UUID creatorId = UUID.randomUUID();
+        User actor = persistedUser(UUID.randomUUID(), workspace);
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.empty());
+        when(userRepository.getReferenceById(actor.getId())).thenReturn(actor);
+        when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThatThrownBy(() -> ticketService.create(requestFor(projectId, creatorId, null)))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(creatorId.toString());
+        TicketResponse response = ticketService.create(actorOf(actor), requestFor(projectId, null));
 
-        verify(ticketRepository, never()).save(any());
-        assertThat(project.getNextTicketNumber()).isEqualTo(1L);
-        verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
+        assertThat(response.creatorId()).isEqualTo(actor.getId());
+        verify(userRepository).getReferenceById(actor.getId());
+        verify(userRepository, never()).findById(any());
     }
 
     @Test
@@ -181,15 +189,14 @@ class TicketServiceTest {
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         UUID projectId = UUID.randomUUID();
         Project project = persistedProject(projectId, "ECOM", projectWorkspace, 1L);
-        UUID creatorId = UUID.randomUUID();
-        User creator = persistedUser(creatorId, otherWorkspace);
+        User creator = persistedUser(UUID.randomUUID(), otherWorkspace);
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
 
-        assertThatThrownBy(() -> ticketService.create(requestFor(projectId, creatorId, null)))
+        assertThatThrownBy(() -> ticketService.create(actorOf(creator), requestFor(projectId, null)))
                 .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Creator");
+        verify(userRepository, never()).getReferenceById(any());
 
         verify(ticketRepository, never()).save(any());
         assertThat(project.getNextTicketNumber()).isEqualTo(1L);
@@ -204,13 +211,13 @@ class TicketServiceTest {
         User creator = persistedUser(creatorId, workspace);
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TicketResponse response = ticketService.create(requestFor(projectId, creatorId, null));
+        TicketResponse response = ticketService.create(actorOf(creator), requestFor(projectId, null));
 
         assertThat(response.assigneeId()).isNull();
-        verify(userRepository, times(1)).findById(any());
+        verify(userRepository, never()).findById(any());
     }
 
     @Test
@@ -224,11 +231,11 @@ class TicketServiceTest {
         User assignee = persistedUser(assigneeId, workspace);
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TicketResponse response = ticketService.create(requestFor(projectId, creatorId, assigneeId));
+        TicketResponse response = ticketService.create(actorOf(creator), requestFor(projectId, assigneeId));
 
         assertThat(response.assigneeId()).isEqualTo(assigneeId);
         verify(userRepository).findById(assigneeId);
@@ -244,10 +251,10 @@ class TicketServiceTest {
         UUID assigneeId = UUID.randomUUID();
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(userRepository.findById(assigneeId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.create(requestFor(projectId, creatorId, assigneeId)))
+        assertThatThrownBy(() -> ticketService.create(actorOf(creator), requestFor(projectId, assigneeId)))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(assigneeId.toString());
 
@@ -267,10 +274,10 @@ class TicketServiceTest {
         User assignee = persistedUser(assigneeId, otherWorkspace);
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
 
-        assertThatThrownBy(() -> ticketService.create(requestFor(projectId, creatorId, assigneeId)))
+        assertThatThrownBy(() -> ticketService.create(actorOf(creator), requestFor(projectId, assigneeId)))
                 .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Assignee");
 
@@ -287,10 +294,10 @@ class TicketServiceTest {
         User creator = persistedUser(creatorId, workspace);
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TicketResponse response = ticketService.create(requestFor(projectId, creatorId, null));
+        TicketResponse response = ticketService.create(actorOf(creator), requestFor(projectId, null));
 
         assertThat(response.ticketNumber()).isEqualTo(7L);
         assertThat(project.getNextTicketNumber()).isEqualTo(8L);
@@ -307,7 +314,7 @@ class TicketServiceTest {
         User assignee = persistedUser(assigneeId, workspace);
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(userRepository.findById(assigneeId)).thenReturn(Optional.of(assignee));
 
         UUID generatedId = UUID.randomUUID();
@@ -321,9 +328,9 @@ class TicketServiceTest {
         });
 
         CreateTicketRequest request = new CreateTicketRequest(projectId, "Fix checkout bug", "Details",
-                TicketStatus.IN_PROGRESS, TicketPriority.CRITICAL, creatorId, assigneeId);
+                TicketStatus.IN_PROGRESS, TicketPriority.CRITICAL, assigneeId);
 
-        TicketResponse response = ticketService.create(request);
+        TicketResponse response = ticketService.create(actorOf(creator), request);
 
         ArgumentCaptor<Ticket> captor = ArgumentCaptor.forClass(Ticket.class);
         verify(ticketRepository).save(captor.capture());
@@ -354,10 +361,10 @@ class TicketServiceTest {
         User creator = persistedUser(creatorId, workspace);
 
         when(projectRepository.findByIdForUpdate(projectId)).thenReturn(Optional.of(project));
-        when(userRepository.findById(creatorId)).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creatorId)).thenReturn(creator);
         when(ticketRepository.save(any(Ticket.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        TicketResponse response = ticketService.create(requestFor(projectId, creatorId, null));
+        TicketResponse response = ticketService.create(actorOf(creator), requestFor(projectId, null));
 
         ArgumentCaptor<Ticket> ticketCaptor = ArgumentCaptor.forClass(Ticket.class);
         verify(activityService).recordActivity(
@@ -368,9 +375,9 @@ class TicketServiceTest {
     @Test
     void createRejectsBlankTitleBeforeLockingProjectOrPersistingAnything() {
         CreateTicketRequest request = new CreateTicketRequest(UUID.randomUUID(), "   ", null,
-                TicketStatus.BACKLOG, TicketPriority.HIGH, UUID.randomUUID(), null);
+                TicketStatus.BACKLOG, TicketPriority.HIGH, null);
 
-        assertThatThrownBy(() -> ticketService.create(request))
+        assertThatThrownBy(() -> ticketService.create(anyActor(), request))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("title");
 
@@ -382,9 +389,9 @@ class TicketServiceTest {
     @Test
     void createRejectsMissingTitle() {
         CreateTicketRequest request = new CreateTicketRequest(UUID.randomUUID(), null, null,
-                TicketStatus.BACKLOG, TicketPriority.HIGH, UUID.randomUUID(), null);
+                TicketStatus.BACKLOG, TicketPriority.HIGH, null);
 
-        assertThatThrownBy(() -> ticketService.create(request))
+        assertThatThrownBy(() -> ticketService.create(anyActor(), request))
                 .isInstanceOf(BusinessRuleViolationException.class)
                 .hasMessageContaining("title");
 
@@ -457,28 +464,11 @@ class TicketServiceTest {
     @Test
     void updateThrowsResourceNotFoundExceptionWhenTicketMissing() {
         UUID ticketId = UUID.randomUUID();
-        UUID actorId = UUID.randomUUID();
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> ticketService.update(ticketId, actorId, new UpdateTicketRequest()))
+        assertThatThrownBy(() -> ticketService.update(anyActor(), ticketId, new UpdateTicketRequest()))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
-    }
-
-    @Test
-    void updateThrowsResourceNotFoundExceptionWhenActorMissing() {
-        Workspace workspace = persistedWorkspace(UUID.randomUUID());
-        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace, 2L);
-        User creator = persistedUser(UUID.randomUUID(), workspace);
-        Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, "Title", null, TicketStatus.BACKLOG,
-                TicketPriority.LOW, project, creator, null, OffsetDateTime.now());
-        when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-        UUID missingActorId = UUID.randomUUID();
-        when(userRepository.findById(missingActorId)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> ticketService.update(ticket.getId(), missingActorId, new UpdateTicketRequest()))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(missingActorId.toString());
     }
 
     @Test
@@ -491,11 +481,11 @@ class TicketServiceTest {
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         User outsider = persistedUser(UUID.randomUUID(), otherWorkspace);
-        when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
 
-        assertThatThrownBy(() -> ticketService.update(ticket.getId(), outsider.getId(), new UpdateTicketRequest()))
+        assertThatThrownBy(() -> ticketService.update(actorOf(outsider), ticket.getId(), new UpdateTicketRequest()))
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Actor");
+        verify(userRepository, never()).getReferenceById(any());
     }
 
     @Test
@@ -509,9 +499,9 @@ class TicketServiceTest {
                 TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, originalAssignee, OffsetDateTime.now());
 
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.of(ticket));
-        when(userRepository.findById(creator.getId())).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creator.getId())).thenReturn(creator);
 
-        ticketService.update(ticketId, creator.getId(), new UpdateTicketRequest());
+        ticketService.update(actorOf(creator), ticketId, new UpdateTicketRequest());
 
         assertThat(ticket.getTitle()).isEqualTo("Original title");
         assertThat(ticket.getDescription()).isEqualTo("Original description");
@@ -529,7 +519,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Updated title");
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         assertThat(fixture.ticket().getTitle()).isEqualTo("Updated title");
         verify(activityService).recordActivity(ActivityType.TITLE_CHANGED, "Original title", "Updated title",
@@ -543,7 +533,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Same title");
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
@@ -555,7 +545,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("   ");
 
-        assertThatThrownBy(() -> ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request))
+        assertThatThrownBy(() -> ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         assertThat(fixture.ticket().getTitle()).isEqualTo("Original title");
@@ -570,7 +560,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("a".repeat(256));
 
-        assertThatThrownBy(() -> ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request))
+        assertThatThrownBy(() -> ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         assertThat(fixture.ticket().getTitle()).isEqualTo("Original title");
@@ -580,7 +570,7 @@ class TicketServiceTest {
     void updateLeavesDescriptionUnchangedWhenOmitted() {
         Fixture fixture = newFixture("Title", "Original description", TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), new UpdateTicketRequest());
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), new UpdateTicketRequest());
 
         assertThat(fixture.ticket().getDescription()).isEqualTo("Original description");
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
@@ -593,7 +583,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setDescription("Updated description");
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         assertThat(fixture.ticket().getDescription()).isEqualTo("Updated description");
         verify(activityService).recordActivity(ActivityType.DESCRIPTION_CHANGED, "Original description",
@@ -607,7 +597,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setDescription(null);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         assertThat(fixture.ticket().getDescription()).isNull();
         verify(activityService).recordActivity(ActivityType.DESCRIPTION_CHANGED, "Original description", null,
@@ -621,7 +611,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setDescription("Same description");
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
@@ -633,7 +623,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setStatus(TicketStatus.IN_PROGRESS);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         assertThat(fixture.ticket().getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
         verify(activityService).recordActivity(ActivityType.STATUS_CHANGED, "BACKLOG", "IN_PROGRESS",
@@ -647,7 +637,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setStatus(TicketStatus.BACKLOG);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
@@ -659,7 +649,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setPriority(TicketPriority.CRITICAL);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         assertThat(fixture.ticket().getPriority()).isEqualTo(TicketPriority.CRITICAL);
         verify(activityService).recordActivity(ActivityType.PRIORITY_CHANGED, "LOW", "CRITICAL",
@@ -673,7 +663,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setPriority(TicketPriority.LOW);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
     }
@@ -685,7 +675,7 @@ class TicketServiceTest {
         Fixture fixture = newFixtureInWorkspace(workspace, "Title", null, TicketStatus.BACKLOG, TicketPriority.LOW,
                 originalAssignee);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), new UpdateTicketRequest());
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), new UpdateTicketRequest());
 
         assertThat(fixture.ticket().getAssignee()).isSameAs(originalAssignee);
         verify(userRepository, never()).findById(originalAssignee.getId());
@@ -702,7 +692,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(newAssigneeId);
 
-        TicketResponse response = ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        TicketResponse response = ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         assertThat(fixture.ticket().getAssignee()).isSameAs(newAssignee);
         assertThat(response.assigneeId()).isEqualTo(newAssigneeId);
@@ -723,7 +713,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(newAssigneeId);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         verify(activityService).recordActivity(ActivityType.ASSIGNEE_CHANGED,
                 originalAssignee.getId().toString(), newAssigneeId.toString(), fixture.ticket(), fixture.actor());
@@ -739,7 +729,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(originalAssignee.getId());
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         assertThat(fixture.ticket().getAssignee()).isSameAs(originalAssignee);
         verify(userRepository, never()).findById(originalAssignee.getId());
@@ -756,7 +746,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(null);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         assertThat(fixture.ticket().getAssignee()).isNull();
         verify(activityService).recordActivity(ActivityType.ASSIGNEE_CHANGED,
@@ -770,7 +760,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(null);
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         assertThat(fixture.ticket().getAssignee()).isNull();
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
@@ -785,7 +775,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(missingAssigneeId);
 
-        assertThatThrownBy(() -> ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request))
+        assertThatThrownBy(() -> ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(missingAssigneeId.toString());
 
@@ -803,7 +793,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(assigneeId);
 
-        assertThatThrownBy(() -> ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request))
+        assertThatThrownBy(() -> ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request))
                 .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Assignee");
 
@@ -820,13 +810,13 @@ class TicketServiceTest {
                 TicketPriority.LOW, project, creator, null, createdAt);
         UUID originalId = ticket.getId();
         when(ticketRepository.findById(originalId)).thenReturn(Optional.of(ticket));
-        when(userRepository.findById(creator.getId())).thenReturn(Optional.of(creator));
+        when(userRepository.getReferenceById(creator.getId())).thenReturn(creator);
 
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Changed title");
         request.setStatus(TicketStatus.DONE);
 
-        ticketService.update(originalId, creator.getId(), request);
+        ticketService.update(actorOf(creator), originalId, request);
 
         assertThat(ticket.getId()).isEqualTo(originalId);
         assertThat(ticket.getTicketNumber()).isEqualTo(5L);
@@ -842,7 +832,7 @@ class TicketServiceTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Changed title");
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         verify(ticketRepository, never()).save(any());
     }
@@ -857,7 +847,7 @@ class TicketServiceTest {
         request.setStatus(TicketStatus.IN_PROGRESS);
         // priority and description intentionally left unset -> no activity for those
 
-        ticketService.update(fixture.ticket().getId(), fixture.actor().getId(), request);
+        ticketService.update(actorOf(fixture.actor()), fixture.ticket().getId(), request);
 
         verify(activityService).recordActivity(ActivityType.TITLE_CHANGED, "Original title", "Updated title",
                 fixture.ticket(), fixture.actor());
@@ -873,7 +863,7 @@ class TicketServiceTest {
         Ticket ticket = persistedTicket(UUID.randomUUID(), 1L, title, description, status, priority, project,
                 actor, assignee, OffsetDateTime.now());
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-        when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        when(userRepository.getReferenceById(actor.getId())).thenReturn(actor);
         return new Fixture(workspace, project, actor, ticket);
     }
 

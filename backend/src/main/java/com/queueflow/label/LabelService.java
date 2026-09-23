@@ -14,6 +14,7 @@ import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.label.dto.CreateLabelRequest;
 import com.queueflow.label.dto.LabelResponse;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.Ticket;
 import com.queueflow.ticket.TicketRepository;
 import com.queueflow.ticket.dto.TicketResponse;
@@ -91,17 +92,16 @@ public class LabelService {
     }
 
     @Transactional
-    public TicketResponse addLabelToTicket(UUID ticketId, UUID labelId, UUID actorUserId) {
+    public TicketResponse addLabelToTicket(AuthenticatedUser actor, UUID ticketId, UUID labelId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
         Label label = labelRepository.findById(labelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Label not found: " + labelId));
-        User actor = userRepository.findById(actorUserId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorUserId));
 
         // Permission first: an actor from outside the ticket's workspace is
         // refused (403) before the request's label is even considered.
         requireActorSameWorkspace(ticket, actor);
+        User actingUser = userRepository.getReferenceById(actor.userId());
         requireSameWorkspace(ticket, label);
 
         // Idempotent by design (see Ticket.addLabel): attaching an
@@ -109,7 +109,7 @@ public class LabelService {
         // Activity is recorded when nothing actually changed.
         boolean changed = ticket.addLabel(label);
         if (changed) {
-            activityService.recordActivity(ActivityType.LABEL_ADDED, null, label.getName(), ticket, actor);
+            activityService.recordActivity(ActivityType.LABEL_ADDED, null, label.getName(), ticket, actingUser);
         }
 
         // No explicit ticketRepository.save(ticket): ticket is managed in
@@ -120,22 +120,21 @@ public class LabelService {
     }
 
     @Transactional
-    public TicketResponse removeLabelFromTicket(UUID ticketId, UUID labelId, UUID actorUserId) {
+    public TicketResponse removeLabelFromTicket(AuthenticatedUser actor, UUID ticketId, UUID labelId) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
         Label label = labelRepository.findById(labelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Label not found: " + labelId));
-        User actor = userRepository.findById(actorUserId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorUserId));
 
         // Permission first: an actor from outside the ticket's workspace is
         // refused (403) before the request's label is even considered.
         requireActorSameWorkspace(ticket, actor);
+        User actingUser = userRepository.getReferenceById(actor.userId());
         requireSameWorkspace(ticket, label);
 
         boolean changed = ticket.removeLabel(label);
         if (changed) {
-            activityService.recordActivity(ActivityType.LABEL_REMOVED, label.getName(), null, ticket, actor);
+            activityService.recordActivity(ActivityType.LABEL_REMOVED, label.getName(), null, ticket, actingUser);
         }
 
         return TicketResponse.from(ticket);
@@ -149,10 +148,9 @@ public class LabelService {
         }
     }
 
-    private static void requireActorSameWorkspace(Ticket ticket, User actor) {
+    private static void requireActorSameWorkspace(Ticket ticket, AuthenticatedUser actor) {
         UUID ticketWorkspaceId = ticket.getProject().getWorkspace().getId();
-        UUID actorWorkspaceId = actor.getWorkspace().getId();
-        if (!ticketWorkspaceId.equals(actorWorkspaceId)) {
+        if (!ticketWorkspaceId.equals(actor.workspaceId())) {
             throw new ForbiddenOperationException("Actor must belong to the same workspace as the ticket");
         }
     }

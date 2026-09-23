@@ -1,5 +1,6 @@
 package com.queueflow.ticket;
 
+import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
@@ -95,9 +96,8 @@ class TicketActivityIntegrationTest {
                 new User("Creator", "creator@example.com", "hash", UserRole.MEMBER, workspace));
         Project project = projectRepository.saveAndFlush(new Project("E-Commerce", "ECOM", null, workspace));
 
-        TicketResponse response = ticketService.create(new CreateTicketRequest(
-                project.getId(), "Fix checkout bug", null, TicketStatus.BACKLOG, TicketPriority.LOW,
-                creator.getId(), null));
+        TicketResponse response = ticketService.create(actorOf(creator), new CreateTicketRequest(
+                project.getId(), "Fix checkout bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, null));
         entityManager.flush();
         entityManager.clear();
 
@@ -133,7 +133,7 @@ class TicketActivityIntegrationTest {
         request.setStatus(TicketStatus.IN_PROGRESS);
         // priority and description intentionally left unset -> no activity for those
 
-        ticketService.update(ticket.getId(), creator.getId(), request);
+        ticketService.update(actorOf(creator), ticket.getId(), request);
         entityManager.flush();
         entityManager.clear();
 
@@ -157,7 +157,7 @@ class TicketActivityIntegrationTest {
         request.setTitle("Same title");
         request.setStatus(TicketStatus.BACKLOG);
 
-        ticketService.update(ticket.getId(), creator.getId(), request);
+        ticketService.update(actorOf(creator), ticket.getId(), request);
         entityManager.flush();
 
         assertThat(activityRepository.findByTicketIdOrderByCreatedAtAscIdAsc(ticket.getId())).isEmpty();
@@ -177,10 +177,10 @@ class TicketActivityIntegrationTest {
                 TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
         Label label = labelRepository.saveAndFlush(new Label("backend", workspace));
 
-        labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.addLabelToTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
         // Duplicate add: association already present, must not add another activity.
-        labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.addLabelToTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
         entityManager.clear();
 
@@ -201,12 +201,12 @@ class TicketActivityIntegrationTest {
                 TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
         Label label = labelRepository.saveAndFlush(new Label("backend", workspace));
 
-        labelService.addLabelToTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.addLabelToTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
-        labelService.removeLabelFromTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.removeLabelFromTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
         // Removing again: already absent, must not add another activity.
-        labelService.removeLabelFromTicket(ticket.getId(), label.getId(), creator.getId());
+        labelService.removeLabelFromTicket(actorOf(creator), ticket.getId(), label.getId());
         entityManager.flush();
         entityManager.clear();
 

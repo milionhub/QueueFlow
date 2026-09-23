@@ -32,11 +32,13 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.ResultActions;
 
 import com.queueflow.label.dto.LabelResponse;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.ticket.dto.CreateTicketRequest;
 import com.queueflow.ticket.dto.TicketResponse;
 import com.queueflow.ticket.dto.UpdateTicketRequest;
+import com.queueflow.user.UserRole;
 
 /**
  * Web-layer slice with TicketService mocked, same approach as
@@ -56,6 +58,11 @@ class TicketControllerTest {
 
     @MockitoBean
     private TicketService ticketService;
+
+    /** The principal @WithAuthenticatedUser installs: the only possible acting user. */
+    private static final AuthenticatedUser ACTOR = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.ADMIN);
 
     private static final UUID PROJECT_ID = UUID.randomUUID();
     private static final UUID CREATOR_ID = UUID.randomUUID();
@@ -82,18 +89,16 @@ class TicketControllerTest {
                 .andExpect(jsonPath("$.labels[*].workspace").doesNotExist());
     }
 
-    private UpdateTicketRequest patchAndCaptureRequest(UUID ticketId, UUID actorUserId, String json)
-            throws Exception {
-        when(ticketService.update(eq(ticketId), eq(actorUserId), any())).thenReturn(ticketResponse(ticketId));
+    private UpdateTicketRequest patchAndCaptureRequest(UUID ticketId, String json) throws Exception {
+        when(ticketService.update(eq(ACTOR), eq(ticketId), any())).thenReturn(ticketResponse(ticketId));
 
         mockMvc.perform(patch("/api/tickets/{ticketId}", ticketId)
-                        .param("actorUserId", actorUserId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(json))
                 .andExpect(status().isOk());
 
         ArgumentCaptor<UpdateTicketRequest> captor = ArgumentCaptor.forClass(UpdateTicketRequest.class);
-        verify(ticketService).update(eq(ticketId), eq(actorUserId), captor.capture());
+        verify(ticketService).update(eq(ACTOR), eq(ticketId), captor.capture());
         return captor.getValue();
     }
 
@@ -103,7 +108,7 @@ class TicketControllerTest {
                         .content(json))
                 .andExpect(status().isBadRequest());
 
-        verify(ticketService, never()).create(any());
+        verify(ticketService, never()).create(any(), any());
     }
 
     // ---------------------------------------------------------------
@@ -113,15 +118,14 @@ class TicketControllerTest {
     @Test
     void postValidRequestReturns201WithBodyAndLocation() throws Exception {
         UUID id = UUID.randomUUID();
-        when(ticketService.create(any())).thenReturn(ticketResponse(id));
+        when(ticketService.create(any(), any())).thenReturn(ticketResponse(id));
 
         ResultActions result = mockMvc.perform(post("/api/tickets")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"projectId": "%s", "title": "Fix checkout bug", "description": "Details",
-                                 "status": "BACKLOG", "priority": "HIGH",
-                                 "creatorId": "%s", "assigneeId": "%s"}
-                                """.formatted(PROJECT_ID, CREATOR_ID, ASSIGNEE_ID)))
+                                 "status": "BACKLOG", "priority": "HIGH", "assigneeId": "%s"}
+                                """.formatted(PROJECT_ID, ASSIGNEE_ID)))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "http://localhost/api/tickets/" + id))
                 .andExpect(jsonPath("$.id").value(id.toString()))
@@ -142,55 +146,68 @@ class TicketControllerTest {
 
     @Test
     void postDelegatesExactDeserializedRequestToService() throws Exception {
-        when(ticketService.create(any())).thenReturn(ticketResponse(UUID.randomUUID()));
+        when(ticketService.create(any(), any())).thenReturn(ticketResponse(UUID.randomUUID()));
 
         mockMvc.perform(post("/api/tickets")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"projectId": "%s", "title": "Fix checkout bug", "description": "Details",
-                                 "status": "BACKLOG", "priority": "HIGH",
-                                 "creatorId": "%s", "assigneeId": "%s"}
-                                """.formatted(PROJECT_ID, CREATOR_ID, ASSIGNEE_ID)))
+                                 "status": "BACKLOG", "priority": "HIGH", "assigneeId": "%s"}
+                                """.formatted(PROJECT_ID, ASSIGNEE_ID)))
                 .andExpect(status().isCreated());
 
-        verify(ticketService).create(new CreateTicketRequest(PROJECT_ID, "Fix checkout bug", "Details",
-                TicketStatus.BACKLOG, TicketPriority.HIGH, CREATOR_ID, ASSIGNEE_ID));
+        verify(ticketService).create(ACTOR, new CreateTicketRequest(PROJECT_ID, "Fix checkout bug", "Details",
+                TicketStatus.BACKLOG, TicketPriority.HIGH, ASSIGNEE_ID));
     }
 
     @Test
     void postBlankTitleIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"projectId": "%s", "title": "   ", "status": "BACKLOG", "priority": "HIGH", "creatorId": "%s"}
-                """.formatted(PROJECT_ID, CREATOR_ID));
+                {"projectId": "%s", "title": "   ", "status": "BACKLOG", "priority": "HIGH"}
+                """.formatted(PROJECT_ID));
     }
 
     @Test
     void postMissingProjectIdIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"title": "Fix checkout bug", "status": "BACKLOG", "priority": "HIGH", "creatorId": "%s"}
-                """.formatted(CREATOR_ID));
+                {"title": "Fix checkout bug", "status": "BACKLOG", "priority": "HIGH"}
+                """);
     }
 
+    /**
+     * There is no creator input: the authenticated user always creates the
+     * ticket. An obsolete creatorId in the body is ignored like any unknown
+     * JSON property and cannot reach the service.
+     */
     @Test
-    void postMissingCreatorIdIsRejectedWithoutCallingService() throws Exception {
-        postExpectingBadRequest("""
-                {"projectId": "%s", "title": "Fix checkout bug", "status": "BACKLOG", "priority": "HIGH"}
-                """.formatted(PROJECT_ID));
+    void postCreatesAsTheAuthenticatedUserWhateverCreatorIdIsSent() throws Exception {
+        when(ticketService.create(any(), any())).thenReturn(ticketResponse(UUID.randomUUID()));
+        UUID someoneElse = UUID.randomUUID();
+
+        mockMvc.perform(post("/api/tickets")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"projectId": "%s", "title": "Fix checkout bug", "status": "BACKLOG",
+                                 "priority": "HIGH", "creatorId": "%s"}
+                                """.formatted(PROJECT_ID, someoneElse)))
+                .andExpect(status().isCreated());
+
+        verify(ticketService).create(ACTOR, new CreateTicketRequest(PROJECT_ID, "Fix checkout bug", null,
+                TicketStatus.BACKLOG, TicketPriority.HIGH, null));
     }
 
     @Test
     void postMissingPriorityIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"projectId": "%s", "title": "Fix checkout bug", "status": "BACKLOG", "creatorId": "%s"}
-                """.formatted(PROJECT_ID, CREATOR_ID));
+                {"projectId": "%s", "title": "Fix checkout bug", "status": "BACKLOG"}
+                """.formatted(PROJECT_ID));
     }
 
     @Test
     void postUnknownStatusValueIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"projectId": "%s", "title": "Fix checkout bug", "status": "NOT_A_STATUS", "priority": "HIGH",
-                 "creatorId": "%s"}
-                """.formatted(PROJECT_ID, CREATOR_ID));
+                {"projectId": "%s", "title": "Fix checkout bug", "status": "NOT_A_STATUS", "priority": "HIGH"}
+                """.formatted(PROJECT_ID));
     }
 
     // ---------------------------------------------------------------
@@ -304,13 +321,11 @@ class TicketControllerTest {
     @Test
     void patchReturns200WithResponseAndDelegatesIdsAndValuesExactly() throws Exception {
         UUID ticketId = UUID.randomUUID();
-        UUID actorUserId = UUID.randomUUID();
         UUID newAssigneeId = UUID.randomUUID();
-        when(ticketService.update(eq(ticketId), eq(actorUserId), any())).thenReturn(
+        when(ticketService.update(eq(ACTOR), eq(ticketId), any())).thenReturn(
                 ticketResponse(ticketId, TicketStatus.IN_PROGRESS, TicketPriority.CRITICAL, "New", newAssigneeId));
 
         ResultActions result = mockMvc.perform(patch("/api/tickets/{ticketId}", ticketId)
-                        .param("actorUserId", actorUserId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"title": "New title", "description": "New", "status": "IN_PROGRESS",
@@ -325,7 +340,7 @@ class TicketControllerTest {
         expectNoEntityLeakage(result);
 
         ArgumentCaptor<UpdateTicketRequest> captor = ArgumentCaptor.forClass(UpdateTicketRequest.class);
-        verify(ticketService).update(eq(ticketId), eq(actorUserId), captor.capture());
+        verify(ticketService).update(eq(ACTOR), eq(ticketId), captor.capture());
         UpdateTicketRequest request = captor.getValue();
         assertThat(request.getTitle()).isEqualTo("New title");
         assertThat(request.getStatus()).isEqualTo(TicketStatus.IN_PROGRESS);
@@ -336,22 +351,26 @@ class TicketControllerTest {
         assertThat(request.assigneeIdPatch().value()).isEqualTo(newAssigneeId);
     }
 
+    /** actorUserId is no longer an input: a leftover query parameter cannot change who acts. */
     @Test
-    void patchWithoutActorUserIdIsRejectedWithoutCallingService() throws Exception {
-        mockMvc.perform(patch("/api/tickets/{ticketId}", UUID.randomUUID())
+    void patchActsAsTheAuthenticatedUserEvenIfAnObsoleteActorUserIdIsSent() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        when(ticketService.update(eq(ACTOR), eq(ticketId), any())).thenReturn(ticketResponse(ticketId));
+
+        mockMvc.perform(patch("/api/tickets/{ticketId}", ticketId)
+                        .param("actorUserId", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"status": "DONE"}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isOk());
 
-        verify(ticketService, never()).update(any(), any(), any());
+        verify(ticketService).update(eq(ACTOR), eq(ticketId), any());
     }
 
     @Test
     void patchOverlongTitleIsRejectedByValidationWithoutCallingService() throws Exception {
         mockMvc.perform(patch("/api/tickets/{ticketId}", UUID.randomUUID())
-                        .param("actorUserId", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"title\": \"" + "a".repeat(256) + "\"}"))
                 .andExpect(status().isBadRequest());
@@ -365,7 +384,7 @@ class TicketControllerTest {
 
     @Test
     void patchEmptyObjectLeavesDescriptionAndAssigneeOmitted() throws Exception {
-        UpdateTicketRequest request = patchAndCaptureRequest(UUID.randomUUID(), UUID.randomUUID(), "{}");
+        UpdateTicketRequest request = patchAndCaptureRequest(UUID.randomUUID(), "{}");
 
         assertThat(request.descriptionPatch().isPresent()).isFalse();
         assertThat(request.assigneeIdPatch().isPresent()).isFalse();
@@ -376,7 +395,7 @@ class TicketControllerTest {
 
     @Test
     void patchExplicitNullDescriptionIsPresentWithNullValueAndAssigneeStaysOmitted() throws Exception {
-        UpdateTicketRequest request = patchAndCaptureRequest(UUID.randomUUID(), UUID.randomUUID(), """
+        UpdateTicketRequest request = patchAndCaptureRequest(UUID.randomUUID(), """
                 {"description": null}
                 """);
 
@@ -387,7 +406,7 @@ class TicketControllerTest {
 
     @Test
     void patchExplicitNullAssigneeIdIsPresentWithNullValueAndDescriptionStaysOmitted() throws Exception {
-        UpdateTicketRequest request = patchAndCaptureRequest(UUID.randomUUID(), UUID.randomUUID(), """
+        UpdateTicketRequest request = patchAndCaptureRequest(UUID.randomUUID(), """
                 {"assigneeId": null}
                 """);
 

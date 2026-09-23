@@ -16,6 +16,7 @@ import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
 import com.queueflow.project.ProjectRepository;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.dto.CreateTicketRequest;
 import com.queueflow.ticket.dto.TicketResponse;
 import com.queueflow.ticket.dto.UpdateTicketRequest;
@@ -43,8 +44,9 @@ public class TicketService {
         this.activityService = activityService;
     }
 
+    /** The creator is the acting user - never a client-supplied id. */
     @Transactional
-    public TicketResponse create(CreateTicketRequest request) {
+    public TicketResponse create(AuthenticatedUser actor, CreateTicketRequest request) {
         // Validated before taking the project row lock below, so an invalid
         // request never blocks concurrent ticket creation on that project.
         String title = validatedTitle(request.title());
@@ -52,11 +54,12 @@ public class TicketService {
         Project project = projectRepository.findByIdForUpdate(request.projectId())
                 .orElseThrow(() -> new ResourceNotFoundException("Project not found: " + request.projectId()));
 
-        User creator = userRepository.findById(request.creatorId())
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + request.creatorId()));
-        if (!inSameWorkspace(project, creator)) {
+        // Existing rule, now applied to the authenticated creator (the
+        // workspace-wide access policy, and its status code, come later).
+        if (!project.getWorkspace().getId().equals(actor.workspaceId())) {
             throw new InvalidRelationshipException("Creator must belong to the same workspace as the project");
         }
+        User creator = actingUser(actor);
 
         User assignee = null;
         if (request.assigneeId() != null) {
@@ -121,25 +124,25 @@ public class TicketService {
                 .toList();
     }
 
+    /** Every activity this update records is attributed to the acting user. */
     @Transactional
-    public TicketResponse update(UUID ticketId, UUID actorUserId, UpdateTicketRequest request) {
+    public TicketResponse update(AuthenticatedUser actor, UUID ticketId, UpdateTicketRequest request) {
         Ticket ticket = ticketRepository.findById(ticketId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ticket not found: " + ticketId));
 
-        User actor = userRepository.findById(actorUserId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + actorUserId));
         // Permission check first: an actor from outside the ticket's
         // workspace may not mutate it at all, whatever the request contains.
-        if (!inSameWorkspace(ticket.getProject(), actor)) {
+        if (!ticket.getProject().getWorkspace().getId().equals(actor.workspaceId())) {
             throw new ForbiddenOperationException("Actor must belong to the same workspace as the ticket");
         }
+        User actingUser = actingUser(actor);
 
         if (request.getTitle() != null) {
             String newTitle = validatedTitle(request.getTitle());
             String oldTitle = ticket.getTitle();
             if (!Objects.equals(oldTitle, newTitle)) {
                 ticket.changeTitle(newTitle);
-                activityService.recordActivity(ActivityType.TITLE_CHANGED, oldTitle, newTitle, ticket, actor);
+                activityService.recordActivity(ActivityType.TITLE_CHANGED, oldTitle, newTitle, ticket, actingUser);
             }
         }
 
@@ -150,7 +153,7 @@ public class TicketService {
             if (!Objects.equals(oldDescription, newDescription)) {
                 ticket.changeDescription(newDescription);
                 activityService.recordActivity(
-                        ActivityType.DESCRIPTION_CHANGED, oldDescription, newDescription, ticket, actor);
+                        ActivityType.DESCRIPTION_CHANGED, oldDescription, newDescription, ticket, actingUser);
             }
         }
 
@@ -160,7 +163,7 @@ public class TicketService {
             if (oldStatus != newStatus) {
                 ticket.changeStatus(newStatus);
                 activityService.recordActivity(
-                        ActivityType.STATUS_CHANGED, oldStatus.name(), newStatus.name(), ticket, actor);
+                        ActivityType.STATUS_CHANGED, oldStatus.name(), newStatus.name(), ticket, actingUser);
             }
         }
 
@@ -170,7 +173,7 @@ public class TicketService {
             if (oldPriority != newPriority) {
                 ticket.changePriority(newPriority);
                 activityService.recordActivity(
-                        ActivityType.PRIORITY_CHANGED, oldPriority.name(), newPriority.name(), ticket, actor);
+                        ActivityType.PRIORITY_CHANGED, oldPriority.name(), newPriority.name(), ticket, actingUser);
             }
         }
 
@@ -184,7 +187,7 @@ public class TicketService {
                 if (newAssigneeId == null) {
                     ticket.changeAssignee(null);
                     activityService.recordActivity(
-                            ActivityType.ASSIGNEE_CHANGED, oldAssigneeId.toString(), null, ticket, actor);
+                            ActivityType.ASSIGNEE_CHANGED, oldAssigneeId.toString(), null, ticket, actingUser);
                 } else {
                     User newAssignee = userRepository.findById(newAssigneeId)
                             .orElseThrow(() -> new ResourceNotFoundException("User not found: " + newAssigneeId));
@@ -195,7 +198,7 @@ public class TicketService {
                     ticket.changeAssignee(newAssignee);
                     activityService.recordActivity(ActivityType.ASSIGNEE_CHANGED,
                             oldAssigneeId != null ? oldAssigneeId.toString() : null, newAssigneeId.toString(),
-                            ticket, actor);
+                            ticket, actingUser);
                 }
             }
         }
@@ -216,6 +219,15 @@ public class TicketService {
         return TicketResponse.from(ticket);
     }
 
+    /**
+     * The acting user as an entity reference for the creator/activity
+     * associations. No query: the user was loaded for this very request to
+     * authenticate it.
+     */
+    private User actingUser(AuthenticatedUser actor) {
+        return userRepository.getReferenceById(actor.userId());
+    }
+
     private static String validatedTitle(String title) {
         if (title == null || title.isBlank()) {
             throw new BusinessRuleViolationException("title must not be blank");
@@ -227,11 +239,9 @@ public class TicketService {
     }
 
     /**
-     * Whether the user belongs to the project's workspace. Callers decide
-     * what a mismatch means from the user's role: for the acting user it is
-     * a permission failure (ForbiddenOperationException); for a creator or
-     * assignee being linked to the ticket it is an invalid relationship
-     * (InvalidRelationshipException).
+     * Whether the assignee belongs to the project's workspace; a mismatch is
+     * an invalid relationship (InvalidRelationshipException). The acting
+     * user's own workspace is checked from the AuthenticatedUser instead.
      */
     private static boolean inSameWorkspace(Project project, User user) {
         return project.getWorkspace().getId().equals(user.getWorkspace().getId());

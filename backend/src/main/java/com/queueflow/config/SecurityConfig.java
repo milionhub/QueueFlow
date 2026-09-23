@@ -33,9 +33,9 @@ import jakarta.servlet.DispatcherType;
  * current user (see AuthenticatedUser). Failures are answered with the
  * standard JSON error body by ApiSecurityErrorHandler.
  *
- * Deliberately not here yet: per-workspace access and ADMIN/MEMBER rules.
- * Those are decided by the services, which in this phase still also
- * receive the temporary client-supplied actorUserId / creatorId / authorId.
+ * Controllers pass that AuthenticatedUser to the services, which use it as
+ * the only acting identity. Deliberately not here: per-workspace access and
+ * ADMIN/MEMBER rules, which the services decide.
  */
 @Configuration
 public class SecurityConfig {

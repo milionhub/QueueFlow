@@ -29,11 +29,13 @@ import org.springframework.test.web.servlet.ResultActions;
 
 import com.queueflow.label.dto.CreateLabelRequest;
 import com.queueflow.label.dto.LabelResponse;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
 import com.queueflow.ticket.TicketPriority;
 import com.queueflow.ticket.TicketStatus;
 import com.queueflow.ticket.dto.TicketResponse;
+import com.queueflow.user.UserRole;
 
 /**
  * Web-layer slice covering all LabelService-backed controllers
@@ -52,6 +54,11 @@ class LabelControllerTest {
 
     @Autowired
     private MockMvc mockMvc;
+
+    /** The principal @WithAuthenticatedUser installs: the only possible acting user. */
+    private static final AuthenticatedUser ACTOR = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.ADMIN);
 
     @MockitoBean
     private LabelService labelService;
@@ -191,53 +198,62 @@ class LabelControllerTest {
     void putAddsLabelReturns200WithTicketResponseAndDelegatesExactIds() throws Exception {
         UUID ticketId = UUID.randomUUID();
         UUID labelId = UUID.randomUUID();
-        UUID actorUserId = UUID.randomUUID();
-        when(labelService.addLabelToTicket(ticketId, labelId, actorUserId)).thenReturn(ticketResponse(ticketId));
+        when(labelService.addLabelToTicket(ACTOR, ticketId, labelId)).thenReturn(ticketResponse(ticketId));
 
-        ResultActions result = mockMvc.perform(put("/api/tickets/{ticketId}/labels/{labelId}", ticketId, labelId)
-                        .param("actorUserId", actorUserId.toString()))
+        ResultActions result = mockMvc.perform(put("/api/tickets/{ticketId}/labels/{labelId}", ticketId, labelId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(ticketId.toString()))
                 .andExpect(jsonPath("$.displayKey").value("BACK-1"));
         expectNoTicketEntityLeakage(result);
 
-        verify(labelService).addLabelToTicket(ticketId, labelId, actorUserId);
+        verify(labelService).addLabelToTicket(ACTOR, ticketId, labelId);
         verifyNoMoreInteractions(labelService);
     }
 
+    /** actorUserId is no longer an input: a leftover query parameter cannot change who acts. */
     @Test
-    void putWithoutActorUserIdIsRejectedWithoutCallingService() throws Exception {
-        mockMvc.perform(put("/api/tickets/{ticketId}/labels/{labelId}", UUID.randomUUID(), UUID.randomUUID()))
-                .andExpect(status().isBadRequest());
+    void putActsAsTheAuthenticatedUserEvenIfAnObsoleteActorUserIdIsSent() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        UUID labelId = UUID.randomUUID();
+        when(labelService.addLabelToTicket(ACTOR, ticketId, labelId)).thenReturn(ticketResponse(ticketId));
 
-        verify(labelService, never()).addLabelToTicket(any(), any(), any());
+        mockMvc.perform(put("/api/tickets/{ticketId}/labels/{labelId}", ticketId, labelId)
+                        .param("actorUserId", UUID.randomUUID().toString()))
+                .andExpect(status().isOk());
+
+        verify(labelService).addLabelToTicket(ACTOR, ticketId, labelId);
+        verifyNoMoreInteractions(labelService);
     }
 
     @Test
     void deleteRemovesLabelReturns200WithTicketResponseAndDelegatesExactIds() throws Exception {
         UUID ticketId = UUID.randomUUID();
         UUID labelId = UUID.randomUUID();
-        UUID actorUserId = UUID.randomUUID();
-        when(labelService.removeLabelFromTicket(ticketId, labelId, actorUserId))
+        when(labelService.removeLabelFromTicket(ACTOR, ticketId, labelId))
                 .thenReturn(ticketResponse(ticketId));
 
         ResultActions result = mockMvc.perform(
-                        delete("/api/tickets/{ticketId}/labels/{labelId}", ticketId, labelId)
-                                .param("actorUserId", actorUserId.toString()))
+                        delete("/api/tickets/{ticketId}/labels/{labelId}", ticketId, labelId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(ticketId.toString()));
         expectNoTicketEntityLeakage(result);
 
-        verify(labelService).removeLabelFromTicket(ticketId, labelId, actorUserId);
+        verify(labelService).removeLabelFromTicket(ACTOR, ticketId, labelId);
         verifyNoMoreInteractions(labelService);
     }
 
     @Test
-    void deleteWithoutActorUserIdIsRejectedWithoutCallingService() throws Exception {
-        mockMvc.perform(delete("/api/tickets/{ticketId}/labels/{labelId}", UUID.randomUUID(), UUID.randomUUID()))
-                .andExpect(status().isBadRequest());
+    void deleteActsAsTheAuthenticatedUserEvenIfAnObsoleteActorUserIdIsSent() throws Exception {
+        UUID ticketId = UUID.randomUUID();
+        UUID labelId = UUID.randomUUID();
+        when(labelService.removeLabelFromTicket(ACTOR, ticketId, labelId)).thenReturn(ticketResponse(ticketId));
 
-        verify(labelService, never()).removeLabelFromTicket(any(), any(), any());
+        mockMvc.perform(delete("/api/tickets/{ticketId}/labels/{labelId}", ticketId, labelId)
+                        .param("actorUserId", UUID.randomUUID().toString()))
+                .andExpect(status().isOk());
+
+        verify(labelService).removeLabelFromTicket(ACTOR, ticketId, labelId);
+        verifyNoMoreInteractions(labelService);
     }
 
     private static void expectNoTicketEntityLeakage(ResultActions result) throws Exception {

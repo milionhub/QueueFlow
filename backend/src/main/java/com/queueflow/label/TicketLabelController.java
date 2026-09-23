@@ -2,18 +2,18 @@ package com.queueflow.label;
 
 import java.util.UUID;
 
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.queueflow.config.OpenApiConfig;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.dto.TicketResponse;
 
 import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 
@@ -25,12 +25,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
  *
  * PUT and DELETE are both idempotent by design: re-adding an attached
  * label or removing an absent one succeeds without changing anything.
- * Both return the service's TicketResponse (which does not list labels -
- * see Phase 1.7G).
- *
- * TEMPORARY: actorUserId is Phase 1 plumbing only. Phase 2 authentication
- * will derive the actor from the authenticated principal and this query
- * parameter will be removed.
+ * Both return the updated TicketResponse, including its labels. The
+ * activity they record is attributed to the authenticated user.
  */
 @Tag(name = "Labels")
 @RestController
@@ -51,9 +47,9 @@ public class TicketLabelController {
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @ApiResponse(responseCode = "409", ref = OpenApiConfig.CONFLICT)
     @PutMapping("/{labelId}")
-    public TicketResponse addLabel(@PathVariable UUID ticketId, @PathVariable UUID labelId,
-            @Parameter(description = OpenApiConfig.ACTOR_USER_ID) @RequestParam UUID actorUserId) {
-        return labelService.addLabelToTicket(ticketId, labelId, actorUserId);
+    public TicketResponse addLabel(@AuthenticationPrincipal AuthenticatedUser actor, @PathVariable UUID ticketId,
+            @PathVariable UUID labelId) {
+        return labelService.addLabelToTicket(actor, ticketId, labelId);
     }
 
     @Operation(summary = "Remove a label from a ticket", operationId = "removeTicketLabel",
@@ -63,8 +59,8 @@ public class TicketLabelController {
     @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
     @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @DeleteMapping("/{labelId}")
-    public TicketResponse removeLabel(@PathVariable UUID ticketId, @PathVariable UUID labelId,
-            @Parameter(description = OpenApiConfig.ACTOR_USER_ID) @RequestParam UUID actorUserId) {
-        return labelService.removeLabelFromTicket(ticketId, labelId, actorUserId);
+    public TicketResponse removeLabel(@AuthenticationPrincipal AuthenticatedUser actor,
+            @PathVariable UUID ticketId, @PathVariable UUID labelId) {
+        return labelService.removeLabelFromTicket(actor, ticketId, labelId);
     }
 }

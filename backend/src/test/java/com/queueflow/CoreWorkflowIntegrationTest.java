@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 import com.jayway.jsonpath.JsonPath;
+import com.queueflow.security.AccessTokenService;
 import com.queueflow.user.User;
 import com.queueflow.user.UserRepository;
 import com.queueflow.user.UserRole;
@@ -66,6 +67,9 @@ class CoreWorkflowIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private AccessTokenService accessTokenService;
 
     private UUID workspaceId;
 
@@ -132,7 +136,6 @@ class CoreWorkflowIntegrationTest {
                 .isEqualTo("Workflow Workspace");
 
         Workspace saved = workspaceRepository.findById(workspaceId).orElseThrow();
-        User alice = userRepository.findById(aliceId).orElseThrow();
         User bob = userRepository.save(new User("bob", "bob-" + workspaceId + "@example.com", "hash",
                 UserRole.MEMBER, saved));
 
@@ -151,13 +154,15 @@ class CoreWorkflowIntegrationTest {
                 {"workspaceId": "%s", "name": "Operations", "key": "ops"}
                 """.formatted(workspaceId), 201), "$.id"));
 
+        // No creator in the request: the token's user creates the ticket.
         String ticketJson = """
                 {"projectId": "%s", "title": "%s", "description": "Initial description",
-                 "status": "BACKLOG", "priority": "LOW", "creatorId": "%s"}
+                 "status": "BACKLOG", "priority": "LOW"}
                 """;
-        MvcResult core1 = send(post("/api/tickets"), ticketJson.formatted(coreId, "Checkout bug", alice.getId()), 201);
-        MvcResult ops1 = send(post("/api/tickets"), ticketJson.formatted(opsId, "Deploy", alice.getId()), 201);
-        MvcResult core2 = send(post("/api/tickets"), ticketJson.formatted(coreId, "Search", alice.getId()), 201);
+        MvcResult core1 = send(post("/api/tickets"), ticketJson.formatted(coreId, "Checkout bug"), 201);
+        MvcResult ops1 = send(post("/api/tickets"), ticketJson.formatted(opsId, "Deploy"), 201);
+        MvcResult core2 = send(post("/api/tickets"), ticketJson.formatted(coreId, "Search"), 201);
+        assertThat((String) read(core1, "$.creatorId")).isEqualTo(aliceId.toString());
         assertThat((String) read(core1, "$.displayKey")).isEqualTo("CORE-1");
         assertThat((String) read(ops1, "$.displayKey")).isEqualTo("OPS-1");
         assertThat((String) read(core2, "$.displayKey")).isEqualTo("CORE-2");
@@ -170,8 +175,7 @@ class CoreWorkflowIntegrationTest {
                 .isEqualTo("Search");
 
         // --- PATCH every field kind (explicit null clears description) ------
-        MvcResult patched = send(patch("/api/tickets/{id}", ticketId).param("actorUserId", alice.getId().toString()),
-                """
+        MvcResult patched = send(patch("/api/tickets/{id}", ticketId), """
                 {"title": "Checkout fails", "description": null, "status": "IN_PROGRESS",
                  "priority": "HIGH", "assigneeId": "%s"}
                 """.formatted(bob.getId()), 200);
@@ -188,20 +192,42 @@ class CoreWorkflowIntegrationTest {
                 {"workspaceId": "%s", "name": "Bug"}
                 """.formatted(workspaceId), 201), "$.id"));
         String labelPath = "/api/tickets/{ticketId}/labels/{labelId}";
-        call(put(labelPath, ticketId, urgent).param("actorUserId", alice.getId().toString()), 200);
-        MvcResult labelled = call(put(labelPath, ticketId, bug).param("actorUserId", alice.getId().toString()), 200);
+        call(put(labelPath, ticketId, urgent), 200);
+        MvcResult labelled = call(put(labelPath, ticketId, bug), 200);
         assertThat(read(labelled, "$.labels[*].name").toString()).isEqualTo("[\"Bug\",\"urgent\"]");
-        call(put(labelPath, ticketId, bug).param("actorUserId", alice.getId().toString()), 200);
-        MvcResult unlabelled = call(delete(labelPath, ticketId, urgent).param("actorUserId", alice.getId().toString()), 200);
+        call(put(labelPath, ticketId, bug), 200);
+        MvcResult unlabelled = call(delete(labelPath, ticketId, urgent), 200);
         assertThat(read(unlabelled, "$.labels[*].name").toString()).isEqualTo("[\"Bug\"]");
 
-        // --- comments: author name resolved outside any open session --------
+        // --- comments: the token's user is the author; only they may edit/delete
+        // (author name resolved outside any open session) --------------------
         MvcResult comment = send(post("/api/comments"), """
-                {"ticketId": "%s", "authorId": "%s", "content": "Looking into it"}
-                """.formatted(ticketId, bob.getId()), 201);
-        assertThat((String) read(comment, "$.authorName")).isEqualTo("bob");
+                {"ticketId": "%s", "content": "Looking into it"}
+                """.formatted(ticketId), 201);
+        UUID commentId = UUID.fromString(read(comment, "$.id"));
+        assertThat((String) read(comment, "$.authorId")).isEqualTo(aliceId.toString());
+        assertThat((String) read(comment, "$.authorName")).isEqualTo("Alice");
+        assertThat((String) read(send(patch("/api/comments/{id}", commentId), """
+                {"content": "Looking into it now"}
+                """, 200), "$.content")).isEqualTo("Looking into it now");
+
+        // Bob, with his own token, cannot touch Alice's comment; his own is his.
+        String aliceToken = accessToken;
+        accessToken = accessTokenService.issue(bob.getId()).tokenValue();
+        send(patch("/api/comments/{id}", commentId), """
+                {"content": "Hijacked"}
+                """, 403);
+        call(delete("/api/comments/{id}", commentId), 403);
+        MvcResult bobsComment = send(post("/api/comments"), """
+                {"ticketId": "%s", "content": "Me too"}
+                """.formatted(ticketId), 201);
+        assertThat((String) read(bobsComment, "$.authorId")).isEqualTo(bob.getId().toString());
+        assertThat((String) read(bobsComment, "$.authorName")).isEqualTo("bob");
+        accessToken = aliceToken;
+
+        call(delete("/api/comments/{id}", commentId), 204);
         assertThat(read(call(get("/api/tickets/{id}/comments", ticketId), 200), "$[*].content").toString())
-                .isEqualTo("[\"Looking into it\"]");
+                .isEqualTo("[\"Me too\"]");
 
         // --- activity: all eight types, in order, with actor and values -----
         MvcResult activity = call(get("/api/tickets/{id}/activities", ticketId), 200);
@@ -213,6 +239,7 @@ class CoreWorkflowIntegrationTest {
                 null, "Checkout bug", "Initial description", "BACKLOG", "LOW", null, null, null, "urgent");
         assertThat(entries).extracting(e -> e.get("newValue")).containsExactly(
                 null, "Checkout fails", null, "IN_PROGRESS", "HIGH", bob.getId().toString(), "urgent", "Bug", null);
+        assertThat(entries).extracting(e -> e.get("userId")).containsOnly(aliceId.toString());
         assertThat(entries).extracting(e -> e.get("userName")).containsOnly("Alice");
         assertThat(entries).extracting(e -> e.get("ticketId")).containsOnly(ticketId.toString());
 

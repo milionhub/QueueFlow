@@ -28,6 +28,7 @@ import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.common.exception.InvalidRelationshipException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.project.Project;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.Ticket;
 import com.queueflow.ticket.TicketPriority;
 import com.queueflow.ticket.TicketRepository;
@@ -85,6 +86,15 @@ class CommentServiceTest {
         return ticket;
     }
 
+    /** The principal the security layer would build for this user. */
+    private static AuthenticatedUser actorOf(User user) {
+        return new AuthenticatedUser(user.getId(), user.getWorkspace().getId(), user.getRole());
+    }
+
+    private static AuthenticatedUser actorWithId(UUID userId) {
+        return new AuthenticatedUser(userId, UUID.randomUUID(), UserRole.MEMBER);
+    }
+
     private static Comment persistedComment(UUID id, String content, Ticket ticket, User author,
             OffsetDateTime timestamp) {
         Comment comment = new Comment(content, ticket, author);
@@ -107,7 +117,7 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada Lovelace", workspace);
 
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-        when(userRepository.findById(author.getId())).thenReturn(Optional.of(author));
+        when(userRepository.getReferenceById(author.getId())).thenReturn(author);
 
         UUID generatedId = UUID.randomUUID();
         OffsetDateTime timestamp = OffsetDateTime.now();
@@ -119,8 +129,8 @@ class CommentServiceTest {
             return argument;
         });
 
-        CommentResponse response = commentService.create(
-                new CreateCommentRequest(ticket.getId(), author.getId(), "Looking into this now"));
+        CommentResponse response = commentService.create(actorOf(author),
+                new CreateCommentRequest(ticket.getId(), "Looking into this now"));
 
         ArgumentCaptor<Comment> captor = ArgumentCaptor.forClass(Comment.class);
         verify(commentRepository).save(captor.capture());
@@ -137,32 +147,34 @@ class CommentServiceTest {
     @Test
     void createThrowsResourceNotFoundExceptionWhenTicketMissing() {
         UUID ticketId = UUID.randomUUID();
-        UUID authorId = UUID.randomUUID();
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> commentService.create(new CreateCommentRequest(ticketId, authorId, "Hello")))
+        assertThatThrownBy(() -> commentService.create(actorWithId(UUID.randomUUID()),
+                new CreateCommentRequest(ticketId, "Hello")))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
 
         verify(commentRepository, never()).save(any());
     }
 
+    /** The author is always the authenticated actor: attached by reference, never looked up by a request id. */
     @Test
-    void createThrowsResourceNotFoundExceptionWhenAuthorMissing() {
+    void createUsesTheAuthenticatedActorAsAuthor() {
         Workspace workspace = persistedWorkspace(UUID.randomUUID());
         Project project = persistedProject(UUID.randomUUID(), workspace);
         User creator = persistedUser(UUID.randomUUID(), "Creator", workspace);
         Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
-        UUID authorId = UUID.randomUUID();
+        User actor = persistedUser(UUID.randomUUID(), "Juan", workspace);
 
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-        when(userRepository.findById(authorId)).thenReturn(Optional.empty());
+        when(userRepository.getReferenceById(actor.getId())).thenReturn(actor);
+        when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        assertThatThrownBy(() -> commentService.create(new CreateCommentRequest(ticket.getId(), authorId, "Hello")))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(authorId.toString());
+        CommentResponse response = commentService.create(actorOf(actor),
+                new CreateCommentRequest(ticket.getId(), "Hi"));
 
-        verify(commentRepository, never()).save(any());
+        assertThat(response.authorId()).isEqualTo(actor.getId());
+        verify(userRepository, never()).findById(any());
     }
 
     @Test
@@ -175,12 +187,12 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Outsider", otherWorkspace);
 
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-        when(userRepository.findById(author.getId())).thenReturn(Optional.of(author));
 
-        assertThatThrownBy(() -> commentService.create(
-                new CreateCommentRequest(ticket.getId(), author.getId(), "Hello")))
+        assertThatThrownBy(() -> commentService.create(actorOf(author),
+                new CreateCommentRequest(ticket.getId(), "Hello")))
                 .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("workspace");
+        verify(userRepository, never()).getReferenceById(any());
 
         verify(commentRepository, never()).save(any());
     }
@@ -194,10 +206,10 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
 
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-        when(userRepository.findById(author.getId())).thenReturn(Optional.of(author));
+        when(userRepository.getReferenceById(author.getId())).thenReturn(author);
 
-        assertThatThrownBy(() -> commentService.create(
-                new CreateCommentRequest(ticket.getId(), author.getId(), "   ")))
+        assertThatThrownBy(() -> commentService.create(actorOf(author),
+                new CreateCommentRequest(ticket.getId(), "   ")))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         verify(commentRepository, never()).save(any());
@@ -212,10 +224,10 @@ class CommentServiceTest {
         User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
 
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-        when(userRepository.findById(author.getId())).thenReturn(Optional.of(author));
+        when(userRepository.getReferenceById(author.getId())).thenReturn(author);
 
-        assertThatThrownBy(() -> commentService.create(
-                new CreateCommentRequest(ticket.getId(), author.getId(), null)))
+        assertThatThrownBy(() -> commentService.create(actorOf(author),
+                new CreateCommentRequest(ticket.getId(), null)))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         verify(commentRepository, never()).save(any());
@@ -301,7 +313,7 @@ class CommentServiceTest {
         when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
 
         CommentResponse response = commentService.update(
-                comment.getId(), author.getId(), new UpdateCommentRequest("Updated content"));
+                actorOf(author), comment.getId(), new UpdateCommentRequest("Updated content"));
 
         assertThat(comment.getContent()).isEqualTo("Updated content");
         assertThat(response.content()).isEqualTo("Updated content");
@@ -313,7 +325,8 @@ class CommentServiceTest {
         UUID actorId = UUID.randomUUID();
         when(commentRepository.findById(commentId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> commentService.update(commentId, actorId, new UpdateCommentRequest("New")))
+        assertThatThrownBy(() -> commentService.update(actorWithId(actorId), commentId,
+                new UpdateCommentRequest("New")))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(commentId.toString());
     }
@@ -331,11 +344,30 @@ class CommentServiceTest {
         when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
 
         assertThatThrownBy(() -> commentService.update(
-                comment.getId(), differentActorId, new UpdateCommentRequest("Updated")))
+                actorWithId(differentActorId), comment.getId(), new UpdateCommentRequest("Updated")))
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("author");
 
         assertThat(comment.getContent()).isEqualTo("Original");
+    }
+
+    @Test
+    void anAdminWhoIsNotTheAuthorIsForbiddenToo() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        Project project = persistedProject(UUID.randomUUID(), workspace);
+        User author = persistedUser(UUID.randomUUID(), "Ada", workspace);
+        Ticket ticket = persistedTicket(UUID.randomUUID(), project, author);
+        Comment comment = persistedComment(UUID.randomUUID(), "Original", ticket, author, OffsetDateTime.now());
+        when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
+        AuthenticatedUser admin = new AuthenticatedUser(UUID.randomUUID(), workspace.getId(), UserRole.ADMIN);
+
+        assertThatThrownBy(() -> commentService.update(admin, comment.getId(), new UpdateCommentRequest("Edited")))
+                .isInstanceOf(ForbiddenOperationException.class);
+        assertThatThrownBy(() -> commentService.delete(admin, comment.getId()))
+                .isInstanceOf(ForbiddenOperationException.class);
+
+        assertThat(comment.getContent()).isEqualTo("Original");
+        verify(commentRepository, never()).delete(any());
     }
 
     @Test
@@ -350,7 +382,7 @@ class CommentServiceTest {
         when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
 
         assertThatThrownBy(() -> commentService.update(
-                comment.getId(), UUID.randomUUID(), new UpdateCommentRequest("   ")))
+                actorWithId(UUID.randomUUID()), comment.getId(), new UpdateCommentRequest("   ")))
                 .isInstanceOf(ForbiddenOperationException.class);
 
         assertThat(comment.getContent()).isEqualTo("Original");
@@ -368,7 +400,7 @@ class CommentServiceTest {
         when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
 
         assertThatThrownBy(() -> commentService.update(
-                comment.getId(), author.getId(), new UpdateCommentRequest("   ")))
+                actorOf(author), comment.getId(), new UpdateCommentRequest("   ")))
                 .isInstanceOf(BusinessRuleViolationException.class);
 
         assertThat(comment.getContent()).isEqualTo("Original");
@@ -385,7 +417,7 @@ class CommentServiceTest {
 
         when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
 
-        commentService.update(comment.getId(), author.getId(), new UpdateCommentRequest("Updated"));
+        commentService.update(actorOf(author), comment.getId(), new UpdateCommentRequest("Updated"));
 
         assertThat(comment.getAuthor()).isSameAs(author);
         assertThat(comment.getTicket()).isSameAs(ticket);
@@ -402,7 +434,7 @@ class CommentServiceTest {
 
         when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
 
-        commentService.update(comment.getId(), author.getId(), new UpdateCommentRequest("Updated"));
+        commentService.update(actorOf(author), comment.getId(), new UpdateCommentRequest("Updated"));
 
         verify(commentRepository, never()).save(any());
     }
@@ -422,7 +454,7 @@ class CommentServiceTest {
 
         when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
 
-        commentService.delete(comment.getId(), author.getId());
+        commentService.delete(actorOf(author), comment.getId());
 
         ArgumentCaptor<Comment> captor = ArgumentCaptor.forClass(Comment.class);
         verify(commentRepository).delete(captor.capture());
@@ -435,7 +467,7 @@ class CommentServiceTest {
         UUID actorId = UUID.randomUUID();
         when(commentRepository.findById(commentId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> commentService.delete(commentId, actorId))
+        assertThatThrownBy(() -> commentService.delete(actorWithId(actorId), commentId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(commentId.toString());
 
@@ -454,7 +486,7 @@ class CommentServiceTest {
 
         when(commentRepository.findById(comment.getId())).thenReturn(Optional.of(comment));
 
-        assertThatThrownBy(() -> commentService.delete(comment.getId(), differentActorId))
+        assertThatThrownBy(() -> commentService.delete(actorWithId(differentActorId), comment.getId()))
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("author");
 

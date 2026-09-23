@@ -1,5 +1,6 @@
 package com.queueflow.ticket;
 
+import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -91,10 +92,9 @@ class TicketCreationRollbackIntegrationTest {
                         project, creator, null));
 
         CreateTicketRequest request = new CreateTicketRequest(
-                project.getId(), "Should fail to insert", null, TicketStatus.BACKLOG, TicketPriority.LOW,
-                creator.getId(), null);
+                project.getId(), "Should fail to insert", null, TicketStatus.BACKLOG, TicketPriority.LOW, null);
 
-        assertThatThrownBy(() -> ticketService.create(request))
+        assertThatThrownBy(() -> ticketService.create(actorOf(creator), request))
                 .isInstanceOf(DataIntegrityViolationException.class);
 
         Project reloaded = projectRepository.findById(project.getId()).orElseThrow();

@@ -1,5 +1,6 @@
 package com.queueflow.ticket;
 
+import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
@@ -106,9 +107,8 @@ class TicketConcurrencyIntegrationTest {
         CyclicBarrier barrier = new CyclicBarrier(2);
         Callable<TicketResponse> task = () -> {
             barrier.await(10, TimeUnit.SECONDS);
-            return ticketService.create(new CreateTicketRequest(
-                    project.getId(), "Concurrent ticket", null, TicketStatus.BACKLOG, TicketPriority.LOW,
-                    creator.getId(), null));
+            return ticketService.create(actorOf(creator), new CreateTicketRequest(
+                    project.getId(), "Concurrent ticket", null, TicketStatus.BACKLOG, TicketPriority.LOW, null));
         };
 
         ExecutorService executor = Executors.newFixedThreadPool(2);

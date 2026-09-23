@@ -40,11 +40,6 @@ public class OpenApiConfig {
     public static final String NOT_FOUND = "#/components/responses/NotFound";
     public static final String CONFLICT = "#/components/responses/Conflict";
 
-    /** Shared wording for the temporary client-supplied identity parameter. */
-    public static final String ACTOR_USER_ID = "Id of the user performing the operation. Temporary: still "
-            + "supplied by the client in addition to the access token; it will be derived from the "
-            + "authenticated user instead.";
-
     public static final String BEARER_AUTH = "bearerAuth";
 
     private static final String ERROR_SCHEMA = "ApiErrorResponse";
@@ -78,9 +73,9 @@ public class OpenApiConfig {
                                 is no refresh token, so log in again. A missing, invalid or expired token is \
                                 answered with 401.
 
-                                Temporary: where an operation needs to know who is acting, the client still \
-                                also supplies that user's id (actorUserId, creatorId, authorId). These inputs \
-                                will be replaced by the authenticated user.
+                                Whoever the access token identifies is the acting user: the creator of a ticket, \
+                                the author of a comment and the user recorded in the activity history. No \
+                                request can name a different acting user.
 
                                 All requests and responses are JSON. Errors use the ApiErrorResponse body."""))
                 .components(components.addSecuritySchemes(BEARER_AUTH, new SecurityScheme()

@@ -27,6 +27,7 @@ import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.label.dto.CreateLabelRequest;
 import com.queueflow.label.dto.LabelResponse;
 import com.queueflow.project.Project;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.ticket.Ticket;
 import com.queueflow.ticket.TicketPriority;
 import com.queueflow.ticket.TicketRepository;
@@ -103,6 +104,15 @@ class LabelServiceTest {
     private record Fixture(Workspace workspace, Ticket ticket, User actor) {
     }
 
+    /** The principal the security layer would build for this user. */
+    private static AuthenticatedUser actorOf(User user) {
+        return new AuthenticatedUser(user.getId(), user.getWorkspace().getId(), user.getRole());
+    }
+
+    private static AuthenticatedUser actorWithId(UUID userId) {
+        return new AuthenticatedUser(userId, UUID.randomUUID(), UserRole.MEMBER);
+    }
+
     private Fixture newFixture() {
         Workspace workspace = persistedWorkspace(UUID.randomUUID());
         Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace);
@@ -110,10 +120,10 @@ class LabelServiceTest {
         Ticket ticket = persistedTicket(UUID.randomUUID(), project, creator);
         User actor = persistedUser(UUID.randomUUID(), workspace);
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
-        // lenient: some tests using this shared fixture deliberately supply
-        // a different/missing actor id and never reach this lookup (e.g.
-        // label-missing short-circuits before the actor is loaded).
-        org.mockito.Mockito.lenient().when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
+        // lenient: some tests using this shared fixture act as someone else
+        // or fail before the acting user's reference is taken (e.g. a
+        // missing label short-circuits first).
+        org.mockito.Mockito.lenient().when(userRepository.getReferenceById(actor.getId())).thenReturn(actor);
         return new Fixture(workspace, ticket, actor);
     }
 
@@ -222,7 +232,7 @@ class LabelServiceTest {
         UUID actorId = UUID.randomUUID();
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> labelService.addLabelToTicket(ticketId, labelId, actorId))
+        assertThatThrownBy(() -> labelService.addLabelToTicket(actorWithId(actorId), ticketId, labelId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
     }
@@ -233,22 +243,10 @@ class LabelServiceTest {
         UUID labelId = UUID.randomUUID();
         when(labelRepository.findById(labelId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), labelId, fixture.actor().getId()))
+        assertThatThrownBy(() -> labelService.addLabelToTicket(
+                actorOf(fixture.actor()), fixture.ticket().getId(), labelId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(labelId.toString());
-    }
-
-    @Test
-    void addLabelToTicketThrowsResourceNotFoundExceptionWhenActorMissing() {
-        Fixture fixture = newFixture();
-        Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
-        UUID missingActorId = UUID.randomUUID();
-        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
-        when(userRepository.findById(missingActorId)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), label.getId(), missingActorId))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(missingActorId.toString());
     }
 
     @Test
@@ -258,9 +256,9 @@ class LabelServiceTest {
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         User outsider = persistedUser(UUID.randomUUID(), otherWorkspace);
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
-        when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
 
-        assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), label.getId(), outsider.getId()))
+        assertThatThrownBy(() -> labelService.addLabelToTicket(
+                actorOf(outsider), fixture.ticket().getId(), label.getId()))
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Actor");
 
@@ -275,7 +273,8 @@ class LabelServiceTest {
 
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
-        assertThatThrownBy(() -> labelService.addLabelToTicket(fixture.ticket().getId(), label.getId(), fixture.actor().getId()))
+        assertThatThrownBy(() -> labelService.addLabelToTicket(
+                actorOf(fixture.actor()), fixture.ticket().getId(), label.getId()))
                 .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Label");
 
@@ -291,10 +290,9 @@ class LabelServiceTest {
         Label foreignLabel = persistedLabel(UUID.randomUUID(), "backend", persistedWorkspace(UUID.randomUUID()));
         User outsider = persistedUser(UUID.randomUUID(), persistedWorkspace(UUID.randomUUID()));
         when(labelRepository.findById(foreignLabel.getId())).thenReturn(Optional.of(foreignLabel));
-        when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
 
         assertThatThrownBy(() -> labelService.addLabelToTicket(
-                fixture.ticket().getId(), foreignLabel.getId(), outsider.getId()))
+                actorOf(outsider), fixture.ticket().getId(), foreignLabel.getId()))
                 .isInstanceOf(ForbiddenOperationException.class);
 
         assertThat(fixture.ticket().getLabels()).isEmpty();
@@ -308,8 +306,9 @@ class LabelServiceTest {
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
         TicketResponse response = labelService.addLabelToTicket(
-                fixture.ticket().getId(), label.getId(), fixture.actor().getId());
+                actorOf(fixture.actor()), fixture.ticket().getId(), label.getId());
 
+        verify(userRepository, never()).findById(any());
         assertThat(fixture.ticket().getLabels()).extracting(Label::getId).containsExactly(label.getId());
         assertThat(response.id()).isEqualTo(fixture.ticket().getId());
         verify(ticketRepository, never()).save(any());
@@ -327,8 +326,8 @@ class LabelServiceTest {
         Label secondLoad = persistedLabel(labelId, "backend", fixture.workspace());
         when(labelRepository.findById(labelId)).thenReturn(Optional.of(firstLoad), Optional.of(secondLoad));
 
-        labelService.addLabelToTicket(fixture.ticket().getId(), labelId, fixture.actor().getId());
-        labelService.addLabelToTicket(fixture.ticket().getId(), labelId, fixture.actor().getId());
+        labelService.addLabelToTicket(actorOf(fixture.actor()), fixture.ticket().getId(), labelId);
+        labelService.addLabelToTicket(actorOf(fixture.actor()), fixture.ticket().getId(), labelId);
 
         assertThat(fixture.ticket().getLabels()).hasSize(1);
         assertThat(fixture.ticket().getLabels().iterator().next().getId()).isEqualTo(labelId);
@@ -349,7 +348,7 @@ class LabelServiceTest {
         UUID actorId = UUID.randomUUID();
         when(ticketRepository.findById(ticketId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> labelService.removeLabelFromTicket(ticketId, labelId, actorId))
+        assertThatThrownBy(() -> labelService.removeLabelFromTicket(actorWithId(actorId), ticketId, labelId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(ticketId.toString());
     }
@@ -360,22 +359,10 @@ class LabelServiceTest {
         UUID labelId = UUID.randomUUID();
         when(labelRepository.findById(labelId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), labelId, fixture.actor().getId()))
+        assertThatThrownBy(() -> labelService.removeLabelFromTicket(
+                actorOf(fixture.actor()), fixture.ticket().getId(), labelId))
                 .isInstanceOf(ResourceNotFoundException.class)
                 .hasMessageContaining(labelId.toString());
-    }
-
-    @Test
-    void removeLabelFromTicketThrowsResourceNotFoundExceptionWhenActorMissing() {
-        Fixture fixture = newFixture();
-        Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
-        UUID missingActorId = UUID.randomUUID();
-        when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
-        when(userRepository.findById(missingActorId)).thenReturn(Optional.empty());
-
-        assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), missingActorId))
-                .isInstanceOf(ResourceNotFoundException.class)
-                .hasMessageContaining(missingActorId.toString());
     }
 
     @Test
@@ -385,9 +372,9 @@ class LabelServiceTest {
         Workspace otherWorkspace = persistedWorkspace(UUID.randomUUID());
         User outsider = persistedUser(UUID.randomUUID(), otherWorkspace);
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
-        when(userRepository.findById(outsider.getId())).thenReturn(Optional.of(outsider));
 
-        assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), outsider.getId()))
+        assertThatThrownBy(() -> labelService.removeLabelFromTicket(
+                actorOf(outsider), fixture.ticket().getId(), label.getId()))
                 .isInstanceOf(ForbiddenOperationException.class)
                 .hasMessageContaining("Actor");
     }
@@ -399,7 +386,8 @@ class LabelServiceTest {
         Label label = persistedLabel(UUID.randomUUID(), "backend", labelWorkspace);
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
-        assertThatThrownBy(() -> labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), fixture.actor().getId()))
+        assertThatThrownBy(() -> labelService.removeLabelFromTicket(
+                actorOf(fixture.actor()), fixture.ticket().getId(), label.getId()))
                 .isInstanceOf(InvalidRelationshipException.class)
                 .hasMessageContaining("Label");
     }
@@ -412,7 +400,7 @@ class LabelServiceTest {
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
         TicketResponse response = labelService.removeLabelFromTicket(
-                fixture.ticket().getId(), label.getId(), fixture.actor().getId());
+                actorOf(fixture.actor()), fixture.ticket().getId(), label.getId());
 
         assertThat(fixture.ticket().getLabels()).isEmpty();
         assertThat(response.id()).isEqualTo(fixture.ticket().getId());
@@ -427,7 +415,7 @@ class LabelServiceTest {
         Label label = persistedLabel(UUID.randomUUID(), "backend", fixture.workspace());
         when(labelRepository.findById(label.getId())).thenReturn(Optional.of(label));
 
-        labelService.removeLabelFromTicket(fixture.ticket().getId(), label.getId(), fixture.actor().getId());
+        labelService.removeLabelFromTicket(actorOf(fixture.actor()), fixture.ticket().getId(), label.getId());
 
         assertThat(fixture.ticket().getLabels()).isEmpty();
         verify(ticketRepository, never()).save(any());

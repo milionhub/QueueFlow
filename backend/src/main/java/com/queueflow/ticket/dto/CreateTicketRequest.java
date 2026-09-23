@@ -11,6 +11,10 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
+/**
+ * A new ticket. There is no creator field: the creator is always the
+ * authenticated user making the request.
+ */
 public record CreateTicketRequest(
         @NotNull(message = "projectId is required")
         UUID projectId,
@@ -26,12 +30,6 @@ public record CreateTicketRequest(
 
         @NotNull(message = "priority is required")
         TicketPriority priority,
-
-        @NotNull(message = "creatorId is required")
-        @Schema(description = "Id of the user creating the ticket. "
-                + "Temporary Phase 1 identity input supplied by the client; Phase 2 authentication will "
-                + "derive it from the authenticated user instead.")
-        UUID creatorId,
 
         @Schema(description = "Optional; must be a member of the project's workspace")
         UUID assigneeId) {

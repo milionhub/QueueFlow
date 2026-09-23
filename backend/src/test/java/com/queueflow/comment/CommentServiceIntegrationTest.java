@@ -1,5 +1,6 @@
 package com.queueflow.comment;
 
+import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -74,8 +75,8 @@ class CommentServiceIntegrationTest {
         Ticket ticket = ticketRepository.saveAndFlush(
                 new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, author, null));
 
-        CommentResponse response = commentService.create(
-                new CreateCommentRequest(ticket.getId(), author.getId(), "Looking into this now"));
+        CommentResponse response = commentService.create(actorOf(author),
+                new CreateCommentRequest(ticket.getId(), "Looking into this now"));
         entityManager.flush();
         entityManager.clear();
 
@@ -131,7 +132,7 @@ class CommentServiceIntegrationTest {
         OffsetDateTime createdAt = comment.getCreatedAt();
         OffsetDateTime updatedAtBeforeUpdate = comment.getUpdatedAt();
 
-        commentService.update(comment.getId(), author.getId(), new UpdateCommentRequest("Updated content"));
+        commentService.update(actorOf(author), comment.getId(), new UpdateCommentRequest("Updated content"));
         entityManager.flush();
         entityManager.clear();
 
@@ -163,7 +164,7 @@ class CommentServiceIntegrationTest {
         // in production the transaction commits only after update() has
         // already built its DTO.
         CommentResponse response = commentService.update(
-                comment.getId(), author.getId(), new UpdateCommentRequest("Updated content"));
+                actorOf(author), comment.getId(), new UpdateCommentRequest("Updated content"));
 
         assertThat(response.updatedAt()).isAfter(updatedAtBeforeUpdate);
         // Same representation TIMESTAMPTZ stores and reads back: UTC, and
@@ -189,7 +190,7 @@ class CommentServiceIntegrationTest {
                 new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, author, null));
         Comment comment = commentRepository.saveAndFlush(new Comment("To be deleted", ticket, author));
 
-        commentService.delete(comment.getId(), author.getId());
+        commentService.delete(actorOf(author), comment.getId());
         entityManager.flush();
 
         assertThat(commentRepository.findById(comment.getId())).isEmpty();
@@ -209,8 +210,8 @@ class CommentServiceIntegrationTest {
         Ticket ticket = ticketRepository.saveAndFlush(
                 new Ticket(1L, "Fix bug", null, TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
 
-        assertThatThrownBy(() -> commentService.create(
-                new CreateCommentRequest(ticket.getId(), outsider.getId(), "Should fail")))
+        assertThatThrownBy(() -> commentService.create(actorOf(outsider),
+                new CreateCommentRequest(ticket.getId(), "Should fail")))
                 .isInstanceOf(InvalidRelationshipException.class);
         entityManager.flush();
 

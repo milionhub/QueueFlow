@@ -30,8 +30,10 @@ import org.springframework.test.web.servlet.ResultActions;
 import com.queueflow.comment.dto.CommentResponse;
 import com.queueflow.comment.dto.CreateCommentRequest;
 import com.queueflow.comment.dto.UpdateCommentRequest;
+import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.WebSecurityTestConfiguration;
 import com.queueflow.security.WithAuthenticatedUser;
+import com.queueflow.user.UserRole;
 
 /**
  * Web-layer slice covering both CommentService-backed controllers
@@ -52,6 +54,11 @@ class CommentControllerTest {
     private CommentService commentService;
 
     private static final UUID TICKET_ID = UUID.randomUUID();
+    /** The principal @WithAuthenticatedUser installs: the only possible acting user. */
+    private static final AuthenticatedUser ACTOR = new AuthenticatedUser(
+            UUID.fromString(WithAuthenticatedUser.USER_ID), UUID.fromString(WithAuthenticatedUser.WORKSPACE_ID),
+            UserRole.ADMIN);
+
     private static final UUID AUTHOR_ID = UUID.randomUUID();
 
     private static CommentResponse commentResponse(UUID id, String content, OffsetDateTime createdAt) {
@@ -75,7 +82,7 @@ class CommentControllerTest {
                         .content(json))
                 .andExpect(status().isBadRequest());
 
-        verify(commentService, never()).create(any());
+        verify(commentService, never()).create(any(), any());
     }
 
     // ---------------------------------------------------------------
@@ -85,13 +92,13 @@ class CommentControllerTest {
     @Test
     void postValidRequestReturns201WithBodyAndLocation() throws Exception {
         UUID id = UUID.randomUUID();
-        when(commentService.create(any())).thenReturn(commentResponse(id, "Looking into this now"));
+        when(commentService.create(any(), any())).thenReturn(commentResponse(id, "Looking into this now"));
 
         ResultActions result = mockMvc.perform(post("/api/comments")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"ticketId": "%s", "authorId": "%s", "content": "Looking into this now"}
-                                """.formatted(TICKET_ID, AUTHOR_ID)))
+                                {"ticketId": "%s", "content": "Looking into this now"}
+                                """.formatted(TICKET_ID)))
                 .andExpect(status().isCreated())
                 .andExpect(header().string("Location", "http://localhost/api/comments/" + id))
                 .andExpect(jsonPath("$.id").value(id.toString()))
@@ -106,37 +113,49 @@ class CommentControllerTest {
 
     @Test
     void postDelegatesExactDeserializedRequestToService() throws Exception {
-        when(commentService.create(any())).thenReturn(commentResponse(UUID.randomUUID(), "  Raw content  "));
+        when(commentService.create(any(), any())).thenReturn(commentResponse(UUID.randomUUID(), "  Raw content  "));
 
         mockMvc.perform(post("/api/comments")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"ticketId": "%s", "authorId": "%s", "content": "  Raw content  "}
-                                """.formatted(TICKET_ID, AUTHOR_ID)))
+                                {"ticketId": "%s", "content": "  Raw content  "}
+                                """.formatted(TICKET_ID)))
                 .andExpect(status().isCreated());
 
-        verify(commentService).create(new CreateCommentRequest(TICKET_ID, AUTHOR_ID, "  Raw content  "));
+        verify(commentService).create(ACTOR, new CreateCommentRequest(TICKET_ID, "  Raw content  "));
     }
 
     @Test
     void postBlankContentIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"ticketId": "%s", "authorId": "%s", "content": "   "}
-                """.formatted(TICKET_ID, AUTHOR_ID));
+                {"ticketId": "%s", "content": "   "}
+                """.formatted(TICKET_ID));
     }
 
+    /**
+     * There is no author input: the authenticated user always writes the
+     * comment. An obsolete authorId in the body is ignored like any unknown
+     * JSON property and cannot reach the service.
+     */
     @Test
-    void postMissingAuthorIdIsRejectedWithoutCallingService() throws Exception {
-        postExpectingBadRequest("""
-                {"ticketId": "%s", "content": "Hello"}
-                """.formatted(TICKET_ID));
+    void postCommentsAsTheAuthenticatedUserWhateverAuthorIdIsSent() throws Exception {
+        when(commentService.create(any(), any())).thenReturn(commentResponse(UUID.randomUUID(), "Hello"));
+
+        mockMvc.perform(post("/api/comments")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ticketId": "%s", "authorId": "%s", "content": "Hello"}
+                                """.formatted(TICKET_ID, UUID.randomUUID())))
+                .andExpect(status().isCreated());
+
+        verify(commentService).create(ACTOR, new CreateCommentRequest(TICKET_ID, "Hello"));
     }
 
     @Test
     void postMissingTicketIdIsRejectedWithoutCallingService() throws Exception {
         postExpectingBadRequest("""
-                {"authorId": "%s", "content": "Hello"}
-                """.formatted(AUTHOR_ID));
+                {"content": "Hello"}
+                """);
     }
 
     // ---------------------------------------------------------------
@@ -204,12 +223,10 @@ class CommentControllerTest {
     @Test
     void patchReturns200AndDelegatesExactIdsAndRequest() throws Exception {
         UUID commentId = UUID.randomUUID();
-        UUID actorUserId = UUID.randomUUID();
-        when(commentService.update(commentId, actorUserId, new UpdateCommentRequest("Edited content")))
+        when(commentService.update(ACTOR, commentId, new UpdateCommentRequest("Edited content")))
                 .thenReturn(commentResponse(commentId, "Edited content"));
 
         ResultActions result = mockMvc.perform(patch("/api/comments/{commentId}", commentId)
-                        .param("actorUserId", actorUserId.toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"content": "Edited content"}
@@ -219,26 +236,31 @@ class CommentControllerTest {
                 .andExpect(jsonPath("$.content").value("Edited content"));
         expectNoEntityLeakage(result, "$");
 
-        verify(commentService).update(commentId, actorUserId, new UpdateCommentRequest("Edited content"));
+        verify(commentService).update(ACTOR, commentId, new UpdateCommentRequest("Edited content"));
         verifyNoMoreInteractions(commentService);
     }
 
+    /** actorUserId is no longer an input: a leftover query parameter cannot change who acts. */
     @Test
-    void patchWithoutActorUserIdIsRejectedWithoutCallingService() throws Exception {
-        mockMvc.perform(patch("/api/comments/{commentId}", UUID.randomUUID())
+    void patchActsAsTheAuthenticatedUserEvenIfAnObsoleteActorUserIdIsSent() throws Exception {
+        UUID commentId = UUID.randomUUID();
+        when(commentService.update(ACTOR, commentId, new UpdateCommentRequest("Edited content")))
+                .thenReturn(commentResponse(commentId, "Edited content"));
+
+        mockMvc.perform(patch("/api/comments/{commentId}", commentId)
+                        .param("actorUserId", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"content": "Edited content"}
                                 """))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isOk());
 
-        verify(commentService, never()).update(any(), any(), any());
+        verify(commentService).update(ACTOR, commentId, new UpdateCommentRequest("Edited content"));
     }
 
     @Test
     void patchBlankContentIsRejectedWithoutCallingService() throws Exception {
         mockMvc.perform(patch("/api/comments/{commentId}", UUID.randomUUID())
-                        .param("actorUserId", UUID.randomUUID().toString())
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"content": "  "}
@@ -255,22 +277,23 @@ class CommentControllerTest {
     @Test
     void deleteReturns204WithEmptyBodyAndDelegatesExactIds() throws Exception {
         UUID commentId = UUID.randomUUID();
-        UUID actorUserId = UUID.randomUUID();
 
-        mockMvc.perform(delete("/api/comments/{commentId}", commentId)
-                        .param("actorUserId", actorUserId.toString()))
+        mockMvc.perform(delete("/api/comments/{commentId}", commentId))
                 .andExpect(status().isNoContent())
                 .andExpect(content().string(""));
 
-        verify(commentService).delete(commentId, actorUserId);
+        verify(commentService).delete(ACTOR, commentId);
         verifyNoMoreInteractions(commentService);
     }
 
     @Test
-    void deleteWithoutActorUserIdIsRejectedWithoutCallingService() throws Exception {
-        mockMvc.perform(delete("/api/comments/{commentId}", UUID.randomUUID()))
-                .andExpect(status().isBadRequest());
+    void deleteActsAsTheAuthenticatedUserEvenIfAnObsoleteActorUserIdIsSent() throws Exception {
+        UUID commentId = UUID.randomUUID();
 
-        verify(commentService, never()).delete(any(), any());
+        mockMvc.perform(delete("/api/comments/{commentId}", commentId)
+                        .param("actorUserId", UUID.randomUUID().toString()))
+                .andExpect(status().isNoContent());
+
+        verify(commentService).delete(ACTOR, commentId);
     }
 }

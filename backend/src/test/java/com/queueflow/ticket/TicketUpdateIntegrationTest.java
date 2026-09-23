@@ -1,5 +1,6 @@
 package com.queueflow.ticket;
 
+import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.OffsetDateTime;
@@ -87,7 +88,7 @@ class TicketUpdateIntegrationTest {
         request.setAssigneeId(assignee.getId());
         // description and priority intentionally omitted from the request
 
-        TicketResponse response = ticketService.update(ticket.getId(), creator.getId(), request);
+        TicketResponse response = ticketService.update(actorOf(creator), ticket.getId(), request);
         entityManager.flush();
         entityManager.clear();
 
@@ -117,7 +118,7 @@ class TicketUpdateIntegrationTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setDescription(null);
 
-        ticketService.update(ticket.getId(), creator.getId(), request);
+        ticketService.update(actorOf(creator), ticket.getId(), request);
         entityManager.flush();
         entityManager.clear();
 
@@ -138,7 +139,7 @@ class TicketUpdateIntegrationTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setAssigneeId(null);
 
-        ticketService.update(ticket.getId(), creator.getId(), request);
+        ticketService.update(actorOf(creator), ticket.getId(), request);
         entityManager.flush();
         entityManager.clear();
 
@@ -159,7 +160,7 @@ class TicketUpdateIntegrationTest {
         UpdateTicketRequest request = new UpdateTicketRequest();
         request.setTitle("Updated title");
 
-        ticketService.update(ticket.getId(), creator.getId(), request);
+        ticketService.update(actorOf(creator), ticket.getId(), request);
         entityManager.flush();
         entityManager.clear();
 
@@ -190,7 +191,7 @@ class TicketUpdateIntegrationTest {
         // in production the transaction commits only after update() has
         // already built its DTO, so the response must not depend on a
         // flush the caller performs afterwards.
-        TicketResponse response = ticketService.update(ticket.getId(), creator.getId(), request);
+        TicketResponse response = ticketService.update(actorOf(creator), ticket.getId(), request);
 
         assertThat(response.updatedAt()).isAfter(updatedAtBeforeUpdate);
         // Same representation TIMESTAMPTZ stores and reads back: UTC, and

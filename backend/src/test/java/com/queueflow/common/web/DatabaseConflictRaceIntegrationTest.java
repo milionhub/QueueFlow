@@ -1,5 +1,6 @@
 package com.queueflow.common.web;
 
+import static com.queueflow.security.TestActors.actorOf;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -204,8 +205,8 @@ class DatabaseConflictRaceIntegrationTest {
             throws Exception {
         UUID projectId = projectService.create(
                 new CreateProjectRequest(workspace.getId(), "Race Project", "RACE", null)).id();
-        UUID ticketId = ticketService.create(new CreateTicketRequest(projectId, "Race ticket", null,
-                TicketStatus.TODO, TicketPriority.LOW, user.getId(), null)).id();
+        UUID ticketId = ticketService.create(actorOf(user), new CreateTicketRequest(projectId, "Race ticket", null,
+                TicketStatus.TODO, TicketPriority.LOW, null)).id();
         LabelResponse label = labelService.create(new CreateLabelRequest(workspace.getId(), "Bug"));
 
         CountDownLatch aWritten = new CountDownLatch(1);
@@ -213,7 +214,7 @@ class DatabaseConflictRaceIntegrationTest {
 
         // A: attaches the label and flushes the ticket_labels row, uncommitted.
         Future<?> a = holdTransactionOpen(() -> {
-            labelService.addLabelToTicket(ticketId, label.id(), user.getId());
+            labelService.addLabelToTicket(actorOf(user), ticketId, label.id());
             entityManager.flush();
         }, aWritten, releaseA);
         assertThat(aWritten.await(TIMEOUT.toSeconds(), TimeUnit.SECONDS)).isTrue();
@@ -223,8 +224,7 @@ class DatabaseConflictRaceIntegrationTest {
         // ticket_labels INSERT only happens at COMMIT, where it blocks.
         Future<MvcResult> b = executor.submit(() -> mockMvc.perform(
                         put("/api/tickets/{ticketId}/labels/{labelId}", ticketId, label.id())
-                                .header(HttpHeaders.AUTHORIZATION, bearer)
-                                .param("actorUserId", user.getId().toString()))
+                                .header(HttpHeaders.AUTHORIZATION, bearer))
                 .andReturn());
         awaitSessionBlockedOnLock();
 
