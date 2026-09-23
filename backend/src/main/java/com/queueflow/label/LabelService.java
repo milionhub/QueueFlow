@@ -1,5 +1,6 @@
 package com.queueflow.label;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.stereotype.Service;
@@ -71,6 +72,21 @@ public class LabelService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Label not found in workspace " + workspaceId + " with name: " + normalizedName));
         return LabelResponse.from(label);
+    }
+
+    /**
+     * All labels in a workspace, ordered case-insensitively by name
+     * (see the repository query for tie-breaking). An unknown
+     * workspace is a not-found error, never a silent empty list.
+     */
+    @Transactional(readOnly = true)
+    public List<LabelResponse> getByWorkspace(UUID workspaceId) {
+        if (!workspaceRepository.existsById(workspaceId)) {
+            throw new ResourceNotFoundException("Workspace not found: " + workspaceId);
+        }
+        return labelRepository.findAllInWorkspaceSortedByName(workspaceId).stream()
+                .map(LabelResponse::from)
+                .toList();
     }
 
     @Transactional

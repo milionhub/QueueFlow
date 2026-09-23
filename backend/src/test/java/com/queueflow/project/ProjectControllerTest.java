@@ -7,11 +7,13 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -32,7 +34,7 @@ import com.queueflow.project.dto.ProjectResponse;
  * serialization and the real (temporary) SecurityConfig. No request sends
  * credentials or a CSRF token.
  */
-@WebMvcTest(ProjectController.class)
+@WebMvcTest({ProjectController.class, WorkspaceProjectController.class})
 @Import(SecurityConfig.class)
 class ProjectControllerTest {
 
@@ -181,5 +183,49 @@ class ProjectControllerTest {
         // captured by "/{projectId}" as a (bad) UUID path variable.
         verify(projectService).getByWorkspaceAndKey(workspaceId, rawKey);
         verifyNoMoreInteractions(projectService);
+    }
+
+    // ---------------------------------------------------------------
+    // LIST BY WORKSPACE (WorkspaceProjectController)
+    // ---------------------------------------------------------------
+
+    @Test
+    void listByWorkspaceReturns200ArrayInServiceOrderAndDelegatesExactWorkspaceId() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        UUID first = UUID.randomUUID();
+        UUID second = UUID.randomUUID();
+        // Deliberately not name-sorted: the controller must not re-sort.
+        when(projectService.getByWorkspace(workspaceId)).thenReturn(List.of(
+                projectResponse(first, workspaceId), projectResponse(second, workspaceId)));
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/projects", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(first.toString()))
+                .andExpect(jsonPath("$[1].id").value(second.toString()))
+                .andExpect(jsonPath("$[0].key").value("BACK"))
+                .andExpect(jsonPath("$[0].workspaceId").value(workspaceId.toString()))
+                .andExpect(jsonPath("$[*].workspace").doesNotExist());
+
+        verify(projectService).getByWorkspace(workspaceId);
+        verifyNoMoreInteractions(projectService);
+    }
+
+    @Test
+    void listByWorkspaceWithNoProjectsReturns200EmptyArray() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        when(projectService.getByWorkspace(workspaceId)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/projects", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
+    void listByWorkspaceWithNonUuidIdIsRejectedWithoutCallingService() throws Exception {
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/projects", "not-a-uuid"))
+                .andExpect(status().isBadRequest());
+
+        verify(projectService, never()).getByWorkspace(any());
     }
 }

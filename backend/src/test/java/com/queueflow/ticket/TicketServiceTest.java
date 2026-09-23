@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -871,5 +872,53 @@ class TicketServiceTest {
         when(ticketRepository.findById(ticket.getId())).thenReturn(Optional.of(ticket));
         when(userRepository.findById(actor.getId())).thenReturn(Optional.of(actor));
         return new Fixture(workspace, project, actor, ticket);
+    }
+
+    // ---------------------------------------------------------------
+    // LIST BY PROJECT
+    // ---------------------------------------------------------------
+
+    @Test
+    void getByProjectReturnsMappedTicketsPreservingRepositoryOrder() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        UUID projectId = UUID.randomUUID();
+        Project project = persistedProject(projectId, "ECOM", workspace, 4L);
+        User creator = persistedUser(UUID.randomUUID(), workspace);
+        OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
+        Ticket two = persistedTicket(UUID.randomUUID(), 2L, "Second", null, TicketStatus.TODO,
+                TicketPriority.LOW, project, creator, null, timestamp);
+        Ticket one = persistedTicket(UUID.randomUUID(), 1L, "First", "Details", TicketStatus.BACKLOG,
+                TicketPriority.HIGH, project, creator, creator, timestamp);
+        when(projectRepository.existsById(projectId)).thenReturn(true);
+        // Deliberately not number-sorted: the service must not re-sort.
+        when(ticketRepository.findByProjectIdOrderByTicketNumberAsc(projectId)).thenReturn(List.of(two, one));
+
+        List<TicketResponse> responses = ticketService.getByProject(projectId);
+
+        assertThat(responses).extracting(TicketResponse::id).containsExactly(two.getId(), one.getId());
+        assertThat(responses.get(1)).isEqualTo(new TicketResponse(one.getId(), 1L, "ECOM-1", "First", "Details",
+                TicketStatus.BACKLOG, TicketPriority.HIGH, projectId, "ECOM", creator.getId(), creator.getId(),
+                timestamp, timestamp));
+    }
+
+    @Test
+    void getByProjectReturnsEmptyListForExistingProjectWithoutTickets() {
+        UUID projectId = UUID.randomUUID();
+        when(projectRepository.existsById(projectId)).thenReturn(true);
+        when(ticketRepository.findByProjectIdOrderByTicketNumberAsc(projectId)).thenReturn(List.of());
+
+        assertThat(ticketService.getByProject(projectId)).isEmpty();
+    }
+
+    @Test
+    void getByProjectThrowsResourceNotFoundExceptionForUnknownProjectWithoutQueryingTickets() {
+        UUID projectId = UUID.randomUUID();
+        when(projectRepository.existsById(projectId)).thenReturn(false);
+
+        assertThatThrownBy(() -> ticketService.getByProject(projectId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(projectId.toString());
+
+        verify(ticketRepository, never()).findByProjectIdOrderByTicketNumberAsc(any());
     }
 }

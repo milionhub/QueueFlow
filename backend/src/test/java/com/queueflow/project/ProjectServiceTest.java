@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import java.lang.reflect.RecordComponent;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -195,5 +196,48 @@ class ProjectServiceTest {
                 .findFirst()
                 .orElseThrow();
         assertThat(workspaceIdComponent.getType()).isEqualTo(UUID.class);
+    }
+
+    // ---------------------------------------------------------------
+    // LIST BY WORKSPACE
+    // ---------------------------------------------------------------
+
+    @Test
+    void getByWorkspaceReturnsMappedProjectsPreservingRepositoryOrder() {
+        UUID workspaceId = UUID.randomUUID();
+        Workspace workspace = persistedWorkspace(workspaceId, "Acme Inc.");
+        OffsetDateTime timestamp = OffsetDateTime.parse("2026-09-23T10:15:30Z");
+        Project zeta = persistedProject(UUID.randomUUID(), "Zeta", "ZETA", "Last", workspace, 4L, timestamp);
+        Project alpha = persistedProject(UUID.randomUUID(), "Alpha", "ALPHA", null, workspace, 1L, timestamp);
+        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
+        // Deliberately not name-sorted: the service must not re-sort.
+        when(projectRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of(zeta, alpha));
+
+        List<ProjectResponse> responses = projectService.getByWorkspace(workspaceId);
+
+        assertThat(responses).extracting(ProjectResponse::id).containsExactly(zeta.getId(), alpha.getId());
+        assertThat(responses.get(0)).isEqualTo(new ProjectResponse(zeta.getId(), "Zeta", "ZETA", "Last",
+                workspaceId, 4L, timestamp, timestamp));
+    }
+
+    @Test
+    void getByWorkspaceReturnsEmptyListForExistingWorkspaceWithoutProjects() {
+        UUID workspaceId = UUID.randomUUID();
+        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
+        when(projectRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of());
+
+        assertThat(projectService.getByWorkspace(workspaceId)).isEmpty();
+    }
+
+    @Test
+    void getByWorkspaceThrowsResourceNotFoundExceptionForUnknownWorkspaceWithoutQueryingProjects() {
+        UUID workspaceId = UUID.randomUUID();
+        when(workspaceRepository.existsById(workspaceId)).thenReturn(false);
+
+        assertThatThrownBy(() -> projectService.getByWorkspace(workspaceId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(workspaceId.toString());
+
+        verify(projectRepository, never()).findAllInWorkspaceSortedByName(any());
     }
 }

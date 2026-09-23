@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -412,5 +413,47 @@ class LabelServiceTest {
         assertThat(fixture.ticket().getLabels()).isEmpty();
         verify(ticketRepository, never()).save(any());
         verify(activityService, never()).recordActivity(any(), any(), any(), any(), any());
+    }
+
+    // ---------------------------------------------------------------
+    // LIST BY WORKSPACE
+    // ---------------------------------------------------------------
+
+    @Test
+    void getByWorkspaceReturnsMappedLabelsPreservingRepositoryOrder() {
+        UUID workspaceId = UUID.randomUUID();
+        Workspace workspace = persistedWorkspace(workspaceId);
+        Label urgent = persistedLabel(UUID.randomUUID(), "urgent", workspace);
+        Label bug = persistedLabel(UUID.randomUUID(), "bug", workspace);
+        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
+        // Deliberately not name-sorted: the service must not re-sort.
+        when(labelRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of(urgent, bug));
+
+        List<LabelResponse> responses = labelService.getByWorkspace(workspaceId);
+
+        assertThat(responses).extracting(LabelResponse::id).containsExactly(urgent.getId(), bug.getId());
+        assertThat(responses).extracting(LabelResponse::name).containsExactly("urgent", "bug");
+        assertThat(responses).extracting(LabelResponse::workspaceId).containsOnly(workspaceId);
+    }
+
+    @Test
+    void getByWorkspaceReturnsEmptyListForExistingWorkspaceWithoutLabels() {
+        UUID workspaceId = UUID.randomUUID();
+        when(workspaceRepository.existsById(workspaceId)).thenReturn(true);
+        when(labelRepository.findAllInWorkspaceSortedByName(workspaceId)).thenReturn(List.of());
+
+        assertThat(labelService.getByWorkspace(workspaceId)).isEmpty();
+    }
+
+    @Test
+    void getByWorkspaceThrowsResourceNotFoundExceptionForUnknownWorkspaceWithoutQueryingLabels() {
+        UUID workspaceId = UUID.randomUUID();
+        when(workspaceRepository.existsById(workspaceId)).thenReturn(false);
+
+        assertThatThrownBy(() -> labelService.getByWorkspace(workspaceId))
+                .isInstanceOf(ResourceNotFoundException.class)
+                .hasMessageContaining(workspaceId.toString());
+
+        verify(labelRepository, never()).findAllInWorkspaceSortedByName(any());
     }
 }

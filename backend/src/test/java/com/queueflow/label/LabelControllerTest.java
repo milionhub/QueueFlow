@@ -9,11 +9,13 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -33,14 +35,15 @@ import com.queueflow.ticket.TicketStatus;
 import com.queueflow.ticket.dto.TicketResponse;
 
 /**
- * Web-layer slice covering both LabelService-backed controllers
- * (LabelController and TicketLabelController) with LabelService mocked,
+ * Web-layer slice covering all LabelService-backed controllers
+ * (LabelController, TicketLabelController and WorkspaceLabelController)
+ * with LabelService mocked,
  * same approach as the other controller tests: real MVC mapping, bean
  * validation, JSON serialization and the real (temporary) SecurityConfig.
  * Idempotency and Activity recording are service behavior, covered by
  * LabelServiceTest / LabelServiceIntegrationTest, not here.
  */
-@WebMvcTest({LabelController.class, TicketLabelController.class})
+@WebMvcTest({LabelController.class, TicketLabelController.class, WorkspaceLabelController.class})
 @Import(SecurityConfig.class)
 class LabelControllerTest {
 
@@ -238,5 +241,50 @@ class LabelControllerTest {
                 .andExpect(jsonPath("$.creator").doesNotExist())
                 .andExpect(jsonPath("$.assignee").doesNotExist())
                 .andExpect(jsonPath("$.labels").doesNotExist());
+    }
+
+    // ---------------------------------------------------------------
+    // LIST BY WORKSPACE (WorkspaceLabelController)
+    // ---------------------------------------------------------------
+
+    @Test
+    void listByWorkspaceReturns200ArrayInServiceOrderAndDelegatesExactWorkspaceId() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        UUID urgent = UUID.randomUUID();
+        UUID bug = UUID.randomUUID();
+        // Deliberately not name-sorted: the controller must not re-sort.
+        when(labelService.getByWorkspace(workspaceId)).thenReturn(List.of(
+                labelResponse(urgent, "urgent", workspaceId), labelResponse(bug, "bug", workspaceId)));
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/labels", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(urgent.toString()))
+                .andExpect(jsonPath("$[0].name").value("urgent"))
+                .andExpect(jsonPath("$[1].id").value(bug.toString()))
+                .andExpect(jsonPath("$[1].name").value("bug"))
+                .andExpect(jsonPath("$[0].workspaceId").value(workspaceId.toString()))
+                .andExpect(jsonPath("$[*].workspace").doesNotExist());
+
+        verify(labelService).getByWorkspace(workspaceId);
+        verifyNoMoreInteractions(labelService);
+    }
+
+    @Test
+    void listByWorkspaceWithNoLabelsReturns200EmptyArray() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        when(labelService.getByWorkspace(workspaceId)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/labels", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
+    void listByWorkspaceWithNonUuidIdIsRejectedWithoutCallingService() throws Exception {
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/labels", "not-a-uuid"))
+                .andExpect(status().isBadRequest());
+
+        verify(labelService, never()).getByWorkspace(any());
     }
 }

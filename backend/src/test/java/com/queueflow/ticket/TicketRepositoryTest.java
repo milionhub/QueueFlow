@@ -3,6 +3,7 @@ package com.queueflow.ticket;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
@@ -219,5 +220,37 @@ class TicketRepositoryTest {
 
         assertThatThrownBy(() -> ticketRepository.saveAndFlush(invalid))
                 .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    private Ticket ticketNumbered(long ticketNumber, Project project, User creator) {
+        return ticketRepository.saveAndFlush(new Ticket(ticketNumber, "Ticket " + ticketNumber, null,
+                TicketStatus.BACKLOG, TicketPriority.LOW, project, creator, null));
+    }
+
+    @Test
+    void projectListReturnsOnlyThatProjectsTicketsOrderedByTicketNumber() {
+        Workspace workspace = newWorkspace();
+        User creator = newUser(workspace, "creator@example.com");
+        Project project = newProject(workspace, "ECOM");
+        Project other = newProject(workspace, "MOB");
+        // Inserted deliberately out of number order.
+        Ticket three = ticketNumbered(3L, project, creator);
+        Ticket one = ticketNumbered(1L, project, creator);
+        Ticket two = ticketNumbered(2L, project, creator);
+        ticketNumbered(1L, other, creator);
+        entityManager.clear();
+
+        List<Ticket> tickets = ticketRepository.findByProjectIdOrderByTicketNumberAsc(project.getId());
+
+        assertThat(tickets).extracting(Ticket::getId).containsExactly(one.getId(), two.getId(), three.getId());
+        assertThat(tickets).extracting(Ticket::getTicketNumber).containsExactly(1L, 2L, 3L);
+    }
+
+    @Test
+    void projectListIsEmptyForProjectWithoutTickets() {
+        Workspace workspace = newWorkspace();
+        Project project = newProject(workspace, "ECOM");
+
+        assertThat(ticketRepository.findByProjectIdOrderByTicketNumberAsc(project.getId())).isEmpty();
     }
 }

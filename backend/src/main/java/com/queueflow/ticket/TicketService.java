@@ -1,5 +1,6 @@
 package com.queueflow.ticket;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -96,6 +97,22 @@ public class TicketService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Ticket not found: project " + projectId + ", number " + ticketNumber));
         return TicketResponse.from(ticket);
+    }
+
+    /**
+     * All tickets in a project, ordered by ticket number. An unknown
+     * project is a not-found error, never a silent empty list. Mapping
+     * happens here, inside the transaction, because TicketResponse reads
+     * the (lazy) project's key for displayKey/projectKey.
+     */
+    @Transactional(readOnly = true)
+    public List<TicketResponse> getByProject(UUID projectId) {
+        if (!projectRepository.existsById(projectId)) {
+            throw new ResourceNotFoundException("Project not found: " + projectId);
+        }
+        return ticketRepository.findByProjectIdOrderByTicketNumberAsc(projectId).stream()
+                .map(TicketResponse::from)
+                .toList();
     }
 
     @Transactional

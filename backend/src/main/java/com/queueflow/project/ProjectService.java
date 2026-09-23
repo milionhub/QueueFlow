@@ -1,5 +1,6 @@
 package com.queueflow.project;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -58,6 +59,21 @@ public class ProjectService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "Project not found in workspace " + workspaceId + " with key: " + normalizedKey));
         return ProjectResponse.from(project);
+    }
+
+    /**
+     * All projects in a workspace, ordered case-insensitively by name
+     * (see the repository query for tie-breaking). An unknown
+     * workspace is a not-found error, never a silent empty list.
+     */
+    @Transactional(readOnly = true)
+    public List<ProjectResponse> getByWorkspace(UUID workspaceId) {
+        if (!workspaceRepository.existsById(workspaceId)) {
+            throw new ResourceNotFoundException("Workspace not found: " + workspaceId);
+        }
+        return projectRepository.findAllInWorkspaceSortedByName(workspaceId).stream()
+                .map(ProjectResponse::from)
+                .toList();
     }
 
     private static String normalizeKey(String key) {

@@ -11,11 +11,13 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -41,7 +43,7 @@ import com.queueflow.ticket.dto.UpdateTicketRequest;
  * proving omitted vs. explicit-null survives deserialization - something
  * TicketServiceTest (which builds the DTO by hand) cannot prove.
  */
-@WebMvcTest(TicketController.class)
+@WebMvcTest({TicketController.class, ProjectTicketController.class})
 @Import(SecurityConfig.class)
 class TicketControllerTest {
 
@@ -328,5 +330,49 @@ class TicketControllerTest {
         assertThat(request.assigneeIdPatch().isPresent()).isTrue();
         assertThat(request.assigneeIdPatch().value()).isNull();
         assertThat(request.descriptionPatch().isPresent()).isFalse();
+    }
+
+    // ---------------------------------------------------------------
+    // LIST BY PROJECT (ProjectTicketController)
+    // ---------------------------------------------------------------
+
+    @Test
+    void listByProjectReturns200ArrayInServiceOrderAndDelegatesExactProjectId() throws Exception {
+        UUID second = UUID.randomUUID();
+        UUID first = UUID.randomUUID();
+        // Deliberately not number-sorted: the controller must not re-sort.
+        when(ticketService.getByProject(PROJECT_ID)).thenReturn(List.of(ticketResponse(second), ticketResponse(first)));
+
+        ResultActions result = mockMvc.perform(get("/api/projects/{projectId}/tickets", PROJECT_ID))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(second.toString()))
+                .andExpect(jsonPath("$[1].id").value(first.toString()))
+                .andExpect(jsonPath("$[0].displayKey").value("BACK-1"))
+                .andExpect(jsonPath("$[0].projectId").value(PROJECT_ID.toString()));
+        result.andExpect(jsonPath("$[*].project").doesNotExist())
+                .andExpect(jsonPath("$[*].creator").doesNotExist())
+                .andExpect(jsonPath("$[*].assignee").doesNotExist())
+                .andExpect(jsonPath("$[*].labels").doesNotExist());
+
+        verify(ticketService).getByProject(PROJECT_ID);
+        verifyNoMoreInteractions(ticketService);
+    }
+
+    @Test
+    void listByProjectWithNoTicketsReturns200EmptyArray() throws Exception {
+        when(ticketService.getByProject(PROJECT_ID)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/projects/{projectId}/tickets", PROJECT_ID))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
+    void listByProjectWithNonUuidIdIsRejectedWithoutCallingService() throws Exception {
+        mockMvc.perform(get("/api/projects/{projectId}/tickets", "ECOM"))
+                .andExpect(status().isBadRequest());
+
+        verify(ticketService, never()).getByProject(any());
     }
 }

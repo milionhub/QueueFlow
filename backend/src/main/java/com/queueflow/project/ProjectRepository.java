@@ -1,5 +1,6 @@
 package com.queueflow.project;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -15,6 +16,15 @@ public interface ProjectRepository extends JpaRepository<Project, UUID> {
     boolean existsByWorkspaceIdAndKey(UUID workspaceId, String key);
 
     Optional<Project> findByWorkspaceIdAndKey(UUID workspaceId, String key);
+
+    /**
+     * Case-insensitive name order for the UI (without it, this database's
+     * collation sorts every capitalized name before every lowercase one).
+     * name then breaks case-only ties ("Alpha"/"alpha") and id breaks
+     * genuinely equal names, which projects allow.
+     */
+    @Query("SELECT p FROM Project p WHERE p.workspace.id = :workspaceId ORDER BY LOWER(p.name) ASC, p.name ASC, p.id ASC")
+    List<Project> findAllInWorkspaceSortedByName(@Param("workspaceId") UUID workspaceId);
 
     /**
      * Loads a Project while acquiring a database row-level pessimistic write

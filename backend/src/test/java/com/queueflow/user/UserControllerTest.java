@@ -1,13 +1,17 @@
 package com.queueflow.user;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -25,7 +29,7 @@ import com.queueflow.user.dto.UserResponse;
  * WorkspaceControllerTest: real MVC mapping, JSON serialization and the
  * real (temporary) SecurityConfig.
  */
-@WebMvcTest(UserController.class)
+@WebMvcTest({UserController.class, WorkspaceMemberController.class})
 @Import(SecurityConfig.class)
 class UserControllerTest {
 
@@ -89,5 +93,51 @@ class UserControllerTest {
         // captured by "/{userId}" as a (bad) UUID path variable.
         verify(userService).getByEmail(email);
         verifyNoMoreInteractions(userService);
+    }
+
+    // ---------------------------------------------------------------
+    // LIST MEMBERS BY WORKSPACE (WorkspaceMemberController)
+    // ---------------------------------------------------------------
+
+    @Test
+    void listMembersReturns200ArrayInServiceOrderWithoutPasswordHash() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        UUID zoe = UUID.randomUUID();
+        UUID ada = UUID.randomUUID();
+        // Deliberately not name-sorted: the controller must not re-sort.
+        when(userService.getByWorkspace(workspaceId)).thenReturn(List.of(
+                userResponse(zoe, "zoe@example.com", workspaceId), userResponse(ada, "ada@example.com", workspaceId)));
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/members", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(2))
+                .andExpect(jsonPath("$[0].id").value(zoe.toString()))
+                .andExpect(jsonPath("$[0].email").value("zoe@example.com"))
+                .andExpect(jsonPath("$[1].id").value(ada.toString()))
+                .andExpect(jsonPath("$[0].role").value("MEMBER"))
+                .andExpect(jsonPath("$[0].workspaceId").value(workspaceId.toString()))
+                .andExpect(jsonPath("$[*].passwordHash").doesNotExist())
+                .andExpect(jsonPath("$[*].workspace").doesNotExist());
+
+        verify(userService).getByWorkspace(workspaceId);
+        verifyNoMoreInteractions(userService);
+    }
+
+    @Test
+    void listMembersWithNoMembersReturns200EmptyArray() throws Exception {
+        UUID workspaceId = UUID.randomUUID();
+        when(userService.getByWorkspace(workspaceId)).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/members", workspaceId))
+                .andExpect(status().isOk())
+                .andExpect(content().json("[]"));
+    }
+
+    @Test
+    void listMembersWithNonUuidIdIsRejectedWithoutCallingService() throws Exception {
+        mockMvc.perform(get("/api/workspaces/{workspaceId}/members", "not-a-uuid"))
+                .andExpect(status().isBadRequest());
+
+        verify(userService, never()).getByWorkspace(any());
     }
 }
