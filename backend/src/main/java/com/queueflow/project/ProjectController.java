@@ -5,6 +5,7 @@ import java.util.UUID;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -15,6 +16,7 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
+import com.queueflow.project.dto.UpdateProjectRequest;
 
 import jakarta.validation.Valid;
 
@@ -46,6 +48,18 @@ public class ProjectController {
     @GetMapping("/{projectId}")
     public ProjectResponse getById(@PathVariable UUID projectId) {
         return projectService.getById(projectId);
+    }
+
+    /**
+     * Partial update of name and/or description only - the key is
+     * immutable. UpdateProjectRequest is a setter-based class (not a
+     * record) so Jackson keeps an omitted description distinct from an
+     * explicit null. No actor yet: Phase 2 authorization decides who may
+     * edit a project.
+     */
+    @PatchMapping("/{projectId}")
+    public ProjectResponse update(@PathVariable UUID projectId, @Valid @RequestBody UpdateProjectRequest request) {
+        return projectService.update(projectId, request);
     }
 
     @GetMapping("/by-key")

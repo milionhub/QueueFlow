@@ -1,6 +1,9 @@
 package com.queueflow.project;
 
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
+import java.util.Objects;
 import java.util.UUID;
 
 import org.hibernate.annotations.Generated;
@@ -71,24 +74,52 @@ public class Project {
         return name;
     }
 
-    public void setName(String name) {
-        this.name = name;
+    /**
+     * Changes the name. Callers must validate (trimmed, not blank, within
+     * length) before calling - this is a narrow mutator, not a validating
+     * setter. A no-op when the value is unchanged.
+     */
+    public void changeName(String name) {
+        if (!Objects.equals(this.name, name)) {
+            this.name = name;
+            touch();
+        }
     }
 
+    /**
+     * The key is immutable after creation (it prefixes every ticket's
+     * display key, e.g. ECOM-7), so there is deliberately no mutator.
+     */
     public String getKey() {
         return key;
-    }
-
-    public void setKey(String key) {
-        this.key = key;
     }
 
     public String getDescription() {
         return description;
     }
 
-    public void setDescription(String description) {
-        this.description = description;
+    /**
+     * Pass null to clear. A no-op when the value is unchanged.
+     */
+    public void changeDescription(String description) {
+        if (!Objects.equals(this.description, description)) {
+            this.description = description;
+            touch();
+        }
+    }
+
+    /**
+     * Advances updatedAt for a real project edit. Deliberately explicit
+     * rather than a @PreUpdate callback (as Ticket/Comment use): the
+     * projects row is also UPDATEd by every ticket creation
+     * (allocateNextTicketNumber), and allocating a ticket number is not an
+     * edit of the project - a @PreUpdate would bump updatedAt on every new
+     * ticket. UTC and truncated to microseconds, matching what TIMESTAMPTZ
+     * stores and reads back, so the in-memory value returned in an update
+     * response is identical to a later read (same as Ticket/Comment).
+     */
+    private void touch() {
+        this.updatedAt = OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.MICROS);
     }
 
     public Workspace getWorkspace() {

@@ -1,11 +1,14 @@
 package com.queueflow.project;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -17,6 +20,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
@@ -27,6 +31,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import com.queueflow.config.SecurityConfig;
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
+import com.queueflow.project.dto.UpdateProjectRequest;
 
 /**
  * Web-layer slice with ProjectService mocked, same approach as
@@ -229,5 +234,106 @@ class ProjectControllerTest {
                 .andExpect(status().isBadRequest());
 
         verify(projectService, never()).getByWorkspace(any());
+    }
+
+    // ---------------------------------------------------------------
+    // PATCH
+    // ---------------------------------------------------------------
+
+    private UpdateProjectRequest patchAndCaptureRequest(UUID projectId, String json) throws Exception {
+        when(projectService.update(eq(projectId), any())).thenReturn(projectResponse(projectId, UUID.randomUUID()));
+
+        mockMvc.perform(patch("/api/projects/{projectId}", projectId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<UpdateProjectRequest> captor = ArgumentCaptor.forClass(UpdateProjectRequest.class);
+        verify(projectService).update(eq(projectId), captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    void patchReturns200WithProjectResponseAndDelegatesExactUuidAndValues() throws Exception {
+        UUID id = UUID.randomUUID();
+        UUID workspaceId = UUID.randomUUID();
+        when(projectService.update(eq(id), any())).thenReturn(projectResponse(id, workspaceId));
+
+        mockMvc.perform(patch("/api/projects/{projectId}", id)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name": "  QueueFlow Backend  ", "description": "Backend development"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.name").value("QueueFlow Backend"))
+                .andExpect(jsonPath("$.key").value("BACK"))
+                .andExpect(jsonPath("$.description").value("Backend development"))
+                .andExpect(jsonPath("$.workspaceId").value(workspaceId.toString()))
+                .andExpect(jsonPath("$.createdAt").isNotEmpty())
+                .andExpect(jsonPath("$.updatedAt").isNotEmpty())
+                .andExpect(jsonPath("$.nextTicketNumber").doesNotExist())
+                .andExpect(jsonPath("$.workspace").doesNotExist());
+
+        ArgumentCaptor<UpdateProjectRequest> captor = ArgumentCaptor.forClass(UpdateProjectRequest.class);
+        verify(projectService).update(eq(id), captor.capture());
+        verifyNoMoreInteractions(projectService);
+        // Raw name delegated untrimmed: trimming/validation is the service's job.
+        assertThat(captor.getValue().getName()).isEqualTo("  QueueFlow Backend  ");
+        assertThat(captor.getValue().descriptionPatch().isPresent()).isTrue();
+        assertThat(captor.getValue().descriptionPatch().value()).isEqualTo("Backend development");
+    }
+
+    @Test
+    void patchEmptyObjectLeavesNameAndDescriptionOmitted() throws Exception {
+        UpdateProjectRequest request = patchAndCaptureRequest(UUID.randomUUID(), "{}");
+
+        assertThat(request.getName()).isNull();
+        assertThat(request.descriptionPatch().isPresent()).isFalse();
+    }
+
+    @Test
+    void patchExplicitNullDescriptionIsPresentWithNullValue() throws Exception {
+        UpdateProjectRequest request = patchAndCaptureRequest(UUID.randomUUID(), """
+                {"description": null}
+                """);
+
+        assertThat(request.descriptionPatch().isPresent()).isTrue();
+        assertThat(request.descriptionPatch().value()).isNull();
+        assertThat(request.getName()).isNull();
+    }
+
+    @Test
+    void patchWithKeyPropertyCannotChangeTheKey() throws Exception {
+        // UpdateProjectRequest has no key property. Under the application's
+        // current Jackson configuration an unknown property is ignored, so
+        // the request reaches the service with nothing to change - there is
+        // no way to express a key change.
+        UpdateProjectRequest request = patchAndCaptureRequest(UUID.randomUUID(), """
+                {"key": "NEWKEY"}
+                """);
+
+        assertThat(request.getName()).isNull();
+        assertThat(request.descriptionPatch().isPresent()).isFalse();
+    }
+
+    @Test
+    void patchWithNonUuidIdIsRejectedWithoutCallingService() throws Exception {
+        mockMvc.perform(patch("/api/projects/{projectId}", "ECOM")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        verify(projectService, never()).update(any(), any());
+    }
+
+    @Test
+    void patchOverlongNameIsRejectedByValidationWithoutCallingService() throws Exception {
+        mockMvc.perform(patch("/api/projects/{projectId}", UUID.randomUUID())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\": \"" + "a".repeat(256) + "\"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(projectService, never()).update(any(), any());
     }
 }
