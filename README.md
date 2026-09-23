@@ -15,4 +15,6 @@ A lightweight issue tracking and project management web application for small so
 
 ## Status
 
-This project is currently under development.
+This project is currently under development. The Phase 1 backend core REST API (Spring Boot + PostgreSQL) is in place; authentication, the frontend and deployment are not implemented yet.
+
+With the backend running locally, the API is documented at `http://localhost:8080/swagger-ui.html` (OpenAPI JSON at `/v3/api-docs`).

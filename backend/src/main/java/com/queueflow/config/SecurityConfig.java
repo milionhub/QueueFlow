@@ -55,6 +55,13 @@ public class SecurityConfig {
                         // requests to /error. Not temporary: keep in Phase 2.
                         .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
                         .requestMatchers(HttpMethod.GET, "/actuator/health").permitAll()
+                        // API documentation: read-only, and describes only
+                        // what the (currently open) /api/** endpoints already
+                        // expose. Springdoc serves the OpenAPI document at
+                        // /v3/api-docs (plus .yaml and swagger-config) and the
+                        // UI under /swagger-ui.
+                        .requestMatchers(HttpMethod.GET, "/v3/api-docs", "/v3/api-docs.yaml", "/v3/api-docs/**",
+                                "/swagger-ui.html", "/swagger-ui/**").permitAll()
                         // TEMPORARY - see class Javadoc.
                         .requestMatchers("/api/**").permitAll()
                         .anyRequest().authenticated());

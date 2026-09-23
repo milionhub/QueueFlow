@@ -9,7 +9,13 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.queueflow.config.OpenApiConfig;
 import com.queueflow.ticket.dto.TicketResponse;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 /**
  * Ticket-label associations, addressed as a sub-resource of the ticket.
@@ -26,6 +32,7 @@ import com.queueflow.ticket.dto.TicketResponse;
  * will derive the actor from the authenticated principal and this query
  * parameter will be removed.
  */
+@Tag(name = "Labels")
 @RestController
 @RequestMapping("/api/tickets/{ticketId}/labels")
 public class TicketLabelController {
@@ -36,15 +43,28 @@ public class TicketLabelController {
         this.labelService = labelService;
     }
 
+    @Operation(summary = "Add a label to a ticket", operationId = "addTicketLabel",
+            description = "Idempotent: adding a label that is already attached changes nothing and records no "
+                    + "activity. Returns the updated ticket.")
+    @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
+    @ApiResponse(responseCode = "409", ref = OpenApiConfig.CONFLICT)
     @PutMapping("/{labelId}")
     public TicketResponse addLabel(@PathVariable UUID ticketId, @PathVariable UUID labelId,
-            @RequestParam UUID actorUserId) {
+            @Parameter(description = OpenApiConfig.ACTOR_USER_ID) @RequestParam UUID actorUserId) {
         return labelService.addLabelToTicket(ticketId, labelId, actorUserId);
     }
 
+    @Operation(summary = "Remove a label from a ticket", operationId = "removeTicketLabel",
+            description = "Idempotent: removing a label that is not attached changes nothing and records no "
+                    + "activity. Returns the updated ticket.")
+    @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @DeleteMapping("/{labelId}")
     public TicketResponse removeLabel(@PathVariable UUID ticketId, @PathVariable UUID labelId,
-            @RequestParam UUID actorUserId) {
+            @Parameter(description = OpenApiConfig.ACTOR_USER_ID) @RequestParam UUID actorUserId) {
         return labelService.removeLabelFromTicket(ticketId, labelId, actorUserId);
     }
 }

@@ -18,6 +18,12 @@ import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 import com.queueflow.comment.dto.CommentResponse;
 import com.queueflow.comment.dto.CreateCommentRequest;
 import com.queueflow.comment.dto.UpdateCommentRequest;
+import com.queueflow.config.OpenApiConfig;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.validation.Valid;
 
@@ -31,6 +37,7 @@ import jakarta.validation.Valid;
  * - create trusts the client-supplied authorId in CreateCommentRequest;
  * - update/delete take the caller as the actorUserId query parameter.
  */
+@Tag(name = "Comments", description = "Comments on tickets")
 @RestController
 @RequestMapping("/api/comments")
 public class CommentController {
@@ -41,6 +48,10 @@ public class CommentController {
         this.commentService = commentService;
     }
 
+    @Operation(summary = "Create a comment", operationId = "createComment",
+            description = "The author must belong to the ticket's workspace.")
+    @ApiResponse(responseCode = "201", description = "Comment created", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @PostMapping
     public ResponseEntity<CommentResponse> create(@Valid @RequestBody CreateCommentRequest request) {
         CommentResponse response = commentService.create(request);
@@ -51,19 +62,34 @@ public class CommentController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "Get a comment", operationId = "getComment")
+    @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/{commentId}")
     public CommentResponse getById(@PathVariable UUID commentId) {
         return commentService.getById(commentId);
     }
 
+    @Operation(summary = "Update a comment", operationId = "updateComment",
+            description = "Only the comment's author may edit it.")
+    @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @PatchMapping("/{commentId}")
-    public CommentResponse update(@PathVariable UUID commentId, @RequestParam UUID actorUserId,
+    public CommentResponse update(@PathVariable UUID commentId,
+            @Parameter(description = OpenApiConfig.ACTOR_USER_ID) @RequestParam UUID actorUserId,
             @Valid @RequestBody UpdateCommentRequest request) {
         return commentService.update(commentId, actorUserId, request);
     }
 
+    @Operation(summary = "Delete a comment", operationId = "deleteComment",
+            description = "Only the comment's author may delete it.")
+    @ApiResponse(responseCode = "204", description = "Comment deleted")
+    @ApiResponse(responseCode = "403", ref = OpenApiConfig.FORBIDDEN)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @DeleteMapping("/{commentId}")
-    public ResponseEntity<Void> delete(@PathVariable UUID commentId, @RequestParam UUID actorUserId) {
+    public ResponseEntity<Void> delete(@PathVariable UUID commentId,
+            @Parameter(description = OpenApiConfig.ACTOR_USER_ID) @RequestParam UUID actorUserId) {
         commentService.delete(commentId, actorUserId);
         return ResponseEntity.noContent().build();
     }

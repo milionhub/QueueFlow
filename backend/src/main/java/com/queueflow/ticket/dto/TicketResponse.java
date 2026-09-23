@@ -13,20 +13,26 @@ import com.queueflow.ticket.TicketPriority;
 import com.queueflow.ticket.TicketStatus;
 import com.queueflow.user.User;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 public record TicketResponse(
         UUID id,
         long ticketNumber,
+        @Schema(description = "Project key and ticket number, e.g. CORE-7", example = "CORE-7")
         String displayKey,
         String title,
+        @Schema(types = {"string", "null"})
         String description,
         TicketStatus status,
         TicketPriority priority,
         UUID projectId,
         String projectKey,
         UUID creatorId,
+        @Schema(types = {"string", "null"}, format = "uuid", description = "Null when the ticket is unassigned")
         UUID assigneeId,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
+        @Schema(description = "Attached labels, ordered by name; empty when there are none")
         List<LabelResponse> labels) {
 
     /**

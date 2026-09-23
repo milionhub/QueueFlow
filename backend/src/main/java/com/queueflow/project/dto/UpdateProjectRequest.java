@@ -2,6 +2,8 @@ package com.queueflow.project.dto;
 
 import com.queueflow.common.PatchField;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import jakarta.validation.constraints.Size;
 
 /**
@@ -19,6 +21,8 @@ import jakarta.validation.constraints.Size;
  * There is deliberately no key property: a project's key is immutable
  * after creation.
  */
+@Schema(description = "Partial update. name: omitted or null leaves it unchanged. description: omitted "
+        + "leaves it unchanged, explicit null clears it. The key cannot be changed.")
 public class UpdateProjectRequest {
 
     @Size(max = 255, message = "name must be at most 255 characters")
@@ -42,6 +46,7 @@ public class UpdateProjectRequest {
         return description;
     }
 
+    @Schema(types = {"string", "null"}, description = "Omit to leave unchanged; null clears the description")
     public void setDescription(String description) {
         this.description = PatchField.of(description);
     }

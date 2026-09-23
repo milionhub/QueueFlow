@@ -6,6 +6,8 @@ import java.time.temporal.ChronoUnit;
 
 import org.springframework.http.HttpStatus;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 /**
  * The single JSON error body returned by the REST API for errors handled by
  * {@link GlobalExceptionHandler}. Deliberately small for V1: no trace ids,
@@ -20,10 +22,15 @@ import org.springframework.http.HttpStatus;
  * @param path      the request URI path only (no scheme, host or query string)
  */
 public record ApiErrorResponse(
+        @Schema(description = "When the error was produced (UTC)")
         OffsetDateTime timestamp,
+        @Schema(description = "HTTP status code", example = "404")
         int status,
+        @Schema(description = "HTTP reason phrase", example = "Not Found")
         String error,
+        @Schema(description = "Human-readable explanation")
         String message,
+        @Schema(description = "Request path, without query string", example = "/api/tickets/{ticketId}")
         String path) {
 
     public static ApiErrorResponse of(HttpStatus status, String message, String path) {

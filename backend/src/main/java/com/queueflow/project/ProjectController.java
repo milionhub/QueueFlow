@@ -14,9 +14,15 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
+import com.queueflow.config.OpenApiConfig;
 import com.queueflow.project.dto.CreateProjectRequest;
 import com.queueflow.project.dto.ProjectResponse;
 import com.queueflow.project.dto.UpdateProjectRequest;
+
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 
 import jakarta.validation.Valid;
 
@@ -25,6 +31,7 @@ import jakarta.validation.Valid;
  * existence and duplicate-key checks all live in the service - the raw
  * key is passed through untouched on both create and lookup.
  */
+@Tag(name = "Projects", description = "Projects inside a workspace")
 @RestController
 @RequestMapping("/api/projects")
 public class ProjectController {
@@ -35,6 +42,12 @@ public class ProjectController {
         this.projectService = projectService;
     }
 
+    @Operation(summary = "Create a project", operationId = "createProject",
+            description = "The key is trimmed and upper-cased, must then be 2-10 characters of A-Z and 0-9, is "
+                    + "unique within the workspace and cannot be changed later.")
+    @ApiResponse(responseCode = "201", description = "Project created", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
+    @ApiResponse(responseCode = "409", ref = OpenApiConfig.CONFLICT)
     @PostMapping
     public ResponseEntity<ProjectResponse> create(@Valid @RequestBody CreateProjectRequest request) {
         ProjectResponse response = projectService.create(request);
@@ -45,6 +58,9 @@ public class ProjectController {
         return ResponseEntity.created(location).body(response);
     }
 
+    @Operation(summary = "Get a project", operationId = "getProject")
+    @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/{projectId}")
     public ProjectResponse getById(@PathVariable UUID projectId) {
         return projectService.getById(projectId);
@@ -57,13 +73,22 @@ public class ProjectController {
      * explicit null. No actor yet: Phase 2 authorization decides who may
      * edit a project.
      */
+    @Operation(summary = "Update a project", operationId = "updateProject",
+            description = "Partial update of name and description only; the key is immutable. Omit a field to leave "
+                    + "it unchanged; send \"description\": null to clear the description.")
+    @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @PatchMapping("/{projectId}")
     public ProjectResponse update(@PathVariable UUID projectId, @Valid @RequestBody UpdateProjectRequest request) {
         return projectService.update(projectId, request);
     }
 
+    @Operation(summary = "Get a project by workspace and key", operationId = "getProjectByKey")
+    @ApiResponse(responseCode = "200", description = "OK", useReturnTypeSchema = true)
+    @ApiResponse(responseCode = "404", ref = OpenApiConfig.NOT_FOUND)
     @GetMapping("/by-key")
-    public ProjectResponse getByWorkspaceAndKey(@RequestParam UUID workspaceId, @RequestParam String key) {
+    public ProjectResponse getByWorkspaceAndKey(@RequestParam UUID workspaceId,
+            @Parameter(description = "Project key; trimmed and upper-cased before lookup") @RequestParam String key) {
         return projectService.getByWorkspaceAndKey(workspaceId, key);
     }
 }

@@ -6,10 +6,16 @@ import java.util.UUID;
 import com.queueflow.activity.Activity;
 import com.queueflow.activity.ActivityType;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 public record ActivityResponse(
         UUID id,
         ActivityType type,
+        @Schema(types = {"string", "null"},
+                description = "Previous value; null when not applicable or when the value was empty")
         String oldValue,
+        @Schema(types = {"string", "null"},
+                description = "New value; null when not applicable or when the value was cleared")
         String newValue,
         UUID ticketId,
         UUID userId,
