@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 
 import { getDashboard, type DashboardResponse } from '../../api/dashboard'
-import { ApiError } from '../../api/errors'
+import { loadFailureOf, type LoadFailure } from '../../api/errors'
 import { useAuth } from '../auth/useAuth'
 
 export type DashboardState =
@@ -9,7 +9,7 @@ export type DashboardState =
   /** `receivedAt`: when the response arrived; relative times ("5m") are measured from it. */
   | { status: 'ready'; dashboard: DashboardResponse; receivedAt: number }
   /** `network`: no response at all; `server`: any failing response. A 401 never lands here for long: it ends the session. */
-  | { status: 'error'; reason: 'network' | 'server' }
+  | { status: 'error'; reason: LoadFailure }
 
 /**
  * Loads the workspace dashboard with one request, as the signed-in user.
@@ -30,8 +30,7 @@ export function useDashboard(workspaceId: string): { state: DashboardState; retr
         if (controller.signal.aborted) {
           return
         }
-        const reason = error instanceof ApiError && error.kind === 'network' ? 'network' : 'server'
-        setResult({ key, state: { status: 'error', reason } })
+        setResult({ key, state: { status: 'error', reason: loadFailureOf(error) } })
       })
     return () => controller.abort()
   }, [key, workspaceId, authorizedRequest])

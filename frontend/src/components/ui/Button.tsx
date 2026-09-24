@@ -1,11 +1,11 @@
 import type { ButtonHTMLAttributes } from 'react'
 
 type ButtonVariant = 'primary' | 'secondary'
-type ButtonSize = 'md' | 'lg'
+type ButtonSize = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant
-  /** `lg` matches the height of form inputs. */
+  /** `lg` matches the height of form inputs; `sm` is for actions inside list rows. */
   size?: ButtonSize
 }
 
@@ -15,6 +15,7 @@ const VARIANT_CLASSES: Record<ButtonVariant, string> = {
 }
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {
+  sm: 'h-8 px-3',
   md: 'h-9 px-3.5',
   lg: 'h-10 px-4',
 }

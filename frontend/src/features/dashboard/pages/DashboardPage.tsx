@@ -1,9 +1,10 @@
+import { Link } from 'react-router'
+
 import type { DashboardResponse } from '../../../api/dashboard'
-import { Alert } from '../../../components/ui/Alert'
-import { Button } from '../../../components/ui/Button'
+import { LoadError } from '../../../components/ui/LoadError'
 import type { CurrentUser } from '../../auth/types'
 import { useAuth } from '../../auth/useAuth'
-import { useCurrentWorkspace } from '../../workspace/useCurrentWorkspace'
+import { WorkspaceName } from '../../workspace/WorkspaceName'
 import { DashboardEmptyState } from '../components/DashboardEmptyState'
 import { DashboardSkeleton } from '../components/DashboardSkeleton'
 import { ProjectSummaryList } from '../components/ProjectSummaryList'
@@ -40,20 +41,7 @@ function DashboardContent({ state, retry, user }: { state: DashboardState; retry
     case 'loading':
       return <DashboardSkeleton />
     case 'error':
-      return (
-        <div className="flex max-w-lg flex-col items-start gap-3">
-          <Alert tone="error">
-            The dashboard could not be loaded.{' '}
-            {state.reason === 'network'
-              ? 'The server could not be reached.'
-              : 'The server ran into a problem.'}{' '}
-            Please try again.
-          </Alert>
-          <Button variant="secondary" onClick={retry}>
-            Retry
-          </Button>
-        </div>
-      )
+      return <LoadError message="The dashboard could not be loaded." reason={state.reason} onRetry={retry} />
     case 'ready':
       return state.dashboard.projects.length === 0 ? (
         <DashboardEmptyState role={user.role} />
@@ -71,7 +59,11 @@ function PopulatedDashboard({ dashboard, now }: { dashboard: DashboardResponse; 
 
   const projects = (
     <section aria-labelledby="dashboard-projects">
-      <SectionHeading id="dashboard-projects" title="Projects" />
+      <SectionHeading id="dashboard-projects" title="Projects">
+        <Link to="/app/projects" className="font-medium text-accent underline-offset-4 hover:underline">
+          View all<span className="sr-only"> projects</span>
+        </Link>
+      </SectionHeading>
       <ProjectSummaryList projects={dashboard.projects} />
     </section>
   )
@@ -134,14 +126,9 @@ function PopulatedDashboard({ dashboard, now }: { dashboard: DashboardResponse; 
 
 /** "Acme · 3 projects · 18 open tickets" - the workspace name from the shell's context, never its id. */
 function ContextLine({ projectCount, openTickets }: { projectCount: number; openTickets: number }) {
-  const { status, workspace } = useCurrentWorkspace()
   return (
     <p className="text-sm text-ink-muted">
-      {status === 'loading' ? (
-        <span aria-hidden="true" className="inline-block h-3 w-24 rounded bg-line align-middle motion-safe:animate-pulse" />
-      ) : (
-        <span className="font-medium text-ink">{workspace?.name ?? 'Your workspace'}</span>
-      )}
+      <WorkspaceName />
       {' · '}
       {projectCount} {projectCount === 1 ? 'project' : 'projects'}
       {' · '}

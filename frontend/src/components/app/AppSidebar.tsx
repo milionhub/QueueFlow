@@ -10,12 +10,14 @@ interface NavEntry {
   icon: LucideIcon
   /** Absent for sections that are not built yet: shown, but not a link. */
   to?: string
+  /** Active only on exactly `to`, not on the pages below it. */
+  end?: boolean
 }
 
 /** The product's sections. Only those with a route are links; the rest are marked "Soon". */
 const NAVIGATION: NavEntry[] = [
-  { label: 'Dashboard', icon: LayoutDashboard, to: '/app' },
-  { label: 'Projects', icon: FolderKanban },
+  { label: 'Dashboard', icon: LayoutDashboard, to: '/app', end: true },
+  { label: 'Projects', icon: FolderKanban, to: '/app/projects' },
   { label: 'Board', icon: Columns3 },
   { label: 'Members', icon: Users },
 ]
@@ -53,12 +55,12 @@ export function AppSidebar({ onNavigate, onClose }: AppSidebarProps) {
 
       <nav aria-label="Main" className="mt-4 flex-1 overflow-y-auto px-3">
         <ul className="flex flex-col gap-0.5">
-          {NAVIGATION.map(({ label, icon: Icon, to }) => (
+          {NAVIGATION.map(({ label, icon: Icon, to, end }) => (
             <li key={label}>
               {to ? (
                 <NavLink
                   to={to}
-                  end
+                  end={end}
                   onClick={onNavigate}
                   className={({ isActive }) =>
                     `${ROW} ${

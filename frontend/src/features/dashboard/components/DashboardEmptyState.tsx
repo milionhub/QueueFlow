@@ -1,10 +1,11 @@
+import { Link } from 'react-router'
+
 import type { UserRole } from '../../auth/types'
 
 /**
  * A workspace without projects (and so without tickets): one honest panel
  * instead of empty sections. Only an ADMIN can create projects, so the next
- * step it points to depends on the role. No button until project creation
- * exists.
+ * step it points to depends on the role.
  */
 export function DashboardEmptyState({ role }: { role: UserRole }) {
   return (
@@ -18,9 +19,17 @@ export function DashboardEmptyState({ role }: { role: UserRole }) {
         <span className="font-mono text-xs text-ink">CORE-7</span>).
       </p>
       <p className="mt-3 border-t border-line pt-3 text-sm text-ink-muted">
-        {role === 'ADMIN'
-          ? 'Project creation is coming to the Projects section.'
-          : 'A workspace admin can create the first project.'}
+        {role === 'ADMIN' ? (
+          <>
+            Create your first project in{' '}
+            <Link to="/app/projects" className="font-medium text-accent underline-offset-4 hover:underline">
+              Projects
+            </Link>
+            .
+          </>
+        ) : (
+          'A workspace admin can create the first project.'
+        )}
       </p>
     </section>
   )

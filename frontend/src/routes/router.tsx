@@ -4,6 +4,7 @@ import { GuestRoute, ProtectedRoute, RootRedirect } from '../features/auth/compo
 import { LoginPage } from '../features/auth/pages/LoginPage'
 import { RegisterPage } from '../features/auth/pages/RegisterPage'
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
+import { ProjectsPage } from '../features/projects/pages/ProjectsPage'
 import { AppLayout, type AppRouteHandle } from '../layouts/AppLayout'
 import { RootLayout } from '../layouts/RootLayout'
 import { HealthPage } from '../pages/HealthPage'
@@ -39,6 +40,7 @@ export const router = createBrowserRouter([
             element: <AppLayout />,
             children: [
               { index: true, element: <DashboardPage />, handle: { title: 'Dashboard' } satisfies AppRouteHandle },
+              { path: 'projects', element: <ProjectsPage />, handle: { title: 'Projects' } satisfies AppRouteHandle },
               { path: '*', element: <NotFoundPage />, handle: { title: 'Page not found' } satisfies AppRouteHandle },
             ],
           },

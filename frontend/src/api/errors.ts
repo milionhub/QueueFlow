@@ -48,3 +48,14 @@ export function isApiErrorBody(value: unknown): value is ApiErrorBody {
     typeof candidate.path === 'string'
   )
 }
+
+/**
+ * Why a page's data could not be loaded, as far as the reader cares: no
+ * response at all, or a response that failed. (A 401 never gets this far:
+ * authorizedRequest ends the session.)
+ */
+export type LoadFailure = 'network' | 'server'
+
+export function loadFailureOf(error: unknown): LoadFailure {
+  return error instanceof ApiError && error.kind === 'network' ? 'network' : 'server'
+}
