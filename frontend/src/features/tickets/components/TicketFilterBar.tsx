@@ -21,10 +21,12 @@ interface TicketFilterBarProps {
   onFilter: (name: Exclude<FilterParam, 'q'>, value: string | null) => void
   /** Shown while any filter is active: back to the full list. */
   onClear?: () => void
+  /** Leaves out the status filter (on the board, the columns are the statuses). */
+  hideStatus?: boolean
 }
 
 /**
- * Search and the four filters above the list. Every control has a label
+ * Search and the four filters above the list (three on the board). Every control has a label
  * (visually hidden: the first option or the placeholder says what it is).
  * One row when there is room; on phones search takes the full width and
  * the selects go two by two.
@@ -37,6 +39,7 @@ export function TicketFilterBar({
   onSearch,
   onFilter,
   onClear,
+  hideStatus = false,
 }: TicketFilterBarProps) {
   const id = useId()
   return (
@@ -55,20 +58,22 @@ export function TicketFilterBar({
           className={CONTROL}
         />
       </div>
-      <FilterSelect
-        id={`${id}-status`}
-        label="Status"
-        value={filters.status ?? ''}
-        onChange={(value) => onFilter('status', value)}
-      >
-        <option value="">All statuses</option>
-        <option value="open">Open</option>
-        {(Object.keys(STATUS_LABELS) as TicketStatus[]).map((status) => (
-          <option key={status} value={status}>
-            {STATUS_LABELS[status]}
-          </option>
-        ))}
-      </FilterSelect>
+      {!hideStatus && (
+        <FilterSelect
+          id={`${id}-status`}
+          label="Status"
+          value={filters.status ?? ''}
+          onChange={(value) => onFilter('status', value)}
+        >
+          <option value="">All statuses</option>
+          <option value="open">Open</option>
+          {(Object.keys(STATUS_LABELS) as TicketStatus[]).map((status) => (
+            <option key={status} value={status}>
+              {STATUS_LABELS[status]}
+            </option>
+          ))}
+        </FilterSelect>
+      )}
       <FilterSelect
         id={`${id}-priority`}
         label="Priority"

@@ -119,6 +119,28 @@ export function withFilter(params: URLSearchParams, name: FilterParam, value: st
   return next
 }
 
+/**
+ * The part of the filters the list and the board share - every filter but
+ * status, which on the board is the columns themselves - as the query
+ * string for a link to the other view ("?q=auth&priority=HIGH", or "").
+ * Built from the validated filters, so a value that meant nothing here is
+ * not carried over.
+ */
+export function sharedFilterSearch(filters: TicketFilters): string {
+  const params = new URLSearchParams()
+  if (filters.q.trim() !== '') {
+    params.set('q', filters.q)
+  }
+  for (const name of ['priority', 'assignee', 'label'] as const) {
+    const value = filters[name]
+    if (value) {
+      params.set(name, value)
+    }
+  }
+  const search = params.toString()
+  return search === '' ? '' : `?${search}`
+}
+
 /** A copy of `params` without any ticket filter; other parameters are kept. */
 export function withoutFilters(params: URLSearchParams): URLSearchParams {
   const next = new URLSearchParams(params)

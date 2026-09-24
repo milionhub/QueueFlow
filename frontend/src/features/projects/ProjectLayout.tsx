@@ -107,7 +107,11 @@ function ProjectNotFound() {
   )
 }
 
-function ProjectSkeleton() {
+/**
+ * A project page loading: also shown by the router while a lazily loaded
+ * project page (the board) arrives on a direct visit or a refresh.
+ */
+export function ProjectSkeleton() {
   return (
     <div aria-busy="true" className="max-w-6xl">
       <span className="sr-only" role="status">

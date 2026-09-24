@@ -4,7 +4,7 @@ import { GuestRoute, ProtectedRoute, RootRedirect } from '../features/auth/compo
 import { LoginPage } from '../features/auth/pages/LoginPage'
 import { RegisterPage } from '../features/auth/pages/RegisterPage'
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
-import { ProjectLayout } from '../features/projects/ProjectLayout'
+import { ProjectLayout, ProjectSkeleton } from '../features/projects/ProjectLayout'
 import { ProjectsPage } from '../features/projects/pages/ProjectsPage'
 import { ProjectTicketsPage } from '../features/tickets/pages/ProjectTicketsPage'
 import { TicketDetailPage } from '../features/tickets/pages/TicketDetailPage'
@@ -20,7 +20,7 @@ import { RouteErrorPage } from '../pages/RouteErrorPage'
  * - The signed-in application lives under /app: ProtectedRoute, then the
  *   AppLayout shell; /app itself is the dashboard. Feature pages are
  *   added as its children, each with a `handle.title`. A project's pages
- *   (/app/projects/:projectKey, ...) share ProjectLayout, which loads the
+ *   (/app/projects/:projectKey, .../board, ...) share ProjectLayout, which loads the
  *   project and the workspace's members once for all of them.
  * - /health and the public 404 page are open to everyone.
  */
@@ -49,9 +49,19 @@ export const router = createBrowserRouter([
                 // A project's pages; each sets its own title once the project has loaded.
                 path: 'projects/:projectKey',
                 element: <ProjectLayout />,
+                // Shown inside the shell while the board's code loads on a direct visit.
+                hydrateFallbackElement: <ProjectSkeleton />,
                 handle: { title: 'Projects' } satisfies AppRouteHandle,
                 children: [
                   { index: true, element: <ProjectTicketsPage /> },
+                  {
+                    // Loaded when first visited: drag and drop is only needed here.
+                    path: 'board',
+                    lazy: () =>
+                      import('../features/board/pages/ProjectBoardPage').then(({ ProjectBoardPage }) => ({
+                        Component: ProjectBoardPage,
+                      })),
+                  },
                   { path: 'tickets/:ticketNumber', element: <TicketDetailPage /> },
                 ],
               },

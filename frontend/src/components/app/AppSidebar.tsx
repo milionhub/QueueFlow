@@ -1,4 +1,4 @@
-import { Columns3, FolderKanban, LayoutDashboard, Users, X, type LucideIcon } from 'lucide-react'
+import { FolderKanban, LayoutDashboard, Users, X, type LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router'
 
 import { useCurrentWorkspace } from '../../features/workspace/useCurrentWorkspace'
@@ -14,11 +14,14 @@ interface NavEntry {
   end?: boolean
 }
 
-/** The product's sections. Only those with a route are links; the rest are marked "Soon". */
+/**
+ * The product's sections. Only those with a route are links; the rest are
+ * marked "Soon". Boards belong to a project: they are reached from the
+ * project's own List | Board navigation, not from here.
+ */
 const NAVIGATION: NavEntry[] = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/app', end: true },
   { label: 'Projects', icon: FolderKanban, to: '/app/projects' },
-  { label: 'Board', icon: Columns3 },
   { label: 'Members', icon: Users },
 ]
 

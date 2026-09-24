@@ -6,6 +6,7 @@ import { Button } from '../../../components/ui/Button'
 import { LoadError } from '../../../components/ui/LoadError'
 import { usePageTitle } from '../../../hooks/usePageTitle'
 import { useAuth } from '../../auth/useAuth'
+import { ProjectViewNav } from '../../projects/components/ProjectViewNav'
 import { useProjectContext } from '../../projects/projectContext'
 import { CreateTicketDialog } from '../components/CreateTicketDialog'
 import { ProjectTicketList } from '../components/ProjectTicketList'
@@ -180,11 +181,14 @@ export function ProjectTicketsPage() {
             <p className="mt-1 max-w-3xl text-sm leading-6 break-words text-ink-muted">{project.description}</p>
           )}
         </div>
-        {hasTickets && (
-          <Button id={newTicketId} onClick={openCreate}>
-            New ticket
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <ProjectViewNav projectKey={project.key} filters={filters} />
+          {hasTickets && (
+            <Button id={newTicketId} onClick={openCreate}>
+              New ticket
+            </Button>
+          )}
+        </div>
       </div>
       {content}
       <p role="status" className="sr-only">

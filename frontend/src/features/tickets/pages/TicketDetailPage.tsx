@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react'
-import { Link, useParams } from 'react-router'
+import { Link, useLocation, useParams } from 'react-router'
 
 import { isNotFound } from '../../../api/errors'
 import {
@@ -14,7 +14,7 @@ import { TextAreaField } from '../../../components/ui/TextAreaField'
 import { TextField } from '../../../components/ui/TextField'
 import { usePageTitle } from '../../../hooks/usePageTitle'
 import { formatRelativeTime } from '../../../lib/relativeTime'
-import { parseTicketNumber, projectPath } from '../../../routes/paths'
+import { isFromBoard, parseTicketNumber, projectBoardPath, projectPath } from '../../../routes/paths'
 import { useAuth } from '../../auth/useAuth'
 import { useProjectContext } from '../../projects/projectContext'
 import { EditableTicketText } from '../components/EditableTicketText'
@@ -88,13 +88,22 @@ export function TicketDetailPage() {
   )
 }
 
+const BACK_LINK = 'w-fit max-w-full truncate text-sm text-ink-muted underline-offset-4 hover:text-ink hover:underline'
+
+/** Back to the board when the ticket was opened from it; otherwise to the project's ticket list. */
 function BackToProject() {
   const { project } = useProjectContext()
+  const location = useLocation()
+  if (isFromBoard(location.state)) {
+    return (
+      <Link to={projectBoardPath(project.key)} className={BACK_LINK}>
+        <span aria-hidden="true">← </span>
+        Back to <span className="font-mono text-xs">{project.key}</span> board
+      </Link>
+    )
+  }
   return (
-    <Link
-      to={projectPath(project.key)}
-      className="w-fit max-w-full truncate text-sm text-ink-muted underline-offset-4 hover:text-ink hover:underline"
-    >
+    <Link to={projectPath(project.key)} className={BACK_LINK}>
       <span aria-hidden="true">← </span>
       <span className="font-mono text-xs">{project.key}</span> · {project.name}
       <span className="sr-only"> (back to the project's tickets)</span>

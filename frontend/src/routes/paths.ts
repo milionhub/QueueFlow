@@ -11,6 +11,21 @@ export function projectPath(projectKey: string): string {
   return `${PROJECTS_PATH}/${encodeURIComponent(projectKey)}`
 }
 
+/** A project's board: /app/projects/CORE/board */
+export function projectBoardPath(projectKey: string): string {
+  return `${projectPath(projectKey)}/board`
+}
+
+/**
+ * The navigation state a link from the board passes to a ticket's page, so
+ * its back link returns to the board. Kept by refresh; absent on a direct visit.
+ */
+export const FROM_BOARD = { from: 'board' } as const
+
+export function isFromBoard(state: unknown): boolean {
+  return (state as { from?: unknown } | null)?.from === FROM_BOARD.from
+}
+
 /** A ticket's page: /app/projects/CORE/tickets/7 */
 export function ticketPath(projectKey: string, ticketNumber: number): string {
   return `${projectPath(projectKey)}/tickets/${ticketNumber}`
