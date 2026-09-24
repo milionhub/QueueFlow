@@ -24,6 +24,8 @@
   --color-accent-subtle: #eef0fc;
 
   --color-success: #15803d;
+  /* High priority: attention without alarm (Critical uses danger). */
+  --color-warning: #b45309;
   --color-danger: #b91c1c;
 
   /* The mobile navigation drawer sliding in (AppLayout). */

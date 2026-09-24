@@ -166,7 +166,8 @@ class WorkspaceIsolationIntegrationTest {
                 "workspace", w -> get("/api/workspaces/{w}", w),
                 "members", w -> get("/api/workspaces/{w}/members", w),
                 "projects", w -> get("/api/workspaces/{w}/projects", w),
-                "labels", w -> get("/api/workspaces/{w}/labels", w));
+                "labels", w -> get("/api/workspaces/{w}/labels", w),
+                "dashboard", w -> get("/api/workspaces/{w}/dashboard", w));
         byWorkspace.forEach((name, request) -> assertLikeAbsent(name, request, b.workspaceId()));
 
         assertLikeAbsent("user", id -> get("/api/users/{u}", id), b.adminId());

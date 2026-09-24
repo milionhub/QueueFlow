@@ -48,7 +48,8 @@ class OpenApiContractTest {
         assertThat(doc.read("$.info.version", String.class)).isEqualTo("v1");
         List<String> tags = doc.read("$.tags[*].name");
         assertThat(tags).containsExactlyInAnyOrder(
-                "Authentication", "Workspaces", "Users", "Projects", "Tickets", "Labels", "Comments", "Activity");
+                "Authentication", "Workspaces", "Users", "Projects", "Tickets", "Labels", "Comments", "Activity",
+                "Dashboard");
     }
 
     @Test
@@ -56,7 +57,7 @@ class OpenApiContractTest {
         Map<String, Object> paths = doc.read("$.paths");
         assertThat(paths.keySet()).allMatch(path -> path.startsWith("/api/"));
         List<String> operationIds = doc.read("$.paths.*.*.operationId");
-        assertThat(operationIds).hasSize(30).doesNotHaveDuplicates();
+        assertThat(operationIds).hasSize(31).doesNotHaveDuplicates();
     }
 
     @Test
@@ -76,6 +77,45 @@ class OpenApiContractTest {
         assertThat(doc.read("$.paths['/api/tickets/{ticketId}/activities'].get.responses['200']"
                 + ".content['application/json'].schema.items.$ref", String.class))
                 .isEqualTo("#/components/schemas/ActivityResponse");
+    }
+
+    /**
+     * Read-only, open to both roles (no 403), own workspace only (404), and
+     * the approved shape - with nullable assignee fields and no ticket
+     * description or labels.
+     */
+    @Test
+    void documentsTheDashboard() {
+        String dashboard = "$.paths['/api/workspaces/{workspaceId}/dashboard']";
+        Map<String, Object> methods = doc.read(dashboard);
+        assertThat(methods).containsOnlyKeys("get");
+        assertThat(doc.read(dashboard + ".get.operationId", String.class)).isEqualTo("getWorkspaceDashboard");
+        assertThat(doc.read(dashboard + ".get.tags", List.class)).containsExactly("Dashboard");
+        assertThat(doc.read(dashboard + ".get.responses['200'].content['application/json'].schema.$ref",
+                String.class)).isEqualTo("#/components/schemas/DashboardResponse");
+        assertThat(doc.read(dashboard + ".get.responses['401'].$ref", String.class))
+                .isEqualTo(OpenApiConfig.UNAUTHORIZED);
+        assertThat(doc.read(dashboard + ".get.responses['404'].$ref", String.class))
+                .isEqualTo(OpenApiConfig.NOT_FOUND);
+        Map<String, Object> responses = doc.read(dashboard + ".get.responses");
+        assertThat(responses).containsOnlyKeys("200", "400", "401", "404");
+
+        assertThat(doc.read("$.components.schemas.DashboardResponse.required", List.class))
+                .containsExactlyInAnyOrder("statusCounts", "unassignedOpenCount", "projects", "assignedToMe",
+                        "recentlyUpdated");
+        assertThat(doc.read("$.components.schemas.DashboardProjectResponse.required", List.class))
+                .containsExactlyInAnyOrder("id", "key", "name", "openTicketCount", "ticketCount");
+        assertThat(doc.read("$.components.schemas.DashboardAssignedResponse.required", List.class))
+                .containsExactlyInAnyOrder("openCount", "tickets");
+        assertThat(doc.read("$.components.schemas.DashboardTicketResponse.required", List.class))
+                .containsExactlyInAnyOrder("id", "projectId", "displayKey", "title", "status", "priority",
+                        "assigneeId", "assigneeName", "updatedAt");
+        assertThat(doc.read("$.components.schemas.DashboardTicketResponse.properties.assigneeId.type", List.class))
+                .containsExactlyInAnyOrder("string", "null");
+        assertThat(doc.read("$.components.schemas.DashboardTicketResponse.properties.assigneeName.type",
+                List.class)).containsExactlyInAnyOrder("string", "null");
+        assertThat(enumValues("DashboardStatusCountResponse", "status"))
+                .containsExactly("BACKLOG", "TODO", "IN_PROGRESS", "REVIEW", "DONE");
     }
 
     @Test
@@ -134,7 +174,7 @@ class OpenApiContractTest {
         List<Map<String, Object>> protectedOperations = operations.stream()
                 .filter(operation -> !operation.containsKey("security"))
                 .toList();
-        assertThat(protectedOperations).hasSize(28);
+        assertThat(protectedOperations).hasSize(29);
         assertThat(protectedOperations).allSatisfy(operation ->
                 assertThat(JsonPath.<String>read(operation, "$.responses['401'].$ref"))
                         .isEqualTo(OpenApiConfig.UNAUTHORIZED));
@@ -155,7 +195,7 @@ class OpenApiContractTest {
             }
         });
         List<Map<String, Object>> workspaceParameters = doc.read("$.paths.*.*.parameters[?(@.name == 'workspaceId')]");
-        assertThat(workspaceParameters).hasSize(5).allSatisfy(parameter -> {
+        assertThat(workspaceParameters).hasSize(6).allSatisfy(parameter -> {
             assertThat(parameter).containsEntry("in", "path");
             assertThat((String) parameter.get("description")).contains("own workspace");
         });

@@ -1,4 +1,4 @@
-import { Columns3, FolderKanban, House, Users, X, type LucideIcon } from 'lucide-react'
+import { Columns3, FolderKanban, LayoutDashboard, Users, X, type LucideIcon } from 'lucide-react'
 import { NavLink } from 'react-router'
 
 import { useCurrentWorkspace } from '../../features/workspace/useCurrentWorkspace'
@@ -14,7 +14,7 @@ interface NavEntry {
 
 /** The product's sections. Only those with a route are links; the rest are marked "Soon". */
 const NAVIGATION: NavEntry[] = [
-  { label: 'Home', icon: House, to: '/app' },
+  { label: 'Dashboard', icon: LayoutDashboard, to: '/app' },
   { label: 'Projects', icon: FolderKanban },
   { label: 'Board', icon: Columns3 },
   { label: 'Members', icon: Users },

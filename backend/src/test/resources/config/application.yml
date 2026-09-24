@@ -2,6 +2,16 @@
 # (Spring Boot also reads classpath:/config/application.yml and lets it
 # override). It exists only on the test classpath, so it can never act as a
 # fallback for the real application, which still requires JWT_SECRET.
+spring:
+  datasource:
+    hikari:
+      # Spring's test context cache keeps every distinct context - each with
+      # its own pool - open for the whole run. With Hikari's default of 10
+      # connections, eleven cached contexts exceed PostgreSQL's default
+      # max_connections (100) and later contexts fail to start ("too many
+      # clients already"). No test needs more than 3 connections at once
+      # (TicketConcurrencyIntegrationTest: two workers and the test thread).
+      maximum-pool-size: 5
 queueflow:
   security:
     jwt:
