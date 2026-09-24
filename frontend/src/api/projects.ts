@@ -37,6 +37,14 @@ export function listProjects(
   return request<Project[]>(`/api/workspaces/${encodeURIComponent(workspaceId)}/projects`, { signal })
 }
 
+/**
+ * A project of the caller's workspace by its key. The backend trims and
+ * upper-cases the key; an unknown key - or another workspace's - is 404.
+ */
+export function getProjectByKey(request: AuthorizedRequest, key: string, signal?: AbortSignal): Promise<Project> {
+  return request<Project>(`/api/projects/by-key?key=${encodeURIComponent(key)}`, { signal })
+}
+
 /** ADMIN only: a MEMBER gets 403, a key already used in the workspace 409. */
 export function createProject(request: AuthorizedRequest, body: CreateProjectRequest): Promise<Project> {
   return request<Project>('/api/projects', { method: 'POST', body })

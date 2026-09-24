@@ -1,9 +1,10 @@
-import type { ButtonHTMLAttributes } from 'react'
+import type { ButtonHTMLAttributes, Ref } from 'react'
 
 type ButtonVariant = 'primary' | 'secondary'
 type ButtonSize = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  ref?: Ref<HTMLButtonElement>
   variant?: ButtonVariant
   /** `lg` matches the height of form inputs; `sm` is for actions inside list rows. */
   size?: ButtonSize

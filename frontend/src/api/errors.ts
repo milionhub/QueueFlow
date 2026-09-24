@@ -59,3 +59,8 @@ export type LoadFailure = 'network' | 'server'
 export function loadFailureOf(error: unknown): LoadFailure {
   return error instanceof ApiError && error.kind === 'network' ? 'network' : 'server'
 }
+
+/** The backend answered 404: the thing does not exist for this user (or belongs to another workspace). */
+export function isNotFound(error: unknown): boolean {
+  return error instanceof ApiError && error.kind === 'http' && error.status === 404
+}

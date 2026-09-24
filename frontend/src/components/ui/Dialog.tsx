@@ -16,8 +16,12 @@ interface DialogProps {
   returnFocus?: HTMLElement | null
   /** Where focus goes on close when the control that opened the dialog is gone. */
   fallbackFocus?: () => HTMLElement | null
+  /** `lg` for forms with more fields; on phones both fill the width minus the margins. */
+  size?: 'md' | 'lg'
   children: ReactNode
 }
+
+const SIZE_CLASSES = { md: 'max-w-lg', lg: 'max-w-xl' } as const
 
 /**
  * A modal on the native <dialog>: showModal() puts it in the top layer and
@@ -32,6 +36,7 @@ export function Dialog({
   dismissible = true,
   returnFocus,
   fallbackFocus,
+  size = 'md',
   children,
 }: DialogProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
@@ -97,7 +102,7 @@ export function Dialog({
       ref={dialogRef}
       aria-labelledby={titleId}
       aria-describedby={description ? descriptionId : undefined}
-      className="m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg overflow-y-auto rounded-lg border border-line bg-surface p-0 text-ink shadow-xl backdrop:bg-ink/30"
+      className={`m-auto max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] ${SIZE_CLASSES[size]} overflow-y-auto rounded-lg border border-line bg-surface p-0 text-ink shadow-xl backdrop:bg-ink/30`}
     >
       <div className="flex items-start justify-between gap-4 px-5 pt-5">
         <div className="min-w-0">

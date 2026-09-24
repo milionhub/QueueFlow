@@ -1,5 +1,8 @@
+import { Link } from 'react-router'
+
 import type { Project } from '../../../api/projects'
 import { Button } from '../../../components/ui/Button'
+import { projectPath } from '../../../routes/paths'
 
 interface ProjectListProps {
   projects: Project[]
@@ -8,9 +11,10 @@ interface ProjectListProps {
 }
 
 /**
- * The projects in the backend's order. Rows are not links: there is no
- * project page yet. Below 28rem of list width the key moves above the name,
- * leaving the text the full width.
+ * The projects in the backend's order. The name links to the project's
+ * page; the row itself is not a link, so Edit stays a separate control.
+ * Below 28rem of list width the key moves above the name, leaving the text
+ * the full width.
  */
 export function ProjectList({ projects, onEdit }: ProjectListProps) {
   return (
@@ -23,8 +27,13 @@ export function ProjectList({ projects, onEdit }: ProjectListProps) {
                 {project.key}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium text-ink" title={project.name}>
-                  {project.name}
+                <p className="truncate text-sm font-medium" title={project.name}>
+                  <Link
+                    to={projectPath(project.key)}
+                    className="text-ink underline-offset-4 hover:text-accent hover:underline"
+                  >
+                    {project.name}
+                  </Link>
                 </p>
                 {project.description && (
                   <p

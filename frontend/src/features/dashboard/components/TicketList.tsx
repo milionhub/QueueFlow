@@ -1,5 +1,8 @@
+import { Link } from 'react-router'
+
 import type { DashboardTicket } from '../../../api/dashboard'
 import { formatRelativeTime } from '../../../lib/relativeTime'
+import { ticketPathFromDisplayKey } from '../../../routes/paths'
 import { PriorityLabel, StatusBadge } from '../../tickets/TicketBadges'
 
 interface TicketListProps {
@@ -13,7 +16,8 @@ interface TicketListProps {
 /**
  * Ticket rows: key and title, then the details. One line when the list
  * is at least 32rem wide (a container query, so it adapts to the column,
- * not the window), two lines below. Not links: there is no ticket page yet.
+ * not the window), two lines below. The title links to the ticket; the
+ * row itself is not a link.
  */
 export function TicketList({ tickets, detail, now }: TicketListProps) {
   return (
@@ -33,9 +37,13 @@ function TicketRow({ ticket, detail, now }: { ticket: DashboardTicket; detail: T
     <li className="flex flex-col gap-1 px-4 py-2.5 @lg:flex-row @lg:items-center @lg:gap-4">
       <div className="flex min-w-0 flex-1 items-baseline gap-3">
         <span className="min-w-14 shrink-0 font-mono text-xs whitespace-nowrap text-ink-subtle">{ticket.displayKey}</span>
-        <span className="min-w-0 truncate text-sm text-ink" title={ticket.title}>
+        <Link
+          to={ticketPathFromDisplayKey(ticket.displayKey)}
+          title={ticket.title}
+          className="min-w-0 truncate text-sm text-ink underline-offset-4 hover:text-accent hover:underline"
+        >
           {ticket.title}
-        </span>
+        </Link>
       </div>
       <div className="flex shrink-0 items-center gap-3 text-xs text-ink-muted">
         {detail === 'priority' ? (
