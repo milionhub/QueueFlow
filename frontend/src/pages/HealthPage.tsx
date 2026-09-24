@@ -8,7 +8,7 @@ import { env } from '../lib/env'
 
 /** Frontend ↔ backend connectivity check against the public health endpoint. */
 export function HealthPage() {
-  useDocumentTitle('Backend connectivity')
+  useDocumentTitle('Health')
   const { status, reason, recheck } = useBackendHealth()
 
   return (

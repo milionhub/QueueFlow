@@ -1,9 +1,9 @@
 import { Link, Outlet } from 'react-router'
 
 /**
- * The frame every page renders in. Deliberately minimal for now: the
- * application shell (navigation, workspace, user) arrives with the
- * authenticated pages, as a layout route nested under this one.
+ * The plain frame for pages outside the application: the development
+ * /health page and the public 404. The signed-in application uses
+ * AppLayout instead.
  */
 export function RootLayout() {
   return (

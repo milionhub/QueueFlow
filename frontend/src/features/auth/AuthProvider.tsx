@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 
 import * as authApi from '../../api/auth'
+import { apiRequest, type AuthorizedRequest } from '../../api/client'
 import { ApiError } from '../../api/errors'
 import { AuthContext, type AuthContextValue, type AuthStatus, type SignOutReason } from './authContext'
 import { tokenStorage } from './tokenStorage'
@@ -77,14 +78,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ status: 'unauthenticated', user: null, signOutReason: 'session-expired' })
   }, [])
 
+  const authorizedRequest = useCallback<AuthorizedRequest>(
+    async <T,>(path: string, options?: Parameters<AuthorizedRequest>[1]) => {
+      const accessToken = tokenStorage.get()
+      if (!accessToken) {
+        expireSession()
+        throw new ApiError('http', 'Not signed in.', 401)
+      }
+      try {
+        return await apiRequest<T>(path, { ...options, accessToken })
+      } catch (error) {
+        if (error instanceof ApiError && error.kind === 'http' && error.status === 401) {
+          expireSession()
+        }
+        throw error
+      }
+    },
+    [expireSession],
+  )
+
   const retry = useCallback(() => {
     setState((current) => ({ ...current, status: tokenStorage.get() ? 'checking' : 'unauthenticated' }))
     setBootstrapAttempt((attempt) => attempt + 1)
   }, [])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ ...state, login, register, logout, expireSession, retry }),
-    [state, login, register, logout, expireSession, retry],
+    () => ({ ...state, login, register, logout, authorizedRequest, retry }),
+    [state, login, register, logout, authorizedRequest, retry],
   )
 
   return <AuthContext value={value}>{children}</AuthContext>

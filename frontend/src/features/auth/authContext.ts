@@ -1,5 +1,6 @@
 import { createContext } from 'react'
 
+import type { AuthorizedRequest } from '../../api/client'
 import type { CurrentUser, LoginRequest, RegisterRequest } from './types'
 
 /**
@@ -24,10 +25,11 @@ export interface AuthContextValue {
   /** Client-side only: forgets the token. The backend has no logout endpoint; the token itself stays valid until it expires. */
   logout: () => void
   /**
-   * For any authenticated call that gets a 401: the token is no longer
-   * accepted, so the session ends and the guards send the user to /login.
+   * Calls the backend as the signed-in user. A 401 means the token is no
+   * longer accepted: the session ends (the guards then show /login with a
+   * notice) and the error is rethrown to the caller.
    */
-  expireSession: () => void
+  authorizedRequest: AuthorizedRequest
   /** Re-checks the stored token after `unavailable`. */
   retry: () => void
 }

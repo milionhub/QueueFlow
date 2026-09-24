@@ -20,9 +20,18 @@
 
   --color-accent: #4052d6;
   --color-accent-strong: #3341b3;
+  /* Selected navigation, avatars: the accent at low intensity. */
+  --color-accent-subtle: #eef0fc;
 
   --color-success: #15803d;
   --color-danger: #b91c1c;
+
+  /* The mobile navigation drawer sliding in (AppLayout). */
+  @keyframes queueflow-drawer-in {
+    from {
+      transform: translateX(-100%);
+    }
+  }
 
   /* The session loading bar (SessionLoadingScreen). */
   @keyframes queueflow-progress {

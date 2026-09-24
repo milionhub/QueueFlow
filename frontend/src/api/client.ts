@@ -13,6 +13,13 @@ export interface ApiRequestOptions {
 }
 
 /**
+ * A request made on behalf of the signed-in user: the caller supplies no
+ * token (see AuthProvider's authorizedRequest, which adds it and reacts to
+ * a 401). Feature API modules take one of these as their first argument.
+ */
+export type AuthorizedRequest = <T>(path: string, options?: Omit<ApiRequestOptions, 'accessToken'>) => Promise<T>
+
+/**
  * The one way the frontend calls the backend: native fetch, JSON in and
  * out, and every failure turned into an ApiError. Resolves with the parsed
  * JSON body, or undefined for a response without one (e.g. 204).

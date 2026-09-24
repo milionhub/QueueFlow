@@ -3,18 +3,20 @@ import { createBrowserRouter } from 'react-router'
 import { GuestRoute, ProtectedRoute, RootRedirect } from '../features/auth/components/RouteGuards'
 import { LoginPage } from '../features/auth/pages/LoginPage'
 import { RegisterPage } from '../features/auth/pages/RegisterPage'
+import { AppLayout, type AppRouteHandle } from '../layouts/AppLayout'
 import { RootLayout } from '../layouts/RootLayout'
-import { AppHomePage } from '../pages/AppHomePage'
 import { HealthPage } from '../pages/HealthPage'
+import { HomePage } from '../pages/HomePage'
 import { NotFoundPage } from '../pages/NotFoundPage'
 import { RouteErrorPage } from '../pages/RouteErrorPage'
 
 /**
  * - `/` sends the visitor to /app or /login.
  * - Guest-only pages (sign-in, registration) nest under GuestRoute.
- * - Everything that needs a signed-in user nests under ProtectedRoute;
- *   later pages are added as its children.
- * - /health and the 404 page are open to everyone.
+ * - The signed-in application lives under /app: ProtectedRoute, then the
+ *   AppLayout shell. Feature pages are added as its children (e.g.
+ *   `projects`, `projects/:projectId`), each with a `handle.title`.
+ * - /health and the public 404 page are open to everyone.
  */
 export const router = createBrowserRouter([
   {
@@ -29,11 +31,15 @@ export const router = createBrowserRouter([
         ],
       },
       {
+        path: 'app',
         element: <ProtectedRoute />,
         children: [
           {
-            element: <RootLayout />,
-            children: [{ path: 'app', element: <AppHomePage /> }],
+            element: <AppLayout />,
+            children: [
+              { index: true, element: <HomePage />, handle: { title: 'Home' } satisfies AppRouteHandle },
+              { path: '*', element: <NotFoundPage />, handle: { title: 'Page not found' } satisfies AppRouteHandle },
+            ],
           },
         ],
       },

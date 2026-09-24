@@ -26,7 +26,7 @@ const REQUIRED_MESSAGES: Record<RegisterField, string> = {
  * backend's, and its messages are shown under the fields.
  */
 export function RegisterPage() {
-  useDocumentTitle('Create a workspace')
+  useDocumentTitle('Create workspace')
   const { register } = useAuth()
   const location = useLocation()
 
