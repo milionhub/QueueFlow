@@ -3,15 +3,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import { useAuth } from '../../features/auth/useAuth'
-
-const ROLE_LABELS = { ADMIN: 'Admin', MEMBER: 'Member' } as const
-
-/** Up to two initials from the user's real name, for the avatar. */
-function initials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  const letters = parts.length > 1 ? [parts[0], parts[parts.length - 1]] : parts
-  return letters.map((part) => [...part][0]?.toUpperCase() ?? '').join('') || '?'
-}
+import { initials, ROLE_LABELS } from '../../features/auth/userDisplay'
 
 /**
  * The signed-in user at the bottom of the sidebar. Opens a small menu with

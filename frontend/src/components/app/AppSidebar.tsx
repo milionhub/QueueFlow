@@ -22,7 +22,7 @@ interface NavEntry {
 const NAVIGATION: NavEntry[] = [
   { label: 'Dashboard', icon: LayoutDashboard, to: '/app', end: true },
   { label: 'Projects', icon: FolderKanban, to: '/app/projects' },
-  { label: 'Members', icon: Users },
+  { label: 'Members', icon: Users, to: '/app/members' },
 ]
 
 const ROW = 'flex h-8 items-center gap-2.5 rounded-md px-2 text-sm'

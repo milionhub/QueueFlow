@@ -4,6 +4,7 @@ import { GuestRoute, ProtectedRoute, RootRedirect } from '../features/auth/compo
 import { LoginPage } from '../features/auth/pages/LoginPage'
 import { RegisterPage } from '../features/auth/pages/RegisterPage'
 import { DashboardPage } from '../features/dashboard/pages/DashboardPage'
+import { MembersPage } from '../features/members/pages/MembersPage'
 import { ProjectLayout, ProjectSkeleton } from '../features/projects/ProjectLayout'
 import { ProjectsPage } from '../features/projects/pages/ProjectsPage'
 import { ProjectTicketsPage } from '../features/tickets/pages/ProjectTicketsPage'
@@ -65,6 +66,7 @@ export const router = createBrowserRouter([
                   { path: 'tickets/:ticketNumber', element: <TicketDetailPage /> },
                 ],
               },
+              { path: 'members', element: <MembersPage />, handle: { title: 'Members' } satisfies AppRouteHandle },
               { path: '*', element: <NotFoundPage />, handle: { title: 'Page not found' } satisfies AppRouteHandle },
             ],
           },
