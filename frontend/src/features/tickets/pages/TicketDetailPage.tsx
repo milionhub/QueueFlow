@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useCallback, useState, type ReactNode } from 'react'
 import { Link, useLocation, useParams } from 'react-router'
 
 import { isNotFound } from '../../../api/errors'
@@ -18,11 +18,14 @@ import { isFromBoard, parseTicketNumber, projectBoardPath, projectPath } from '.
 import { useAuth } from '../../auth/useAuth'
 import { useProjectContext } from '../../projects/projectContext'
 import { EditableTicketText } from '../components/EditableTicketText'
+import { TicketActivity } from '../components/TicketActivity'
+import { TicketComments } from '../components/TicketComments'
 import { TicketLabels } from '../components/TicketLabels'
 import { PropertySelect, type PropertyOption } from '../components/PropertySelect'
 import { ticketChangeError } from '../ticketErrors'
 import { PRIORITY_LABELS, STATUS_LABELS } from '../ticketDisplay'
 import { useTicket } from '../useTicket'
+import { useTicketActivities } from '../useTicketActivities'
 import { useTicketMutation, type TicketMutation } from '../useTicketMutation'
 
 const BLOCK = 'rounded bg-line motion-safe:animate-pulse'
@@ -120,17 +123,24 @@ interface TicketDetailProps {
 }
 
 /**
- * Title, then the details, then the description in one column; from `xl`
- * the details move to a side column. The space under the description is
- * where comments and activity will go.
+ * Title, then the details, then the description, comments and activity in
+ * one column; from `xl` the details move to a side column. Comments and
+ * activity load alongside each other once the ticket is known; every saved
+ * change of the ticket reloads the activity, which the backend records.
  */
 function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps) {
   const { authorizedRequest } = useAuth()
-  const mutation = useTicketMutation(ticket.id, replace, onTicketGone)
+  const activity = useTicketActivities(ticket.id)
+  const mutation = useTicketMutation(ticket.id, replace, onTicketGone, activity.reload)
   const [announcement, setAnnouncement] = useState('')
+  // The same message twice in a row still changes the live region, so it is announced again.
+  const announce = useCallback(
+    (message: string) => setAnnouncement((current) => (current === message ? `${message}\u00a0` : message)),
+    [],
+  )
 
   /** Saves `changes`; resolves to an error message, or null when saved. */
-  async function save(part: string, changes: UpdateTicketRequest, announce: string): Promise<string | null> {
+  async function save(part: string, changes: UpdateTicketRequest, message: string): Promise<string | null> {
     const result = await mutation.run(part, () => updateTicket(authorizedRequest, ticket.id, changes))
     if (result === null) {
       return 'Another change is still being saved. Try again in a moment.'
@@ -138,7 +148,7 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
     if (!result.ok) {
       return ticketChangeError(result.error).message
     }
-    setAnnouncement(announce)
+    announce(message)
     return null
   }
 
@@ -186,39 +196,43 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
         saving={mutation.pending === 'title'}
         busy={mutation.pending !== null}
       />
-      <TicketProperties ticket={ticket} now={now} mutation={mutation} save={save} announce={setAnnouncement} />
-      <section aria-labelledby="ticket-description" className="min-w-0">
-        <h3 id="ticket-description" className="mb-2 text-sm font-semibold text-ink">
-          Description
-        </h3>
-        <EditableTicketText
-          field="description"
-          value={description ?? ''}
-          display={
-            description ? (
-              <p className="text-sm leading-6 break-words whitespace-pre-wrap text-ink">{description}</p>
-            ) : (
-              <p className="text-sm text-ink-subtle">No description.</p>
-            )
-          }
-          renderInput={({ value, onChange, onKeyDown, error, disabled }) => (
-            <TextAreaField
-              label="Description"
-              name="description"
-              rows={8}
-              value={value}
-              onChange={(event) => onChange(event.target.value)}
-              onKeyDown={onKeyDown}
-              error={error}
-              disabled={disabled}
-            />
-          )}
-          onSave={saveDescription}
-          saving={mutation.pending === 'description'}
-          busy={mutation.pending !== null}
-          layout="stacked"
-        />
-      </section>
+      <TicketProperties ticket={ticket} now={now} mutation={mutation} save={save} announce={announce} />
+      <div className="flex min-w-0 flex-col gap-6">
+        <section aria-labelledby="ticket-description" className="min-w-0">
+          <h3 id="ticket-description" className="mb-2 text-sm font-semibold text-ink">
+            Description
+          </h3>
+          <EditableTicketText
+            field="description"
+            value={description ?? ''}
+            display={
+              description ? (
+                <p className="text-sm leading-6 break-words whitespace-pre-wrap text-ink">{description}</p>
+              ) : (
+                <p className="text-sm text-ink-subtle">No description.</p>
+              )
+            }
+            renderInput={({ value, onChange, onKeyDown, error, disabled }) => (
+              <TextAreaField
+                label="Description"
+                name="description"
+                rows={8}
+                value={value}
+                onChange={(event) => onChange(event.target.value)}
+                onKeyDown={onKeyDown}
+                error={error}
+                disabled={disabled}
+              />
+            )}
+            onSave={saveDescription}
+            saving={mutation.pending === 'description'}
+            busy={mutation.pending !== null}
+            layout="stacked"
+          />
+        </section>
+        <TicketComments ticketId={ticket.id} announce={announce} onTicketGone={onTicketGone} />
+        <TicketActivity activity={activity} />
+      </div>
       <p role="status" className="sr-only">
         {announcement}
       </p>

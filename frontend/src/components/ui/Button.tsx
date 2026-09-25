@@ -1,6 +1,6 @@
 import type { ButtonHTMLAttributes, Ref } from 'react'
 
-type ButtonVariant = 'primary' | 'secondary'
+type ButtonVariant = 'primary' | 'secondary' | 'danger'
 type ButtonSize = 'sm' | 'md' | 'lg'
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -13,6 +13,8 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: 'bg-accent text-white shadow-xs hover:bg-accent-strong',
   secondary: 'border border-line bg-surface text-ink shadow-xs hover:bg-canvas',
+  /** The confirming action of something that cannot be undone. */
+  danger: 'bg-danger text-white shadow-xs hover:bg-danger/90',
 }
 
 const SIZE_CLASSES: Record<ButtonSize, string> = {

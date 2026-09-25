@@ -22,18 +22,20 @@ export interface TicketMutation {
  * Changes to the ticket on the detail page. `replace` swaps in the ticket
  * the backend returned - only if it is still the ticket shown. `onTicketGone`
  * is called when the backend answers that the ticket itself no longer
- * exists (404), so the page can show "not found".
+ * exists (404), so the page can show "not found". `onChanged`, if given,
+ * is called after each successful change (e.g. to reload the history).
  */
 export function useTicketMutation(
   ticketId: string,
   replace: (ticket: Ticket) => void,
   onTicketGone: () => void,
+  onChanged?: () => void,
 ): TicketMutation {
   const [pending, setPending] = useState<string | null>(null)
   const running = useRef(false)
-  const latest = useRef({ ticketId, replace, onTicketGone })
+  const latest = useRef({ ticketId, replace, onTicketGone, onChanged })
   useEffect(() => {
-    latest.current = { ticketId, replace, onTicketGone }
+    latest.current = { ticketId, replace, onTicketGone, onChanged }
   })
 
   const run = useCallback(async (part: string, request: () => Promise<Ticket>): Promise<MutationResult | null> => {
@@ -46,6 +48,7 @@ export function useTicketMutation(
       const ticket = await request()
       if (ticket.id === latest.current.ticketId) {
         latest.current.replace(ticket)
+        latest.current.onChanged?.()
       }
       return { ok: true, ticket }
     } catch (error) {
