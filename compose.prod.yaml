@@ -1,0 +1,86 @@
+# QueueFlow - production-style full stack: PostgreSQL, the Spring Boot backend
+# and the nginx-served frontend, each in its own container.
+#
+#   docker compose -f compose.prod.yaml up -d --build   # build and start
+#   docker compose -f compose.prod.yaml down            # stop (data is kept)
+#   docker compose -f compose.prod.yaml down -v         # stop AND delete the stack's database
+#
+# Open http://localhost:8088. The browser only ever talks to nginx (the one
+# published port, bound to this machine only); nginx serves the app and
+# proxies /api/ and /actuator/health to the backend over the stack's private
+# network. The backend and the database have no host ports.
+#
+# Isolated from local development (compose.yaml + dev.ps1): its own project
+# name, network and database volume, and no port in common - both can run at
+# the same time.
+#
+# Values come from the root .env by substitution only (see .env.example):
+# POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD and JWT_SECRET. Everything
+# that differs inside Docker (the database host, the frontend's API base) is
+# set here, so the development values in .env are never used by mistake.
+
+name: queueflow-stack
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB must be set (see .env.example)}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set (see .env.example)}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set (see .env.example)}
+    volumes:
+      # Mounted at /var/lib/postgresql, the data root of PostgreSQL 18 images.
+      - postgres-data:/var/lib/postgresql
+    # No ports: reachable only by the backend, over the stack's network.
+    healthcheck:
+      # $$ reads the variables inside the container, where they are set.
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    image: queueflow-backend:local
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_NAME: ${POSTGRES_DB:?POSTGRES_DB must be set (see .env.example)}
+      DB_USERNAME: ${POSTGRES_USER:?POSTGRES_USER must be set (see .env.example)}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set (see .env.example)}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set - a Base64 key of at least 32 bytes (see .env.example)}
+      # No QUEUEFLOW_CORS_ALLOWED_ORIGINS: the browser reaches the API through
+      # nginx, on the page's own origin, so these requests are not CORS.
+    # No ports: reached only through the frontend's nginx. Flyway migrates
+    # the database at startup; the image's health check turns healthy once the
+    # application is up and its database answers.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Time for Spring Boot's graceful shutdown to finish in-flight requests.
+    stop_grace_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # Same origin: the bundle calls /api on whatever host serves it.
+        # Fixed here on purpose - the development value in .env
+        # (http://localhost:8080) must never end up in this image.
+        VITE_API_BASE_URL: /
+    image: queueflow-frontend:local
+    ports:
+      # The only published port, and on this machine only.
+      - "127.0.0.1:${APP_PORT:-8088}:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  # The stack's own database, kept across `down`/`up` and removed only by
+  # `down -v`. Never the development database (compose.yaml).
+  postgres-data:

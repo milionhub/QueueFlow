@@ -20,6 +20,15 @@ spring:
 
 server:
   port: 8080
+  # Behind a reverse proxy (the Docker stack's nginx, a future TLS proxy):
+  # Tomcat's RemoteIpValve takes the client's scheme, host, port and address
+  # from X-Forwarded-Proto/-Host/-Port/-For - but only when the request comes
+  # from an internal proxy (private address ranges, which include Docker's
+  # networks); from anyone else those headers are ignored. Requests without
+  # them (local development) are unaffected. The browser-visible scheme,
+  # host and port matter for CORS (a same-origin request must be seen as
+  # same-origin) and for the absolute Location headers of 201 responses.
+  forward-headers-strategy: native
 
 springdoc:
   # The API is JSON-only; without this Springdoc documents undeclared
@@ -27,6 +36,12 @@ springdoc:
   default-produces-media-type: application/json
 
 queueflow:
+  cors:
+    # Exact browser origins allowed to call this backend across origins
+    # (CorsProperties): comma-separated, never a wildcard. The default is the
+    # Vite dev server. A frontend served from this backend's own origin
+    # (through the Docker stack's nginx proxy) needs no entry.
+    allowed-origins: ${QUEUEFLOW_CORS_ALLOWED_ORIGINS:http://localhost:5173}
   security:
     jwt:
       # Base64-encoded HS256 key of at least 32 bytes, e.g. the output of

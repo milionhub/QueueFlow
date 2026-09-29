@@ -1,0 +1,21 @@
+# Only the Maven Wrapper, pom.xml and src/ are needed: the image builds the
+# application itself. Nothing local, generated or secret goes in.
+
+# Build output and IDE files
+target/
+.idea/
+*.iml
+.vscode/
+*.log
+
+# Secrets and local configuration - never part of an image
+.env
+.env.*
+*.pem
+*.key
+
+# Version control and Docker's own files
+.git/
+.gitattributes
+Dockerfile
+.dockerignore

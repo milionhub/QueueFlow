@@ -2,6 +2,7 @@ package com.queueflow.config;
 
 import java.util.List;
 
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpHeaders;
@@ -40,6 +41,7 @@ import jakarta.servlet.DispatcherType;
  * never a role-based 403. No method security is enabled.
  */
 @Configuration
+@EnableConfigurationProperties(CorsProperties.class)
 public class SecurityConfig {
 
     /** The two ways to obtain a token: public, and never blocked by a stale token (see bearerTokenResolver). */
@@ -49,10 +51,13 @@ public class SecurityConfig {
 
     private final UserRepository userRepository;
     private final ApiSecurityErrorHandler securityErrorHandler;
+    private final CorsProperties corsProperties;
 
-    public SecurityConfig(UserRepository userRepository, ApiSecurityErrorHandler securityErrorHandler) {
+    public SecurityConfig(UserRepository userRepository, ApiSecurityErrorHandler securityErrorHandler,
+            CorsProperties corsProperties) {
         this.userRepository = userRepository;
         this.securityErrorHandler = securityErrorHandler;
+        this.corsProperties = corsProperties;
     }
 
     @Bean
@@ -114,18 +119,17 @@ public class SecurityConfig {
     }
 
     /**
-     * The only browser origin allowed to call this backend: the Vite dev
-     * server. Explicit origin, never a wildcard.
-     */
-    private static final List<String> ALLOWED_ORIGINS = List.of("http://localhost:5173");
-
-    /**
      * The single CORS source for the application, applied by Spring
      * Security's CorsFilter (which also answers preflight OPTIONS requests
      * before authorization runs). Paths not registered here get no CORS
      * headers at all, so browsers block cross-origin calls to them.
+     *
+     * The allowed origins are configuration (CorsProperties): by default
+     * only the Vite dev server, always explicit origins, never a wildcard.
      */
     private CorsConfigurationSource corsConfigurationSource() {
+        List<String> allowedOrigins = corsProperties.allowedOrigins();
+
         // REST API: the methods the API uses, the request headers the
         // frontend sends (Content-Type, and Authorization for the bearer
         // token), and Location exposed so the frontend can read it from 201
@@ -134,7 +138,7 @@ public class SecurityConfig {
         // - the Authorization header set by the frontend's own code does not
         // need it.
         CorsConfiguration api = new CorsConfiguration();
-        api.setAllowedOrigins(ALLOWED_ORIGINS);
+        api.setAllowedOrigins(allowedOrigins);
         api.setAllowedMethods(List.of(
                 HttpMethod.GET.name(), HttpMethod.POST.name(), HttpMethod.PUT.name(),
                 HttpMethod.PATCH.name(), HttpMethod.DELETE.name(), HttpMethod.OPTIONS.name()));
@@ -145,7 +149,7 @@ public class SecurityConfig {
         // Actuator health: unchanged - read-only GET for the frontend's
         // connectivity check.
         CorsConfiguration health = new CorsConfiguration();
-        health.setAllowedOrigins(ALLOWED_ORIGINS);
+        health.setAllowedOrigins(allowedOrigins);
         health.setAllowedMethods(List.of(HttpMethod.GET.name()));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();

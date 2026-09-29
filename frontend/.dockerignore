@@ -1,0 +1,22 @@
+# The image installs its own dependencies (npm ci) and runs its own build:
+# nothing installed, built or secret on this machine goes in.
+
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+*.log
+
+# Secrets and local configuration - never part of an image
+.env
+.env.*
+*.local
+
+# Editors, version control and Docker's own files
+.idea/
+.vscode/
+.git/
+Dockerfile
+.dockerignore
