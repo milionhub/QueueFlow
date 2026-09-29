@@ -1,0 +1,87 @@
+# QueueFlow continuous integration.
+#
+# Backend: the full Maven test suite on Java 21, against a fresh PostgreSQL 18
+# that exists only for this job. Flyway builds the schema from the real
+# migrations and Hibernate validates it, exactly as in production. No
+# repository .env and no secrets are involved: the database credentials below
+# are throwaway values for that disposable database, and the tests use their
+# own public JWT test key (src/test/resources/config/application.yml).
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push to a pull request cancels its previous, now superseded run;
+# runs on main are never cancelled, so every commit on main gets its result.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend (Java 21, PostgreSQL 18)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: queueflow_ci
+          POSTGRES_USER: queueflow_ci
+          POSTGRES_PASSWORD: queueflow_ci_only
+        ports:
+          - 5432:5432
+        # The job's steps start only once the database accepts connections.
+        options: >-
+          --health-cmd "pg_isready -U queueflow_ci -d queueflow_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_NAME: queueflow_ci
+      DB_USERNAME: queueflow_ci
+      DB_PASSWORD: queueflow_ci_only
+
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Java 21 (Temurin) with the Maven cache
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: backend/pom.xml
+
+      # Compiles, applies the migrations to the empty database, starts the
+      # Spring contexts and runs every test: any failure fails the job.
+      - name: Build and test
+        run: ./mvnw -B -ntp verify
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-surefire-reports
+          path: backend/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7

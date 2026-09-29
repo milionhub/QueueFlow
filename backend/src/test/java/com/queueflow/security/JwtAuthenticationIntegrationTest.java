@@ -340,9 +340,18 @@ class JwtAuthenticationIntegrationTest {
                         .expiresAt(now.plus(Duration.ofHours(1))).build())).getTokenValue();
     }
 
+    /**
+     * The token with one bit of its signature flipped - in the decoded
+     * signature bytes, not in its Base64URL text: the last character of a
+     * 32-byte signature also holds two unused bits, so changing that
+     * character could leave the signature itself unchanged (and the token
+     * valid). Flipping a decoded bit always makes the HMAC mismatch.
+     */
     private static String withCorruptedSignature(String token) {
-        int last = token.length() - 1;
-        return token.substring(0, last) + (token.charAt(last) == 'A' ? 'B' : 'A');
+        int dot = token.lastIndexOf('.');
+        byte[] signature = Base64.getUrlDecoder().decode(token.substring(dot + 1));
+        signature[0] ^= 0x01;
+        return token.substring(0, dot + 1) + Base64.getUrlEncoder().withoutPadding().encodeToString(signature);
     }
 
     /** Header and signature of one valid token around the payload of another. */
