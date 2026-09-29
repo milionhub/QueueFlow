@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import type { DashboardTicket } from '../../../api/dashboard'
@@ -41,6 +42,7 @@ function TicketRow({
   detail: TicketListProps['detail']
   now: number
 }) {
+  const { t } = useTranslation(['tickets', 'common'])
   const time = formatRelativeTime(ticket.updatedAt, now)
   return (
     <li className="group relative flex flex-col gap-1.5 px-4 py-3 transition-colors duration-150 hover:bg-accent-subtle/40 before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:w-0.5 before:bg-accent before:opacity-0 before:transition-opacity hover:before:opacity-100 focus-within:before:opacity-100 @lg:min-h-11 @lg:flex-row @lg:items-center @lg:gap-4 @lg:py-2">
@@ -70,8 +72,8 @@ function TicketRow({
               <EmptyAvatar size="xs" />
             )}
             <span className="truncate">
-              <span className="sr-only">Assignee: </span>
-              {ticket.assigneeName ?? 'Unassigned'}
+              <span className="sr-only">{t('row.assigneePrefix')}</span>
+              {ticket.assigneeName ?? t('common:people.unassigned')}
             </span>
           </span>
         )}
@@ -84,7 +86,7 @@ function TicketRow({
           className="ml-auto text-ink-subtle tabular-nums @lg:ml-0 @lg:w-10 @lg:text-right"
         >
           <span aria-hidden="true">{time.short}</span>
-          <span className="sr-only">Updated {time.spoken}</span>
+          <span className="sr-only">{t('row.updated', { time: time.spoken })}</span>
         </time>
       </div>
     </li>

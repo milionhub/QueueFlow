@@ -1,5 +1,6 @@
 import { FolderSearch } from 'lucide-react'
 import { useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, Navigate, Outlet, useLocation, useParams } from 'react-router'
 
 import { isNotFound } from '../../api/errors'
@@ -10,6 +11,7 @@ import { LoadError } from '../../components/ui/LoadError'
 import { EmptyState, SkeletonFrame } from '../../components/ui/States'
 import { usePageTitle } from '../../hooks/usePageTitle'
 import { useShellProject } from '../../hooks/useShellProject'
+import { i18n } from '../../i18n'
 import { useResource } from '../../lib/useResource'
 import { PROJECTS_PATH } from '../../routes/paths'
 import type { CurrentUser } from '../auth/types'
@@ -33,6 +35,7 @@ export function ProjectLayout() {
 }
 
 function ProjectContextLoader({ user }: { user: CurrentUser }) {
+  const { t } = useTranslation('projects')
   const { authorizedRequest } = useAuth()
   const { projectKey = '' } = useParams()
   const location = useLocation()
@@ -61,8 +64,13 @@ function ProjectContextLoader({ user }: { user: CurrentUser }) {
     }
     const names = new Map(members.map((member) => [member.id, member.name]))
     // An id from this workspace's tickets that is not in the member list belongs to someone an
-    // ADMIN has removed: the tickets they created and history they appear in stay.
-    return { project, members, memberName: (userId) => names.get(userId) ?? 'Former member' }
+    // ADMIN has removed: the tickets they created and history they appear in stay. Worded when
+    // called (while rendering), so it follows the interface language.
+    return {
+      project,
+      members,
+      memberName: (userId) => names.get(userId) ?? i18n.t('common:people.formerMember'),
+    }
   }, [project, members])
 
   if (projectState.status === 'error') {
@@ -71,7 +79,7 @@ function ProjectContextLoader({ user }: { user: CurrentUser }) {
     }
     return (
       <LoadError
-        message="The project could not be loaded."
+        message={t('project.loadError')}
         reason={projectState.reason}
         onRetry={projectResource.retry}
       />
@@ -80,7 +88,7 @@ function ProjectContextLoader({ user }: { user: CurrentUser }) {
   if (membersState.status === 'error') {
     return (
       <LoadError
-        message="The project could not be loaded."
+        message={t('project.loadError')}
         reason={membersState.reason}
         onRetry={membersResource.retry}
       />
@@ -106,20 +114,21 @@ function ProjectContextLoader({ user }: { user: CurrentUser }) {
 
 /** Unknown key, or another workspace's project: the same answer, never a hint that it exists elsewhere. */
 function ProjectNotFound() {
-  usePageTitle('Project not found')
+  const { t } = useTranslation('projects')
+  usePageTitle(t('project.notFoundTitle'))
   return (
     <EmptyState
       as="h1"
       icon={FolderSearch}
-      title="Project not found"
+      title={t('project.notFoundTitle')}
       action={
         <Link to={PROJECTS_PATH} className={buttonLinkClasses('secondary')}>
-          Back to Projects
+          {t('project.backToProjects')}
         </Link>
       }
       className="max-w-xl"
     >
-      There is no project with this key in your workspace.
+      {t('project.notFoundBody')}
     </EmptyState>
   )
 }
@@ -130,8 +139,9 @@ function ProjectNotFound() {
  * direct visit or a refresh.
  */
 export function ProjectSkeleton() {
+  const { t } = useTranslation('projects')
   return (
-    <SkeletonFrame label="Loading project…" className="max-w-7xl">
+    <SkeletonFrame label={t('project.loading')} className="max-w-7xl">
       <div className="flex flex-col gap-5">
         <div className="flex flex-col gap-2.5">
           <div className="skeleton h-4 w-12" />

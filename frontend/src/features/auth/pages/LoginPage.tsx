@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import { Alert } from '../../../components/ui/Alert'
@@ -11,22 +12,25 @@ import { AuthLayout } from '../components/AuthLayout'
 import { useAuth } from '../useAuth'
 
 interface MissingFields {
-  email?: string
-  password?: string
+  email: boolean
+  password: boolean
 }
 
 /**
  * On success the session starts and GuestRoute moves the user on to /app -
- * this page does not navigate.
+ * this page does not navigate. What went wrong is kept as facts (which
+ * fields are empty, the failed request) and put into words while
+ * rendering, so switching the language translates the messages too.
  */
 export function LoginPage() {
-  useDocumentTitle('Sign in')
+  const { t } = useTranslation('auth')
+  useDocumentTitle(t('login.documentTitle'))
   const { login, signOutReason } = useAuth()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [missing, setMissing] = useState<MissingFields>({})
-  const [formError, setFormError] = useState<string | null>(null)
+  const [missing, setMissing] = useState<MissingFields>({ email: false, password: false })
+  const [failure, setFailure] = useState<{ error: unknown } | null>(null)
   const [pending, setPending] = useState(false)
   const submitting = useRef(false)
 
@@ -36,12 +40,9 @@ export function LoginPage() {
       return
     }
     // Presence only, like the backend: no format rules that could hint at which accounts exist.
-    const nextMissing: MissingFields = {
-      email: email.trim() ? undefined : 'Enter your email.',
-      password: password ? undefined : 'Enter your password.',
-    }
+    const nextMissing: MissingFields = { email: !email.trim(), password: !password }
     setMissing(nextMissing)
-    setFormError(null)
+    setFailure(null)
     if (nextMissing.email || nextMissing.password) {
       return
     }
@@ -51,24 +52,22 @@ export function LoginPage() {
     try {
       await login({ email, password })
     } catch (error) {
-      setFormError(loginErrors(error).form)
+      setFailure({ error })
       submitting.current = false
       setPending(false)
     }
   }
 
+  const formError = failure ? loginErrors(failure.error).form : null
   return (
     <AuthLayout
-      title="Sign in"
-      description="Welcome back. Sign in to your QueueFlow workspace."
+      title={t('login.title')}
+      description={t('login.description')}
       footer={
         <>
-          New to QueueFlow?{' '}
-          <Link
-            to="/register"
-            className="font-medium text-accent underline-offset-4 hover:underline"
-          >
-            Create a workspace
+          {t('login.newHere')}{' '}
+          <Link to="/register" className="font-medium text-accent underline-offset-4 hover:underline">
+            {t('login.createWorkspace')}
           </Link>
         </>
       }
@@ -77,12 +76,10 @@ export function LoginPage() {
         {formError ? (
           <Alert tone="error">{formError}</Alert>
         ) : (
-          signOutReason === 'session-expired' && (
-            <Alert tone="info">Your session has ended. Please sign in again.</Alert>
-          )
+          signOutReason === 'session-expired' && <Alert tone="info">{t('login.sessionEnded')}</Alert>
         )}
         <TextField
-          label="Email"
+          label={t('fields.email')}
           type="email"
           name="email"
           autoComplete="email"
@@ -91,20 +88,20 @@ export function LoginPage() {
           spellCheck={false}
           value={email}
           onChange={(event) => setEmail(event.target.value)}
-          error={missing.email}
+          error={missing.email ? t('login.enterEmail') : undefined}
           required
         />
         <PasswordField
-          label="Password"
+          label={t('fields.password')}
           name="password"
           autoComplete="current-password"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          error={missing.password}
+          error={missing.password ? t('login.enterPassword') : undefined}
           required
         />
         <Button type="submit" size="lg" disabled={pending} loading={pending} className="mt-1 w-full">
-          {pending ? 'Signing in…' : 'Sign in'}
+          {pending ? t('login.submitting') : t('login.submit')}
         </Button>
       </form>
     </AuthLayout>

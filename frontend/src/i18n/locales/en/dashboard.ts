@@ -1,0 +1,50 @@
+/** The workspace dashboard (/app). */
+export const dashboard = {
+  title: 'Dashboard',
+  projectCount_one: '{{count}} project',
+  projectCount_other: '{{count}} projects',
+  openTicketCount_one: '{{count}} open ticket',
+  openTicketCount_other: '{{count}} open tickets',
+  loading: 'Loading dashboard…',
+  loadError: 'The dashboard could not be loaded.',
+  noTickets: {
+    title: 'No tickets yet',
+    body: 'Tickets created in any project will show up here.',
+  },
+  noProjects: {
+    title: 'No projects yet',
+    adminNext: 'Create your first project in Projects.',
+    memberNext: 'A workspace admin can create the first project.',
+    goToProjects: 'Go to Projects',
+  },
+  assigned: {
+    title: 'Assigned to you',
+    openCount_one: '{{count}} open',
+    openCount_other: '{{count}} open',
+    showing: 'Showing {{shown}} of {{total}}',
+    caughtUp: "You're all caught up",
+    noOpenAssigned: 'No open tickets assigned to you.',
+    nothingAssigned: 'Nothing assigned to you.',
+    unassignedOpen_one: '{{count}} open ticket is unassigned.',
+    unassignedOpen_other: '{{count}} open tickets are unassigned.',
+  },
+  recent: {
+    title: 'Recently updated',
+  },
+  projects: {
+    title: 'Projects',
+    viewAll: 'View all',
+    viewAllHidden: ' projects',
+    noTickets: 'No tickets',
+    open_one: 'open',
+    open_other: 'open',
+    done: '{{done}}/{{total}} done',
+  },
+  status: {
+    title: 'Tickets by status',
+    total_one: '{{count}} total',
+    total_other: '{{count}} total',
+    unassigned_one: '{{count}} open ticket unassigned',
+    unassigned_other: '{{count}} open tickets unassigned',
+  },
+}

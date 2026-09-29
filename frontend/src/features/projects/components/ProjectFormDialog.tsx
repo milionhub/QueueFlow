@@ -1,5 +1,6 @@
 import { FolderPen, FolderPlus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { createProject, updateProject, type Project, type UpdateProjectRequest } from '../../../api/projects'
 import { Alert } from '../../../components/ui/Alert'
@@ -50,6 +51,7 @@ export function ProjectFormDialog({
   returnFocus,
   fallbackFocus,
 }: ProjectFormDialogProps) {
+  const { t } = useTranslation(['projects', 'common'])
   const { authorizedRequest } = useAuth()
   const editing = mode.kind === 'edit' ? mode.project : null
   const [name, setName] = useState(editing?.name ?? '')
@@ -93,16 +95,16 @@ export function ProjectFormDialog({
     const found: ProjectErrors = { ...NO_ERRORS, fields: {} }
     const trimmedName = name.trim()
     if (trimmedName === '') {
-      found.fields.name = 'Enter a project name.'
+      found.fields.name = t('form.enterName')
     } else if (trimmedName.length > NAME_MAX_LENGTH) {
-      found.fields.name = `Name must be at most ${NAME_MAX_LENGTH} characters.`
+      found.fields.name = t('form.nameTooLong', { max: NAME_MAX_LENGTH })
     }
     if (!editing) {
       const trimmedKey = key.trim()
       if (trimmedKey === '') {
-        found.fields.key = 'Enter a project key.'
+        found.fields.key = t('form.enterKey')
       } else if (!KEY_PATTERN.test(trimmedKey)) {
-        found.fields.key = 'Use 2–10 letters or digits, e.g. CORE.'
+        found.fields.key = t('form.keyFormat')
       }
     }
     return found
@@ -146,12 +148,10 @@ export function ProjectFormDialog({
 
   return (
     <Dialog
-      title={editing ? `Edit ${editing.key}` : 'New project'}
+      title={editing ? t('form.editTitle', { key: editing.key }) : t('form.createTitle')}
       icon={editing ? FolderPen : FolderPlus}
       description={
-        editing
-          ? `Update ${editing.name}'s name or description.`
-          : 'Projects group your tickets. Every project has a short, permanent key.'
+        editing ? t('form.editDescription', { name: editing.name }) : t('form.createDescription')
       }
       onClose={onClose}
       dismissible={!pending}
@@ -162,11 +162,11 @@ export function ProjectFormDialog({
         <DialogBody>
           {errors.form && <Alert tone="error">{errors.form}</Alert>}
           <TextField
-            label="Name"
+            label={t('form.name')}
             name="name"
             autoComplete="off"
             maxLength={NAME_MAX_LENGTH}
-            placeholder="e.g. Core Platform"
+            placeholder={t('form.namePlaceholder')}
             value={name}
             onChange={(event) => setName(event.target.value)}
             error={errors.fields.name}
@@ -176,36 +176,36 @@ export function ProjectFormDialog({
           />
           {editing ? (
             <div>
-              <p className="text-sm font-medium text-ink">Key</p>
+              <p className="text-sm font-medium text-ink">{t('form.key')}</p>
               <p className="mt-1.5">
                 <KeyBadge>{editing.key}</KeyBadge>
               </p>
               <p className="mt-1 text-xs leading-5 text-ink-muted">
-                Keys can't be changed because they're part of every ticket ID.
+                {t('form.keyFixed')}
               </p>
             </div>
           ) : (
             <TextField
-              label="Key"
+              label={t('form.key')}
               name="key"
               autoComplete="off"
               autoCapitalize="characters"
               spellCheck={false}
               maxLength={10}
-              placeholder="CORE"
+              placeholder={t('form.keyPlaceholder')}
               className="font-mono"
               value={key}
               onChange={(event) => setKey(event.target.value.toUpperCase())}
-              hint="2–10 letters or digits, e.g. CORE. It prefixes ticket IDs (CORE-7) and can't be changed later."
+              hint={t('form.keyHint')}
               error={errors.fields.key}
               disabled={pending}
               required
             />
           )}
           <TextAreaField
-            label="Description"
+            label={t('form.description')}
             name="description"
-            hint="Optional."
+            hint={t('form.optional')}
             maxRows={8}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
@@ -215,10 +215,16 @@ export function ProjectFormDialog({
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose} disabled={pending}>
-            Cancel
+            {t('common:actions.cancel')}
           </Button>
           <Button type="submit" disabled={pending || unchanged} loading={pending}>
-            {editing ? (pending ? 'Saving…' : 'Save changes') : pending ? 'Creating…' : 'Create project'}
+            {editing
+              ? pending
+                ? t('common:actions.saving')
+                : t('common:actions.saveChanges')
+              : pending
+                ? t('form.creating')
+                : t('form.create')}
           </Button>
         </DialogFooter>
       </form>

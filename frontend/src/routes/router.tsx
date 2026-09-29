@@ -20,7 +20,7 @@ import { RouteErrorPage } from '../pages/RouteErrorPage'
  * - Guest-only pages (sign-in, registration) nest under GuestRoute.
  * - The signed-in application lives under /app: ProtectedRoute, then the
  *   AppLayout shell; /app itself is the dashboard. Feature pages are
- *   added as its children, each with a `handle.title`. A project's pages
+ *   added as its children, each with a `handle.titleKey`. A project's pages
  *   (/app/projects/:projectKey, .../board, ...) share ProjectLayout, which loads the
  *   project and the workspace's members once for all of them.
  * - /health and the public 404 page are open to everyone.
@@ -44,15 +44,15 @@ export const router = createBrowserRouter([
           {
             element: <AppLayout />,
             children: [
-              { index: true, element: <DashboardPage />, handle: { title: 'Dashboard' } satisfies AppRouteHandle },
-              { path: 'projects', element: <ProjectsPage />, handle: { title: 'Projects' } satisfies AppRouteHandle },
+              { index: true, element: <DashboardPage />, handle: { titleKey: 'dashboard' } satisfies AppRouteHandle },
+              { path: 'projects', element: <ProjectsPage />, handle: { titleKey: 'projects' } satisfies AppRouteHandle },
               {
                 // A project's pages; each sets its own title once the project has loaded.
                 path: 'projects/:projectKey',
                 element: <ProjectLayout />,
                 // Shown inside the shell while the board's code loads on a direct visit.
                 hydrateFallbackElement: <ProjectSkeleton />,
-                handle: { title: 'Projects' } satisfies AppRouteHandle,
+                handle: { titleKey: 'projects' } satisfies AppRouteHandle,
                 children: [
                   { index: true, element: <ProjectTicketsPage /> },
                   {
@@ -66,8 +66,8 @@ export const router = createBrowserRouter([
                   { path: 'tickets/:ticketNumber', element: <TicketDetailPage /> },
                 ],
               },
-              { path: 'members', element: <MembersPage />, handle: { title: 'Members' } satisfies AppRouteHandle },
-              { path: '*', element: <NotFoundPage />, handle: { title: 'Page not found' } satisfies AppRouteHandle },
+              { path: 'members', element: <MembersPage />, handle: { titleKey: 'members' } satisfies AppRouteHandle },
+              { path: '*', element: <NotFoundPage />, handle: { titleKey: 'notFound' } satisfies AppRouteHandle },
             ],
           },
         ],

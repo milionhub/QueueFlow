@@ -1,4 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import { Alert } from '../../../components/ui/Alert'
@@ -10,23 +11,19 @@ import { registerErrors, type FormErrors, type RegisterField } from '../authErro
 import { AuthLayout } from '../components/AuthLayout'
 import { useAuth } from '../useAuth'
 
-const NO_ERRORS: FormErrors<RegisterField> = { form: null, fields: {} }
-
-const REQUIRED_MESSAGES: Record<RegisterField, string> = {
-  name: 'Enter your name.',
-  email: 'Enter your email.',
-  password: 'Enter a password.',
-  workspaceName: 'Enter a name for your workspace.',
-}
+const FIELDS: RegisterField[] = ['name', 'email', 'password', 'workspaceName']
 
 /**
  * Registration creates a new workspace with the user as its ADMIN and signs
  * them in straight away (GuestRoute then moves on to /app). Only presence
  * is checked here; lengths, email syntax and the password rules are the
- * backend's, and its messages are shown under the fields.
+ * backend's, and its messages are shown under the fields. What went wrong
+ * is kept as facts and put into words while rendering, so switching the
+ * language translates the messages too.
  */
 export function RegisterPage() {
-  useDocumentTitle('Create workspace')
+  const { t } = useTranslation('auth')
+  useDocumentTitle(t('register.documentTitle'))
   const { register } = useAuth()
 
   const [values, setValues] = useState<Record<RegisterField, string>>({
@@ -35,7 +32,8 @@ export function RegisterPage() {
     password: '',
     workspaceName: '',
   })
-  const [errors, setErrors] = useState<FormErrors<RegisterField>>(NO_ERRORS)
+  const [missing, setMissing] = useState<RegisterField[]>([])
+  const [failure, setFailure] = useState<{ error: unknown } | null>(null)
   const [pending, setPending] = useState(false)
   const submitting = useRef(false)
 
@@ -49,16 +47,13 @@ export function RegisterPage() {
     if (submitting.current) {
       return
     }
-    const missing: FormErrors<RegisterField> = { form: null, fields: {} }
-    for (const field of Object.keys(REQUIRED_MESSAGES) as RegisterField[]) {
-      // Passwords are used exactly as typed, so only an empty one is missing.
-      const empty = field === 'password' ? values[field] === '' : values[field].trim() === ''
-      if (empty) {
-        missing.fields[field] = REQUIRED_MESSAGES[field]
-      }
-    }
-    setErrors(missing)
-    if (Object.keys(missing.fields).length > 0) {
+    // Passwords are used exactly as typed, so only an empty one is missing.
+    const empty = FIELDS.filter((field) =>
+      field === 'password' ? values[field] === '' : values[field].trim() === '',
+    )
+    setMissing(empty)
+    setFailure(null)
+    if (empty.length > 0) {
       return
     }
 
@@ -67,24 +62,30 @@ export function RegisterPage() {
     try {
       await register(values)
     } catch (error) {
-      setErrors(registerErrors(error))
+      setFailure({ error })
       submitting.current = false
       setPending(false)
     }
   }
 
+  let errors: FormErrors<RegisterField> = { form: null, fields: {} }
+  if (failure) {
+    errors = registerErrors(failure.error)
+  } else {
+    for (const field of missing) {
+      errors.fields[field] = t(`register.required.${field}`)
+    }
+  }
+
   return (
     <AuthLayout
-      title="Create your workspace"
-      description="Set up a new QueueFlow workspace. You'll be its admin and can add your teammates once you're in."
+      title={t('register.title')}
+      description={t('register.description')}
       footer={
         <>
-          Already have an account?{' '}
-          <Link
-            to="/login"
-            className="font-medium text-accent underline-offset-4 hover:underline"
-          >
-            Sign in
+          {t('register.haveAccount')}{' '}
+          <Link to="/login" className="font-medium text-accent underline-offset-4 hover:underline">
+            {t('register.signIn')}
           </Link>
         </>
       }
@@ -92,7 +93,7 @@ export function RegisterPage() {
       <form noValidate aria-busy={pending} onSubmit={handleSubmit} className="flex flex-col gap-5">
         {errors.form && <Alert tone="error">{errors.form}</Alert>}
         <TextField
-          label="Your name"
+          label={t('fields.yourName')}
           name="name"
           autoComplete="name"
           value={values.name}
@@ -101,7 +102,7 @@ export function RegisterPage() {
           required
         />
         <TextField
-          label="Email"
+          label={t('fields.email')}
           type="email"
           name="email"
           autoComplete="email"
@@ -114,27 +115,27 @@ export function RegisterPage() {
           required
         />
         <PasswordField
-          label="Password"
+          label={t('fields.password')}
           name="password"
           autoComplete="new-password"
           value={values.password}
           onChange={update('password')}
-          hint="At least 8 characters. Very long passwords are limited to 72 bytes (fewer characters if they include accents or emoji)."
+          hint={t('passwordHint')}
           error={errors.fields.password}
           required
         />
         <TextField
-          label="Workspace name"
+          label={t('fields.workspaceName')}
           name="workspaceName"
           autoComplete="organization"
-          placeholder="e.g. Acme Engineering"
+          placeholder={t('fields.workspacePlaceholder')}
           value={values.workspaceName}
           onChange={update('workspaceName')}
           error={errors.fields.workspaceName}
           required
         />
         <Button type="submit" size="lg" disabled={pending} loading={pending} className="mt-1 w-full">
-          {pending ? 'Creating workspace…' : 'Create workspace'}
+          {pending ? t('register.submitting') : t('register.submit')}
         </Button>
       </form>
     </AuthLayout>

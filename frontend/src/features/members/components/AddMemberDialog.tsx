@@ -1,5 +1,6 @@
 import { Info, UserPlus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { createMember, type Member } from '../../../api/members'
 import { Alert } from '../../../components/ui/Alert'
@@ -13,7 +14,6 @@ import {
   addMemberErrors,
   EMAIL_MAX_LENGTH,
   NAME_MAX_LENGTH,
-  PASSWORD_HINT,
   validateMember,
   type MemberField,
   type MemberFormValues,
@@ -38,6 +38,7 @@ interface AddMemberDialogProps {
  * password are sent; the backend decides the role (always MEMBER).
  */
 export function AddMemberDialog({ workspaceId, onClose, onAdded, returnFocus }: AddMemberDialogProps) {
+  const { t } = useTranslation(['members', 'auth', 'common'])
   const { authorizedRequest } = useAuth()
   const [values, setValues] = useState<MemberFormValues>(EMPTY)
   const [errors, setErrors] = useState<FormErrors<MemberField>>(NO_ERRORS)
@@ -97,9 +98,9 @@ export function AddMemberDialog({ workspaceId, onClose, onAdded, returnFocus }: 
 
   return (
     <Dialog
-      title="Add member"
+      title={t('addMember')}
       icon={UserPlus}
-      description="Create an account for a teammate. They'll join this workspace as a member."
+      description={t('add.description')}
       onClose={onClose}
       dismissible={!pending}
       returnFocus={returnFocus}
@@ -108,7 +109,7 @@ export function AddMemberDialog({ workspaceId, onClose, onAdded, returnFocus }: 
         <DialogBody>
           {errors.form && <Alert tone="error">{errors.form}</Alert>}
           <TextField
-            label="Name"
+            label={t('fields.name')}
             name="name"
             autoComplete="off"
             maxLength={NAME_MAX_LENGTH}
@@ -119,9 +120,9 @@ export function AddMemberDialog({ workspaceId, onClose, onAdded, returnFocus }: 
             required
             data-autofocus
           />
-          <DialogFieldGroup title="Sign-in details">
+          <DialogFieldGroup title={t('add.signInDetails')}>
             <TextField
-              label="Email"
+              label={t('fields.email')}
               type="email"
               name="email"
               autoComplete="off"
@@ -131,24 +132,24 @@ export function AddMemberDialog({ workspaceId, onClose, onAdded, returnFocus }: 
               maxLength={EMAIL_MAX_LENGTH}
               value={values.email}
               onChange={update('email')}
-              hint="They'll use it to sign in."
+              hint={t('add.emailHint')}
               error={errors.fields.email}
               disabled={pending}
               required
             />
             <PasswordField
-              label="Password"
+              label={t('fields.password')}
               name="new-member-password"
               autoComplete="new-password"
               value={values.password}
               onChange={update('password')}
-              hint={PASSWORD_HINT}
+              hint={t('auth:passwordHint')}
               error={errors.fields.password}
               disabled={pending}
               required
             />
             <PasswordField
-              label="Confirm password"
+              label={t('fields.confirmPassword')}
               name="new-member-password-confirmation"
               autoComplete="new-password"
               value={values.confirmPassword}
@@ -160,18 +161,15 @@ export function AddMemberDialog({ workspaceId, onClose, onAdded, returnFocus }: 
           </DialogFieldGroup>
           <p className="flex gap-2 text-xs leading-5 text-ink-muted">
             <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-ink-subtle" strokeWidth={2} />
-            <span>
-              QueueFlow doesn't send emails. Share the email and password with your teammate yourself, through a
-              channel you trust. The password can't be shown again or changed in QueueFlow later.
-            </span>
+            <span>{t('add.note')}</span>
           </p>
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose} disabled={pending}>
-            Cancel
+            {t('common:actions.cancel')}
           </Button>
           <Button type="submit" disabled={pending} loading={pending}>
-            {pending ? 'Adding…' : 'Add member'}
+            {pending ? t('add.submitting') : t('add.submit')}
           </Button>
         </DialogFooter>
       </form>

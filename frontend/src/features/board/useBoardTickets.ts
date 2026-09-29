@@ -4,7 +4,8 @@ import { updateTicket, type Ticket, type TicketStatus } from '../../api/tickets'
 import type { ResourceState } from '../../lib/useResource'
 import { useAuth } from '../auth/useAuth'
 import { isTicketGone, ticketChangeError } from '../tickets/ticketErrors'
-import { STATUS_LABELS } from '../tickets/ticketDisplay'
+import { i18n } from '../../i18n'
+import { statusLabel } from '../tickets/ticketDisplay'
 import { useProjectTickets } from '../tickets/useProjectTickets'
 
 /** A move the backend has not answered yet: the card already shows `status`. */
@@ -173,13 +174,22 @@ export function useBoardTickets(projectId: string): BoardTickets {
         }
         if (isTicketGone(error)) {
           // Deleted, or no longer visible: the list is reloaded so the card goes.
-          setMoveError({ ticketId, message: `${ticket.displayKey} is no longer available.`, kind: 'gone', status })
+          setMoveError({
+            ticketId,
+            message: i18n.t('board:moveGone', { key: ticket.displayKey }),
+            kind: 'gone',
+            status,
+          })
           reload()
           return 'gone'
         } else {
           setMoveError({
             ticketId,
-            message: `Couldn't move ${ticket.displayKey} to ${STATUS_LABELS[status]}: ${ticketChangeError(error).message}`,
+            message: i18n.t('board:moveFailed', {
+              key: ticket.displayKey,
+              status: statusLabel(status),
+              reason: ticketChangeError(error).message,
+            }),
             kind: 'failed',
             status,
           })

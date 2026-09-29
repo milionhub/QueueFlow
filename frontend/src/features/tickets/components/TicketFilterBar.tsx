@@ -1,15 +1,16 @@
 import { Search, SlidersHorizontal, X } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { Label } from '../../../api/labels'
 import type { Member } from '../../../api/members'
-import type { TicketPriority, TicketStatus } from '../../../api/tickets'
 import { Button } from '../../../components/ui/Button'
 import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
 import { FIELD_CONTROL, SELECT_APPEARANCE } from '../../../components/ui/fieldStyles'
 import { SelectField } from '../../../components/ui/SelectField'
 import type { FilterParam, TicketFilters } from '../ticketFilters'
-import { PRIORITY_LABELS, STATUS_LABELS } from '../ticketDisplay'
+import { i18n } from '../../../i18n'
+import { priorityLabel, statusLabel, TICKET_PRIORITIES, TICKET_STATUSES } from '../ticketDisplay'
 
 const CONTROL = `${FIELD_CONTROL} h-10 sm:h-9`
 const ACTIVE = 'border-accent/50 bg-accent-subtle/50 hover:border-accent/70'
@@ -51,6 +52,7 @@ export function TicketFilterBar({
   hideStatus = false,
   summary,
 }: TicketFilterBarProps) {
+  const { t } = useTranslation(['tickets', 'common'])
   const id = useId()
   const [sheetOpener, setSheetOpener] = useState<HTMLElement | null | undefined>(undefined)
   const options = filterOptions({ members, currentUserId, labels, hideStatus })
@@ -58,10 +60,10 @@ export function TicketFilterBar({
 
   return (
     <div className="flex flex-col gap-2">
-      <div role="search" aria-label="Filter tickets" className="flex flex-wrap items-center gap-2">
+      <div role="search" aria-label={t('filters.region')} className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-0 flex-1 sm:max-w-80 sm:min-w-48">
           <label htmlFor={`${id}-q`} className="sr-only">
-            Search tickets by title or key
+            {t('filters.searchLabel')}
           </label>
           <Search
             aria-hidden="true"
@@ -73,7 +75,7 @@ export function TicketFilterBar({
             type="search"
             value={filters.q}
             onChange={(event) => onSearch(event.target.value)}
-            placeholder="Search title or key"
+            placeholder={t('filters.searchPlaceholder')}
             autoComplete="off"
             className={`${CONTROL} pr-3 pl-9 ${filters.q.trim() ? ACTIVE : ''}`}
           />
@@ -102,7 +104,7 @@ export function TicketFilterBar({
           <div className="hidden sm:block">
             <Button variant="ghost" onClick={onClear}>
               <X aria-hidden="true" className="size-4" strokeWidth={2} />
-              Clear filters
+              {t('common:actions.clearFilters')}
             </Button>
           </div>
         )}
@@ -115,11 +117,11 @@ export function TicketFilterBar({
           className={`sm:hidden ${active.length > 0 ? 'border-accent/50! bg-accent-subtle! text-accent!' : ''}`}
         >
           <SlidersHorizontal aria-hidden="true" className="size-4" strokeWidth={2} />
-          Filters
+          {t('filters.filters')}
           {active.length > 0 && (
             <span className="rounded-full bg-accent px-1.5 text-xs leading-5 font-semibold text-white tabular-nums">
               {active.length}
-              <span className="sr-only"> active</span>
+              <span className="sr-only">{t('filters.active')}</span>
             </span>
           )}
         </Button>
@@ -137,7 +139,7 @@ export function TicketFilterBar({
                 key={name}
                 type="button"
                 onClick={() => onFilter(name, null)}
-                aria-label={`Remove filter ${label}: ${chosen}`}
+                aria-label={t('filters.removeFilter', { label, value: chosen })}
                 className="press inline-flex h-8 max-w-full items-center gap-1 rounded-full bg-accent-subtle pr-1.5 pl-3 text-xs font-medium text-accent transition-colors hover:bg-accent/15"
               >
                 <span className="truncate">
@@ -153,7 +155,7 @@ export function TicketFilterBar({
               onClick={onClear}
               className="inline-flex h-8 items-center rounded-full px-2.5 text-xs font-medium text-ink-muted underline-offset-4 hover:text-ink hover:underline"
             >
-              Clear filters
+              {t('common:actions.clearFilters')}
             </button>
           )}
           {summary && <p className="ml-auto text-xs text-ink-muted tabular-nums">{summary}</p>}
@@ -162,9 +164,9 @@ export function TicketFilterBar({
 
       {sheetOpener !== undefined && (
         <Dialog
-          title="Filters"
+          title={t('filters.filters')}
           icon={SlidersHorizontal}
-          description="Show only the tickets that match every filter you choose."
+          description={t('filters.sheetDescription')}
           onClose={() => setSheetOpener(undefined)}
           returnFocus={sheetOpener}
         >
@@ -186,10 +188,10 @@ export function TicketFilterBar({
           </DialogBody>
           <DialogFooter>
             <Button variant="secondary" size="lg" onClick={onClear} disabled={!onClear}>
-              Clear filters
+              {t('common:actions.clearFilters')}
             </Button>
             <Button size="lg" onClick={() => setSheetOpener(undefined)}>
-              Done
+              {t('common:actions.done')}
             </Button>
           </DialogFooter>
         </Dialog>
@@ -198,6 +200,7 @@ export function TicketFilterBar({
   )
 }
 
+/** Worded while the bar renders (it uses useTranslation), so the options follow the interface language. */
 interface FilterOption {
   name: SelectFilter
   label: string
@@ -220,46 +223,43 @@ function filterOptions({
   if (!hideStatus) {
     options.push({
       name: 'status',
-      label: 'Status',
+      label: i18n.t('tickets:filters.status'),
       choices: [
-        { value: '', label: 'All statuses' },
-        { value: 'open', label: 'Open' },
-        ...(Object.keys(STATUS_LABELS) as TicketStatus[]).map((status) => ({
-          value: status,
-          label: STATUS_LABELS[status],
-        })),
+        { value: '', label: i18n.t('tickets:filters.allStatuses') },
+        { value: 'open', label: i18n.t('tickets:filters.open') },
+        ...TICKET_STATUSES.map((status) => ({ value: status, label: statusLabel(status) })),
       ],
     })
   }
   options.push(
     {
       name: 'priority',
-      label: 'Priority',
+      label: i18n.t('tickets:filters.priority'),
       choices: [
-        { value: '', label: 'All priorities' },
-        ...(Object.keys(PRIORITY_LABELS) as TicketPriority[]).map((priority) => ({
-          value: priority,
-          label: PRIORITY_LABELS[priority],
-        })),
+        { value: '', label: i18n.t('tickets:filters.allPriorities') },
+        ...TICKET_PRIORITIES.map((priority) => ({ value: priority, label: priorityLabel(priority) })),
       ],
     },
     {
       name: 'assignee',
-      label: 'Assignee',
+      label: i18n.t('tickets:filters.assignee'),
       choices: [
-        { value: '', label: 'Anyone' },
-        { value: 'me', label: 'Me' },
-        { value: 'unassigned', label: 'Unassigned' },
+        { value: '', label: i18n.t('tickets:filters.anyone') },
+        { value: 'me', label: i18n.t('tickets:filters.me') },
+        { value: 'unassigned', label: i18n.t('common:people.unassigned') },
         ...members.map((member) => ({
           value: member.id,
-          label: member.id === currentUserId ? `${member.name} (you)` : member.name,
+          label: member.id === currentUserId ? i18n.t('common:people.nameYou', { name: member.name }) : member.name,
         })),
       ],
     },
     {
       name: 'label',
-      label: 'Label',
-      choices: [{ value: '', label: 'All labels' }, ...labels.map((label) => ({ value: label.id, label: label.name }))],
+      label: i18n.t('tickets:filters.label'),
+      choices: [
+        { value: '', label: i18n.t('tickets:filters.allLabels') },
+        ...labels.map((label) => ({ value: label.id, label: label.name })),
+      ],
     },
   )
   return options

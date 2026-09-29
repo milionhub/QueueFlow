@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import { RouterProvider } from 'react-router/dom'
 
 import { AuthProvider } from './features/auth/AuthProvider'
+// Initialized before anything renders: every text below is in the chosen language from the first paint.
+import './i18n'
 import { trackInputModality } from './lib/inputModality'
 import { router } from './routes/router'
 import './styles/global.css'

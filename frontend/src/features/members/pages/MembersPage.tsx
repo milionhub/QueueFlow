@@ -1,5 +1,6 @@
 import { UserPlus } from 'lucide-react'
 import { useRef, useState, type MouseEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { listMembers, type Member } from '../../../api/members'
 import { Button } from '../../../components/ui/Button'
@@ -40,6 +41,7 @@ export function MembersPage() {
 }
 
 function Members({ user }: { user: CurrentUser }) {
+  const { t } = useTranslation(['members', 'common'])
   const { authorizedRequest } = useAuth()
   const toast = useToast()
   const isAdmin = user.role === 'ADMIN'
@@ -59,9 +61,7 @@ function Members({ user }: { user: CurrentUser }) {
 
   function handleAdded(member: Member) {
     setDialogOpen(false)
-    setAdded(
-      `${member.name} was added as a member. Share their email and the password you set through a trusted channel.`,
-    )
+    setAdded(member.name)
     // The backend's order is the list's order: load it again rather than guess where the new member goes.
     reload()
   }
@@ -81,7 +81,7 @@ function Members({ user }: { user: CurrentUser }) {
     if (state.status === 'ready') {
       replace(state.data.filter((current) => current.id !== member.id))
     }
-    toast.show({ message: `${member.name} was removed from the workspace.` })
+    toast.show({ message: t('removedToast', { name: member.name }) })
   }
 
   let content
@@ -91,16 +91,16 @@ function Members({ user }: { user: CurrentUser }) {
       content = <MembersSkeleton />
       break
     case 'error':
-      content = <LoadError message="The members could not be loaded." reason={state.reason} onRetry={retry} />
+      content = <LoadError message={t('loadError')} reason={state.reason} onRetry={retry} />
       break
     case 'ready':
       content = (
         <div className="flex flex-col gap-3">
           {state.refreshFailed && !state.refreshing && (
-            <StaleNotice onRefresh={reload}>The list could not be refreshed and may be out of date.</StaleNotice>
+            <StaleNotice onRefresh={reload}>{t('common:load.listOutdated')}</StaleNotice>
           )}
           {state.data.length === 0 ? (
-            <p className="text-sm text-ink-subtle">No members found.</p>
+            <p className="text-sm text-ink-subtle">{t('empty')}</p>
           ) : (
             <MemberList
               ref={listRef}
@@ -125,7 +125,7 @@ function Members({ user }: { user: CurrentUser }) {
   return (
     <div className="flex max-w-4xl flex-col gap-6">
       <PageHeader
-        title="Members"
+        title={t('title')}
         description={
           <>
             <p>
@@ -133,13 +133,12 @@ function Members({ user }: { user: CurrentUser }) {
               {count !== null && (
                 <>
                   {' · '}
-                  {count} {count === 1 ? 'member' : 'members'}
+                  {t('count', { count })}
                 </>
               )}
             </p>
             <p className="mt-1 text-xs leading-5">
-              Admins can create and edit projects and add, edit and remove members. Everyone can work on tickets, the
-              board, labels and comments.
+              {t('roleNote')}
             </p>
           </>
         }
@@ -147,7 +146,7 @@ function Members({ user }: { user: CurrentUser }) {
           isAdmin && (
             <Button onClick={openDialog}>
               <UserPlus aria-hidden="true" className="size-4" strokeWidth={2} />
-              Add member
+              {t('addMember')}
             </Button>
           )
         }
@@ -158,7 +157,7 @@ function Members({ user }: { user: CurrentUser }) {
           {added && (
             <div className="mb-4 animate-enter">
               <Alert tone="info" announce={false}>
-                {added}
+                {t('added', { name: added })}
               </Alert>
             </div>
           )}

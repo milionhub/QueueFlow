@@ -12,12 +12,14 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useId, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { Activity } from '../../../api/activities'
 import type { TicketStatus } from '../../../api/tickets'
 import { LoadError } from '../../../components/ui/LoadError'
 import { SkeletonFrame, StaleNotice } from '../../../components/ui/States'
-import { formatRelativeTime } from '../../../lib/relativeTime'
+import { i18n } from '../../../i18n'
+import { dateFormat, formatRelativeTime } from '../../../lib/relativeTime'
 import type { Resource } from '../../../lib/useResource'
 import { useProjectContext } from '../../projects/projectContext'
 import { describeActivity, type ActivityKind, type ActivitySegment } from '../activityText'
@@ -53,27 +55,29 @@ const COLLAPSED_COUNT = 5
 /** Consecutive entries by one person within this time share one name. */
 const GROUP_WINDOW = 2 * 60_000
 
-const dayFormat = new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric' })
-const dayFormatWithYear = new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' })
 
 function dayKey(iso: string): string {
   const date = new Date(iso)
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`
 }
 
-/** "Today", "Yesterday", "Tue, Sep 23", or with the year when it is not this one. */
+/** "Today", "Yesterday", "Tue, Sep 23", or with the year when it is not this one - in the interface language. */
 function dayLabel(iso: string, now: number): string {
   const date = new Date(iso)
   const today = new Date(now)
   const yesterday = new Date(now)
   yesterday.setDate(today.getDate() - 1)
   if (dayKey(iso) === dayKey(today.toISOString())) {
-    return 'Today'
+    return i18n.t('common:time.today')
   }
   if (dayKey(iso) === dayKey(yesterday.toISOString())) {
-    return 'Yesterday'
+    return i18n.t('common:time.yesterday')
   }
-  return (date.getFullYear() === today.getFullYear() ? dayFormat : dayFormatWithYear).format(date)
+  const format =
+    date.getFullYear() === today.getFullYear()
+      ? dateFormat({ weekday: 'short', month: 'short', day: 'numeric' })
+      : dateFormat({ month: 'short', day: 'numeric', year: 'numeric' })
+  return format.format(date)
 }
 
 /**
@@ -84,6 +88,7 @@ function dayLabel(iso: string, now: number): string {
  * offered - the change itself was saved.
  */
 export function TicketActivity({ activity }: { activity: Resource<Activity[]> }) {
+  const { t } = useTranslation(['activity', 'common'])
   const { state } = activity
   const [expanded, setExpanded] = useState(false)
   const listId = useId()
@@ -96,12 +101,12 @@ export function TicketActivity({ activity }: { activity: Resource<Activity[]> })
         >
           <History className="size-3.5" strokeWidth={2.25} />
         </span>
-        Activity
+        {t('title')}
       </h2>
       {(state.status === 'loading' || state.status === 'idle') && <ActivitySkeleton />}
       {state.status === 'error' && (
         <LoadError
-          message="The activity could not be loaded."
+          message={t('loadError')}
           reason={state.reason}
           onRetry={activity.retry}
           size="inline"
@@ -111,13 +116,13 @@ export function TicketActivity({ activity }: { activity: Resource<Activity[]> })
         <>
           {state.refreshFailed && !state.refreshing && (
             <div role="alert" className="mb-2">
-              <StaleNotice onRefresh={activity.reload} label="Retry">
-                The activity could not be updated, so it may be out of date.
+              <StaleNotice onRefresh={activity.reload} label={t('common:actions.retry')}>
+                {t('stale')}
               </StaleNotice>
             </div>
           )}
           {state.data.length === 0 ? (
-            <p className="text-sm text-ink-subtle">No activity yet.</p>
+            <p className="text-sm text-ink-subtle">{t('empty')}</p>
           ) : (
             <ActivityList
               entries={state.data}
@@ -144,6 +149,7 @@ interface ActivityListProps {
 }
 
 function ActivityList({ entries, now, refreshing, expanded, onToggle, listId }: ActivityListProps) {
+  const { t } = useTranslation('activity')
   const hidden = expanded ? 0 : Math.max(0, entries.length - COLLAPSED_COUNT)
   const shown = entries.slice(hidden)
   const canCollapse = entries.length > COLLAPSED_COUNT
@@ -158,7 +164,7 @@ function ActivityList({ entries, now, refreshing, expanded, onToggle, listId }: 
           className="press -ml-2 inline-flex h-8 w-fit items-center gap-1.5 rounded-md px-2 text-xs font-medium text-ink-muted transition-colors hover:bg-canvas-strong hover:text-ink pointer-coarse:h-10"
         >
           <ChevronsUpDown aria-hidden="true" className="size-3.5" strokeWidth={2} />
-          {expanded ? 'Show only recent events' : `Show ${hidden} earlier ${hidden === 1 ? 'event' : 'events'}`}
+          {expanded ? t('showRecent') : t('showEarlier', { count: hidden })}
         </button>
       )}
       <ol id={listId} aria-busy={refreshing} className="relative flex flex-col">
@@ -198,11 +204,12 @@ interface ActivityRowProps {
 }
 
 function ActivityRow({ entry, now, day, sameActor }: ActivityRowProps) {
+  // Subscribes the row to the interface language: its sentence is worded while rendering.
+  useTranslation()
   const { memberName } = useProjectContext()
   const text = describeActivity(entry, memberName)
   const Icon = ICONS[text.kind]
   const time = formatRelativeTime(entry.createdAt, now)
-  const [actor, ...rest] = text.segments
   return (
     <li className="relative min-w-0">
       {day && (
@@ -221,16 +228,15 @@ function ActivityRow({ entry, now, day, sameActor }: ActivityRowProps) {
           <Icon className="size-3.5" strokeWidth={2} />
         </span>
         <p className="min-w-0 flex-1 pt-0.5 text-[13px] leading-5 break-words text-ink-muted">
-          {sameActor ? (
-            <span className="sr-only">
-              <Segment segment={actor} />
-            </span>
-          ) : (
-            <Segment segment={actor} />
+          {text.segments.map((segment, index) =>
+            sameActor && typeof segment !== 'string' && segment.actor ? (
+              <span key={index} className="sr-only">
+                <Segment segment={segment} />
+              </span>
+            ) : (
+              <Segment key={index} segment={segment} />
+            ),
           )}
-          {rest.map((segment, index) => (
-            <Segment key={index} segment={segment} />
-          ))}
           <span aria-hidden="true" className="text-ink-subtle">
             {' · '}
           </span>
@@ -265,8 +271,9 @@ function Segment({ segment }: { segment: ActivitySegment }) {
 }
 
 function ActivitySkeleton() {
+  const { t } = useTranslation('activity')
   return (
-    <SkeletonFrame label="Loading activity…">
+    <SkeletonFrame label={t('loading')}>
       <div className="flex flex-col gap-3">
         {['w-1/2', 'w-2/3', 'w-2/5'].map((width) => (
           <div key={width} className="flex items-center gap-2.5">

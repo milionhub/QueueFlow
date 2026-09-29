@@ -1,5 +1,6 @@
 import { MessageSquare, MoreHorizontal, Pencil, SendHorizontal, Trash2 } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { createComment, deleteComment, updateComment, type Comment } from '../../../api/comments'
 import { Alert } from '../../../components/ui/Alert'
@@ -71,6 +72,7 @@ interface TicketCommentsProps {
  * the ticket or its history, so nothing else reloads.
  */
 export function TicketComments({ ticketId, announce, onTicketGone }: TicketCommentsProps) {
+  const { t } = useTranslation('tickets')
   const { user } = useAuth()
   const comments = useTicketComments(ticketId)
   const composerRef = useRef<HTMLDivElement>(null)
@@ -92,7 +94,7 @@ export function TicketComments({ ticketId, announce, onTicketGone }: TicketComme
         >
           <MessageSquare className="size-3.5" strokeWidth={2.25} />
         </span>
-        Comments
+        {t('comments.title')}
         {state.status === 'ready' && (
           <span className="rounded-full bg-accent-subtle px-2 text-xs leading-5 font-semibold text-accent tabular-nums">
             {state.data.length}
@@ -102,7 +104,7 @@ export function TicketComments({ ticketId, announce, onTicketGone }: TicketComme
       {(state.status === 'loading' || state.status === 'idle') && <CommentsSkeleton />}
       {state.status === 'error' && (
         <LoadError
-          message="The comments could not be loaded."
+          message={t('comments.loadError')}
           reason={state.reason}
           onRetry={comments.retry}
           size="inline"
@@ -113,7 +115,7 @@ export function TicketComments({ ticketId, announce, onTicketGone }: TicketComme
           {state.data.length === 0 ? (
             <p className="mb-4 flex items-center gap-2 text-sm text-ink-subtle">
               <MessageSquare aria-hidden="true" className="size-4" strokeWidth={2} />
-              No comments yet. Start the conversation below.
+              {t('comments.empty')}
             </p>
           ) : (
             <ol className="mb-5 flex flex-col">
@@ -160,6 +162,7 @@ interface CommentComposerProps {
  * and a box that grows from one to six lines. A failed send keeps the text.
  */
 function CommentComposer({ ticketId, containerRef, onAdded, announce, onTicketGone }: CommentComposerProps) {
+  const { t } = useTranslation('tickets')
   const { authorizedRequest, user } = useAuth()
   const [content, setContent] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -178,7 +181,7 @@ function CommentComposer({ ticketId, containerRef, onAdded, announce, onTicketGo
     }
     const trimmed = content.trim()
     if (trimmed === '') {
-      setError('Write a comment.')
+      setError(t('comments.write'))
       focus('input')
       return
     }
@@ -195,7 +198,7 @@ function CommentComposer({ ticketId, containerRef, onAdded, announce, onTicketGo
       const comment = await createComment(authorizedRequest, ticketId, trimmed)
       onAdded(comment)
       setContent('')
-      announce('Comment added.')
+      announce(t('comments.added'))
     } catch (failure) {
       refocus = true
       setError(commentChangeError(failure, 'add'))
@@ -221,7 +224,7 @@ function CommentComposer({ ticketId, containerRef, onAdded, announce, onTicketGo
           }`}
         >
           <label htmlFor={id} className="sr-only">
-            Add a comment
+            {t('comments.composerLabel')}
           </label>
           <textarea
             ref={textAreaRef}
@@ -235,16 +238,16 @@ function CommentComposer({ ticketId, containerRef, onAdded, announce, onTicketGo
             aria-invalid={error ? true : undefined}
             aria-describedby={error ? errorId : undefined}
             disabled={pending}
-            placeholder="Add a comment…"
+            placeholder={t('comments.placeholder')}
             className="block w-full resize-none rounded-t-lg bg-transparent px-3 pt-2.5 pb-1 text-base leading-6 text-ink outline-none placeholder:text-ink-subtle disabled:opacity-70 sm:text-sm"
           />
           <div className="flex items-center justify-end gap-3 px-2 pb-2">
             <span aria-hidden="true" className="hidden text-xs text-ink-subtle sm:inline">
-              {SEND_SHORTCUT} to send
+              {t('comments.sendHint', { shortcut: SEND_SHORTCUT })}
             </span>
             <Button type="submit" size="sm" disabled={pending} loading={pending} className="max-sm:size-9 max-sm:px-0">
               {!pending && <SendHorizontal aria-hidden="true" className="size-4" strokeWidth={2} />}
-              <span className="max-sm:sr-only">{pending ? 'Commenting…' : 'Comment'}</span>
+              <span className="max-sm:sr-only">{pending ? t('comments.sending') : t('comments.send')}</span>
             </Button>
           </div>
         </div>
@@ -287,6 +290,7 @@ function CommentItem({
   onTicketGone,
   composerInput,
 }: CommentItemProps) {
+  const { t } = useTranslation(['tickets', 'common'])
   const { authorizedRequest } = useAuth()
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -334,7 +338,7 @@ function CommentItem({
     }
     if (gone) {
       onRemoved(comment.id)
-      announce('The comment was removed: it no longer exists.')
+      announce(t('comments.removedGone'))
       composerInput()?.focus()
       return
     }
@@ -350,7 +354,7 @@ function CommentItem({
     }
     const trimmed = draft.trim()
     if (trimmed === '') {
-      setError('Write a comment.')
+      setError(t('comments.write'))
       focus('input')
       return
     }
@@ -367,7 +371,7 @@ function CommentItem({
       const saved = await updateComment(authorizedRequest, comment.id, trimmed)
       onUpdated(saved)
       setDraft(null)
-      announce('Comment updated.')
+      announce(t('comments.updated'))
       focus('edit')
     } catch (failure) {
       setError(commentChangeError(failure, 'edit'))
@@ -405,12 +409,12 @@ function CommentItem({
     try {
       await deleteComment(authorizedRequest, comment.id)
       onRemoved(comment.id)
-      announce('Comment deleted.')
+      announce(t('comments.deleted'))
     } catch (failure) {
       if (isCommentGone(failure)) {
         // Already deleted elsewhere: what was asked for is done.
         onRemoved(comment.id)
-        announce('Comment deleted.')
+        announce(t('comments.deleted'))
       } else {
         setDeleteError(commentChangeError(failure, 'delete'))
         // The button was disabled while deleting, which dropped focus: back to it, to try again.
@@ -432,8 +436,8 @@ function CommentItem({
     </time>
   )
   const editedMark = edited && (
-    <span className="text-xs text-ink-subtle" title={`Edited ${updated.full}`}>
-      (edited)
+    <span className="text-xs text-ink-subtle" title={t('comments.editedAt', { date: updated.full })}>
+      {t('comments.edited')}
     </span>
   )
 
@@ -449,7 +453,7 @@ function CommentItem({
           // Grouped under the previous comment's header: who and when stay available, and on hover.
           <p className="sr-only">
             {comment.authorName}, {created.spoken}
-            {edited ? ', edited' : ''}
+            {edited ? t('comments.editedSpoken') : ''}
           </p>
         ) : (
           <div className="mb-1 flex min-h-5 flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -492,7 +496,7 @@ function CommentItem({
         ) : (
           <form ref={formRef} noValidate aria-busy={saving} onSubmit={handleSave} className="flex flex-col gap-2">
             <TextAreaField
-              label="Edit comment"
+              label={t('comments.editLabel')}
               labelHidden
               name="comment"
               rows={2}
@@ -513,13 +517,13 @@ function CommentItem({
             />
             <div className="flex flex-wrap items-center gap-2">
               <Button type="submit" size="sm" disabled={saving || gone} loading={saving}>
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? t('common:actions.saving') : t('common:actions.save')}
               </Button>
               <Button variant="ghost" size="sm" onClick={cancelEditing} disabled={saving}>
-                Cancel
+                {t('common:actions.cancel')}
               </Button>
               <span aria-hidden="true" className="ml-auto hidden text-xs text-ink-subtle sm:inline">
-                {SEND_SHORTCUT} to save · Esc to cancel
+                {t('comments.saveHint', { shortcut: SEND_SHORTCUT })}
               </span>
             </div>
           </form>
@@ -527,8 +531,8 @@ function CommentItem({
       </div>
       {confirming && (
         <Dialog
-          title="Delete comment"
-          description="Delete this comment? This action cannot be undone."
+          title={t('comments.deleteTitle')}
+          description={t('comments.deleteDescription')}
           icon={Trash2}
           tone="danger"
           onClose={closeConfirm}
@@ -543,7 +547,7 @@ function CommentItem({
           )}
           <DialogFooter>
             <Button variant="secondary" onClick={closeConfirm} disabled={deleting} data-autofocus>
-              Cancel
+              {t('common:actions.cancel')}
             </Button>
             <Button
               ref={confirmButtonRef}
@@ -552,7 +556,7 @@ function CommentItem({
               disabled={deleting}
               loading={deleting}
             >
-              {deleting ? 'Deleting…' : 'Delete'}
+              {deleting ? t('common:actions.deleting') : t('common:actions.delete')}
             </Button>
           </DialogFooter>
         </Dialog>
@@ -576,6 +580,7 @@ interface CommentActionsProps {
  * a small menu with both.
  */
 function CommentActions({ editButtonRef, menuTriggerRef, onEdit, onDelete }: CommentActionsProps) {
+  const { t } = useTranslation(['tickets', 'common'])
   const [open, setOpen] = useState(false)
   const menuId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -612,10 +617,10 @@ function CommentActions({ editButtonRef, menuTriggerRef, onEdit, onDelete }: Com
   return (
     <>
       <div className="flex shrink-0 items-center opacity-0 transition-opacity duration-150 group-focus-within/comment:opacity-100 group-hover/comment:opacity-100 pointer-coarse:hidden">
-        <IconButton ref={editButtonRef} icon={Pencil} label="Edit comment" size="sm" onClick={onEdit} />
+        <IconButton ref={editButtonRef} icon={Pencil} label={t('comments.editLabel')} size="sm" onClick={onEdit} />
         <IconButton
           icon={Trash2}
-          label="Delete comment"
+          label={t('comments.deleteLabel')}
           size="sm"
           onClick={(event) => onDelete(event.currentTarget)}
           className="hover:text-danger!"
@@ -625,7 +630,7 @@ function CommentActions({ editButtonRef, menuTriggerRef, onEdit, onDelete }: Com
         <IconButton
           ref={menuTriggerRef}
           icon={MoreHorizontal}
-          label="Comment actions"
+          label={t('comments.actions')}
           title=""
           size="sm"
           aria-haspopup="menu"
@@ -637,7 +642,7 @@ function CommentActions({ editButtonRef, menuTriggerRef, onEdit, onDelete }: Com
           <div
             id={menuId}
             role="menu"
-            aria-label="Comment actions"
+            aria-label={t('comments.actions')}
             onKeyDown={handleMenuKeyDown}
             className="absolute top-full right-0 z-20 mt-1 w-40 origin-top-right animate-pop rounded-lg border border-line bg-surface p-1 shadow-lg"
           >
@@ -651,7 +656,7 @@ function CommentActions({ editButtonRef, menuTriggerRef, onEdit, onDelete }: Com
               className="flex h-11 w-full items-center gap-2 rounded-md px-2.5 text-sm text-ink hover:bg-canvas-strong focus-visible:bg-canvas-strong"
             >
               <Pencil aria-hidden="true" className="size-4 text-ink-muted" strokeWidth={2} />
-              Edit
+              {t('common:actions.edit')}
             </button>
             <button
               type="button"
@@ -665,7 +670,7 @@ function CommentActions({ editButtonRef, menuTriggerRef, onEdit, onDelete }: Com
               className="flex h-11 w-full items-center gap-2 rounded-md px-2.5 text-sm text-danger hover:bg-danger/5 focus-visible:bg-danger/5"
             >
               <Trash2 aria-hidden="true" className="size-4" strokeWidth={2} />
-              Delete
+              {t('common:actions.delete')}
             </button>
           </div>
         )}
@@ -675,8 +680,9 @@ function CommentActions({ editButtonRef, menuTriggerRef, onEdit, onDelete }: Com
 }
 
 function CommentsSkeleton() {
+  const { t } = useTranslation('tickets')
   return (
-    <SkeletonFrame label="Loading comments…">
+    <SkeletonFrame label={t('comments.loading')}>
       <div className="flex flex-col gap-5">
         {[0, 1].map((row) => (
           <div key={row} className="flex gap-3">

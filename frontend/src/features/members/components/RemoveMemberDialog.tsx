@@ -1,5 +1,6 @@
 import { UserMinus } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { removeMember, type Member } from '../../../api/members'
 import { Alert } from '../../../components/ui/Alert'
@@ -35,6 +36,7 @@ export function RemoveMemberDialog({
   returnFocus,
   fallbackFocus,
 }: RemoveMemberDialogProps) {
+  const { t } = useTranslation(['members', 'common'])
   const { authorizedRequest } = useAuth()
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
@@ -67,10 +69,10 @@ export function RemoveMemberDialog({
 
   return (
     <Dialog
-      title="Remove member"
+      title={t('remove.title')}
       icon={UserMinus}
       tone="danger"
-      description="They will lose access to this workspace right away."
+      description={t('remove.description')}
       onClose={onClose}
       dismissible={!pending}
       returnFocus={returnFocus}
@@ -85,24 +87,23 @@ export function RemoveMemberDialog({
               {member.name}
             </p>
             <p className="truncate text-sm text-ink-muted" title={member.email}>
-              <span className="sr-only">Email: </span>
+              <span className="sr-only">{t('list.emailPrefix')}</span>
               {member.email}
             </p>
           </div>
         </div>
         <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm leading-6 text-ink-muted marker:text-ink-subtle">
-          <li>They can no longer sign in, and any session they have open stops working.</li>
-          <li>Tickets assigned to them become unassigned.</li>
-          <li>The tickets they created, their comments and their activity stay, under their name.</li>
+          <li>{t('remove.signIn')}</li>
+          <li>{t('remove.unassigned')}</li>
+          <li>{t('remove.history')}</li>
           <li>
-            <span className="font-medium text-ink">This can't be undone.</span> To give them access again, add them as
-            a new member.
+            <span className="font-medium text-ink">{t('remove.undoStrong')}</span> {t('remove.undoRest')}
           </li>
         </ul>
       </DialogBody>
       <DialogFooter>
         <Button variant="secondary" onClick={onClose} disabled={pending} data-autofocus>
-          Cancel
+          {t('common:actions.cancel')}
         </Button>
         <Button
           ref={confirmRef}
@@ -111,7 +112,7 @@ export function RemoveMemberDialog({
           disabled={pending}
           loading={pending}
         >
-          {pending ? 'Removing…' : 'Remove member'}
+          {pending ? t('remove.submitting') : t('remove.submit')}
         </Button>
       </DialogFooter>
     </Dialog>

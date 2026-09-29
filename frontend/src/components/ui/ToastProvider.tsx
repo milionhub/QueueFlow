@@ -1,5 +1,6 @@
 import { CircleAlert, CircleCheck, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import { ToastContext, type ToastApi, type ToastInput } from './toastContext'
@@ -20,6 +21,7 @@ const MAX_VISIBLE = 3
  * can be dismissed.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   const [toasts, setToasts] = useState<ToastItem[]>([])
   const nextId = useRef(0)
 
@@ -47,7 +49,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     <ToastContext value={api}>
       {children}
       <section
-        aria-label="Notifications"
+        aria-label={t('toast.region')}
         className="pointer-events-none fixed inset-x-0 bottom-0 z-50 flex flex-col items-center gap-2 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:inset-x-auto sm:right-0 sm:items-end sm:px-5 sm:pb-5"
       >
         <div role="alert" className="flex w-full flex-col gap-2 sm:w-96">
@@ -72,6 +74,7 @@ interface ToastProps {
 }
 
 function Toast({ toast, onDismiss, onGone }: ToastProps) {
+  const { t } = useTranslation()
   const tone = toast.tone ?? 'success'
   const [hovered, setHovered] = useState(false)
   const [focused, setFocused] = useState(false)
@@ -148,7 +151,7 @@ function Toast({ toast, onDismiss, onGone }: ToastProps) {
       <button
         type="button"
         onClick={() => onDismiss(toast.id)}
-        aria-label="Dismiss notification"
+        aria-label={t('toast.dismiss')}
         className="press -my-1 inline-flex size-7 shrink-0 items-center justify-center rounded text-ink-subtle hover:bg-canvas-strong hover:text-ink pointer-coarse:size-9"
       >
         <X aria-hidden="true" className="size-4" strokeWidth={2} />

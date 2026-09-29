@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import type { Ticket } from '../../../api/tickets'
@@ -33,6 +34,7 @@ export function ProjectTicketList({ tickets, memberName, now }: ProjectTicketLis
 }
 
 function TicketRow({ ticket, memberName, now }: { ticket: Ticket } & Omit<ProjectTicketListProps, 'tickets'>) {
+  const { t } = useTranslation(['tickets', 'common'])
   const time = formatRelativeTime(ticket.updatedAt, now)
   const assignee = ticket.assigneeId ? memberName(ticket.assigneeId) : null
   return (
@@ -69,8 +71,8 @@ function TicketRow({ ticket, memberName, now }: { ticket: Ticket } & Omit<Projec
             <EmptyAvatar size="xs" />
           )}
           <span className="min-w-0 truncate">
-            <span className="sr-only">Assignee: </span>
-            {assignee ?? 'Unassigned'}
+            <span className="sr-only">{t('row.assigneePrefix')}</span>
+            {assignee ?? t('common:people.unassigned')}
           </span>
         </span>
         <time
@@ -79,7 +81,7 @@ function TicketRow({ ticket, memberName, now }: { ticket: Ticket } & Omit<Projec
           className="ml-auto text-ink-subtle tabular-nums @xl:ml-0 @xl:w-10 @xl:text-right"
         >
           <span aria-hidden="true">{time.short}</span>
-          <span className="sr-only">Updated {time.spoken}</span>
+          <span className="sr-only">{t('row.updated', { time: time.spoken })}</span>
         </time>
       </div>
     </li>

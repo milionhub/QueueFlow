@@ -1,5 +1,6 @@
 import { Plus } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type MouseEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { Project } from '../../../api/projects'
 import { Button } from '../../../components/ui/Button'
@@ -32,6 +33,7 @@ export function ProjectsPage() {
 }
 
 function Projects({ user }: { user: CurrentUser }) {
+  const { t } = useTranslation(['projects', 'common'])
   const { state, retry, reload } = useProjects(user.workspaceId)
   const toast = useToast()
   const isAdmin = user.role === 'ADMIN'
@@ -56,8 +58,8 @@ function Projects({ user }: { user: CurrentUser }) {
     const created = dialog?.mode.kind === 'create'
     setDialog(null)
     toast.show({
-      message: `Project ${project.key} ${created ? 'created' : 'updated'}.`,
-      action: { label: 'Open', to: projectPath(project.key) },
+      message: created ? t('created', { key: project.key }) : t('updated', { key: project.key }),
+      action: { label: t('common:actions.open'), to: projectPath(project.key) },
     })
     focusNewProjectAfterReload.current = created
     reload()
@@ -75,7 +77,7 @@ function Projects({ user }: { user: CurrentUser }) {
       content = <ProjectsSkeleton />
       break
     case 'error':
-      content = <LoadError message="The projects could not be loaded." reason={state.reason} onRetry={retry} />
+      content = <LoadError message={t('loadError')} reason={state.reason} onRetry={retry} />
       break
     case 'ready':
       content =
@@ -84,7 +86,7 @@ function Projects({ user }: { user: CurrentUser }) {
         ) : (
           <div className="flex flex-col gap-3">
             {state.refreshFailed && (
-              <StaleNotice onRefresh={reload}>The list could not be refreshed and may be out of date.</StaleNotice>
+              <StaleNotice onRefresh={reload}>{t('common:load.listOutdated')}</StaleNotice>
             )}
             <ProjectList
               projects={state.projects}
@@ -98,14 +100,14 @@ function Projects({ user }: { user: CurrentUser }) {
   return (
     <div className="flex max-w-4xl flex-col gap-6">
       <PageHeader
-        title="Projects"
+        title={t('title')}
         description={
           <>
             <WorkspaceName />
             {count !== null && (
               <>
                 {' · '}
-                {count} {count === 1 ? 'project' : 'projects'}
+                {t('count', { count })}
               </>
             )}
           </>
@@ -116,7 +118,7 @@ function Projects({ user }: { user: CurrentUser }) {
           count > 0 && (
             <Button id={newProjectId} onClick={openCreate}>
               <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
-              New project
+              {t('newProject')}
             </Button>
           )
         }

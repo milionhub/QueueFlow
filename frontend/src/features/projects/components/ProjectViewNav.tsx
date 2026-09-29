@@ -1,4 +1,5 @@
 import { Columns3, List, type LucideIcon } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { NavLink, useLocation } from 'react-router'
 
 import { projectBoardPath, projectPath } from '../../../routes/paths'
@@ -16,14 +17,15 @@ function prefetchBoard() {
 }
 
 const VIEWS: {
-  label: string
+  /** The view's name: a message in projects.views. */
+  labelKey: 'list' | 'board'
   icon: LucideIcon
   to: (projectKey: string) => string
   end: boolean
   prefetch?: () => void
 }[] = [
-  { label: 'List', icon: List, to: projectPath, end: true },
-  { label: 'Board', icon: Columns3, to: projectBoardPath, end: false, prefetch: prefetchBoard },
+  { labelKey: 'list', icon: List, to: projectPath, end: true },
+  { labelKey: 'board', icon: Columns3, to: projectBoardPath, end: false, prefetch: prefetchBoard },
 ]
 
 /**
@@ -36,15 +38,16 @@ const VIEWS: {
  * address as it is.
  */
 export function ProjectViewNav({ projectKey, filters }: { projectKey: string; filters?: TicketFilters }) {
+  const { t } = useTranslation('projects')
   const location = useLocation()
   const shared = filters ? sharedFilterSearch(filters) : ''
   return (
-    <nav aria-label="Project views">
+    <nav aria-label={t('views.label')}>
       <ul className="inline-flex rounded-lg bg-canvas-strong p-0.5">
-        {VIEWS.map(({ label, icon: Icon, to, end, prefetch }) => {
+        {VIEWS.map(({ labelKey, icon: Icon, to, end, prefetch }) => {
           const pathname = to(projectKey)
           return (
-            <li key={label}>
+            <li key={labelKey}>
               <NavLink
                 to={{ pathname, search: pathname === location.pathname ? location.search : shared }}
                 end={end}
@@ -59,7 +62,7 @@ export function ProjectViewNav({ projectKey, filters }: { projectKey: string; fi
                 }
               >
                 <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
-                {label}
+                {t(`views.${labelKey}`)}
               </NavLink>
             </li>
           )

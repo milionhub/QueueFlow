@@ -1,4 +1,6 @@
+import type { TFunction } from 'i18next'
 import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useMatches } from 'react-router'
 
 import { AppHeader, type Crumb } from '../components/app/AppHeader'
@@ -9,13 +11,17 @@ import { PageTitleContext, type PageTitle } from '../hooks/usePageTitle'
 import { ShellProjectContext, type ShellProject } from '../hooks/useShellProject'
 import { isFromBoard, projectBoardPath, projectPath, PROJECTS_PATH } from '../routes/paths'
 
-/** What an application route declares about itself, via the route's `handle`. */
+/**
+ * What an application route declares about itself, via the route's
+ * `handle`: its title, as the key of a message in shell.titles, so the tab
+ * follows the interface language.
+ */
 export interface AppRouteHandle {
-  title: string
+  titleKey: 'dashboard' | 'projects' | 'members' | 'notFound'
 }
 
 function isAppRouteHandle(handle: unknown): handle is AppRouteHandle {
-  return typeof (handle as AppRouteHandle | undefined)?.title === 'string'
+  return typeof (handle as AppRouteHandle | undefined)?.titleKey === 'string'
 }
 
 function prefersReducedMotion(): boolean {
@@ -29,7 +35,7 @@ function prefersReducedMotion(): boolean {
  * its key once the project page reports it. The current page itself is not
  * a crumb: its own heading names it.
  */
-function trailFor(pathname: string, fromBoard: boolean, project: ShellProject | null): Crumb[] {
+function trailFor(t: TFunction<'shell'>, pathname: string, fromBoard: boolean, project: ShellProject | null): Crumb[] {
   const [, app, section, rawKey, view] = pathname.split('/')
   if (app !== 'app' || section !== 'projects' || !rawKey) {
     return []
@@ -41,13 +47,13 @@ function trailFor(pathname: string, fromBoard: boolean, project: ShellProject | 
     // A malformed address: shown as it is.
   }
   const known = project && project.key.toUpperCase() === key.trim().toUpperCase() ? project : null
-  const trail: Crumb[] = [{ label: 'Projects', to: PROJECTS_PATH }]
+  const trail: Crumb[] = [{ label: t('nav.projects'), to: PROJECTS_PATH }]
   if (view === 'board') {
     trail.push({ label: known?.name ?? key.toUpperCase(), to: projectPath(known?.key ?? key) })
   } else if (view === 'tickets') {
     trail.push({ label: known?.name ?? key.toUpperCase(), to: projectPath(known?.key ?? key) })
     if (fromBoard) {
-      trail.push({ label: 'Board', to: projectBoardPath(known?.key ?? key) })
+      trail.push({ label: t('board'), to: projectBoardPath(known?.key ?? key) })
     }
   }
   return trail
@@ -60,12 +66,13 @@ function trailFor(pathname: string, fromBoard: boolean, project: ShellProject | 
  * the page (usePageTitle) or else from the deepest route's `handle.title`.
  */
 export function AppLayout() {
+  const { t } = useTranslation('shell')
   const matches = useMatches()
-  const routeTitle =
-    [...matches]
-      .reverse()
-      .map((match) => match.handle)
-      .find(isAppRouteHandle)?.title ?? 'QueueFlow'
+  const routeTitleKey = [...matches]
+    .reverse()
+    .map((match) => match.handle)
+    .find(isAppRouteHandle)?.titleKey
+  const routeTitle = routeTitleKey ? t(`titles.${routeTitleKey}`) : 'QueueFlow'
   const [pageTitle, setPageTitle] = useState<PageTitle | null>(null)
   const [shellProject, setShellProject] = useState<ShellProject | null>(null)
   const documentTitle = pageTitle?.document ?? pageTitle?.heading ?? routeTitle
@@ -146,7 +153,7 @@ export function AppLayout() {
     return () => desktop.removeEventListener('change', onChange)
   }, [finishClosing])
 
-  const trail = trailFor(location.pathname, isFromBoard(location.state), shellProject)
+  const trail = trailFor(t, location.pathname, isFromBoard(location.state), shellProject)
 
   return (
     <CurrentWorkspaceProvider>
@@ -155,7 +162,7 @@ export function AppLayout() {
           <ToastProvider>
             <div className="min-h-dvh bg-canvas lg:pl-60">
               <aside
-                aria-label="Sidebar"
+                aria-label={t('sidebar')}
                 className="fixed inset-y-0 left-0 hidden w-60 border-r border-line bg-surface lg:block"
               >
                 <AppSidebar />
@@ -166,7 +173,7 @@ export function AppLayout() {
                   <button
                     type="button"
                     tabIndex={-1}
-                    aria-label="Close navigation"
+                    aria-label={t('closeNavigation')}
                     onClick={closeNavigation}
                     className={`absolute inset-0 size-full cursor-default bg-ink/35 ${
                       closing ? 'animate-[queueflow-fade-out_150ms_ease-in_both]' : 'animate-fade-in'
@@ -177,7 +184,7 @@ export function AppLayout() {
                     id={drawerId}
                     role="dialog"
                     aria-modal="true"
-                    aria-label="Navigation"
+                    aria-label={t('drawer')}
                     onAnimationEnd={(event) => {
                       if (closing && event.target === event.currentTarget) {
                         finishClosing()

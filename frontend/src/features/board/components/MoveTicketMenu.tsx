@@ -1,10 +1,10 @@
 import { ArrowRightLeft } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { Ticket, TicketStatus } from '../../../api/tickets'
 import { Spinner } from '../../../components/ui/Spinner'
 import { StatusIcon } from '../../tickets/TicketBadges'
-import { STATUS_LABELS } from '../../tickets/ticketDisplay'
 import { STATUS_ORDER } from '../boardColumns'
 
 interface MoveTicketMenuProps {
@@ -31,12 +31,13 @@ interface MoveTicketMenuProps {
  * can put focus back on it once the card has moved to another column.
  */
 export function MoveTicketMenu({ ticket, saving, onMove, children }: MoveTicketMenuProps) {
+  const { t } = useTranslation(['board', 'tickets', 'common'])
   const [open, setOpen] = useState(false)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const panelId = useId()
   const savingId = useId()
-  const current = STATUS_LABELS[ticket.status]
+  const current = t(`tickets:status.${ticket.status}`)
   const destinations = STATUS_ORDER.filter((status) => status !== ticket.status)
 
   // Opening moves focus to the first destination and brings all of them
@@ -94,8 +95,8 @@ export function MoveTicketMenu({ ticket, saving, onMove, children }: MoveTicketM
       ref={triggerRef}
       type="button"
       data-move-trigger={ticket.id}
-      aria-label={`Move ${ticket.displayKey}, currently ${current}`}
-      title="Move to another status"
+      aria-label={t('move.trigger', { key: ticket.displayKey, status: current })}
+      title={t('move.tooltip')}
       aria-expanded={open}
       aria-controls={open ? panelId : undefined}
       aria-disabled={saving || undefined}
@@ -117,7 +118,7 @@ export function MoveTicketMenu({ ticket, saving, onMove, children }: MoveTicketM
   const savingNote = saving && (
     <span id={savingId} className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
       <Spinner className="size-3" />
-      Saving…
+      {t('common:actions.saving')}
     </span>
   )
 
@@ -126,12 +127,12 @@ export function MoveTicketMenu({ ticket, saving, onMove, children }: MoveTicketM
       ref={panelRef}
       id={panelId}
       role="group"
-      aria-label={`Move ${ticket.displayKey} to`}
+      aria-label={t('move.group', { key: ticket.displayKey })}
       onKeyDown={handleKeyDown}
       className="origin-top animate-pop border-t border-line pt-2.5"
     >
       <p aria-hidden="true" className="mb-1.5 text-xs font-medium text-ink-subtle">
-        Move to…
+        {t('move.heading')}
       </p>
       <ul className="grid grid-cols-2 gap-1.5">
         {destinations.map((status) => (
@@ -143,7 +144,7 @@ export function MoveTicketMenu({ ticket, saving, onMove, children }: MoveTicketM
               className="press inline-flex h-8 w-full items-center gap-1.5 rounded-md border border-line bg-surface px-2 text-left text-xs font-medium text-ink transition-colors hover:border-accent/40 hover:bg-accent-subtle hover:text-accent max-sm:h-11"
             >
               <StatusIcon status={status} className="size-3" />
-              <span className="truncate">{STATUS_LABELS[status]}</span>
+              <span className="truncate">{t(`tickets:status.${status}`)}</span>
             </button>
           </li>
         ))}

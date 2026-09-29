@@ -1,5 +1,6 @@
 import { X, type LucideIcon } from 'lucide-react'
 import { useEffect, useId, useRef, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { IconButton } from './IconButton'
 
@@ -71,6 +72,7 @@ export function Dialog({
   size = 'md',
   children,
 }: DialogProps) {
+  const { t } = useTranslation()
   const dialogRef = useRef<HTMLDialogElement>(null)
   const titleId = useId()
   const descriptionId = useId()
@@ -159,7 +161,7 @@ export function Dialog({
         </div>
         <IconButton
           icon={X}
-          label="Close"
+          label={t('actions.close')}
           onClick={() => dismissible && onClose()}
           disabled={!dismissible}
           className="-mt-1 -mr-1.5"

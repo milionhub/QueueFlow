@@ -1,7 +1,8 @@
 import type { Ticket, TicketStatus } from '../../api/tickets'
+import { TICKET_STATUSES } from '../tickets/ticketDisplay'
 
 /** The board's columns, left to right: the backend's statuses in workflow order. */
-export const STATUS_ORDER: readonly TicketStatus[] = ['BACKLOG', 'TODO', 'IN_PROGRESS', 'REVIEW', 'DONE']
+export const STATUS_ORDER = TICKET_STATUSES
 
 /**
  * The tickets of each column. Every ticket lands in exactly one column, and

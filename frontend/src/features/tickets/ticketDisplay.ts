@@ -1,18 +1,32 @@
 import type { TicketPriority, TicketStatus } from '../../api/tickets'
+import { i18n } from '../../i18n'
 import { stableHash } from '../auth/userDisplay'
 
 /**
  * How ticket statuses and priorities are shown. The API values stay as
- * they are; only these tables turn them into words and styles, so a later
- * translation replaces the label maps and nothing else.
+ * they are - these are what is sent and compared - and only the functions
+ * and tables here turn them into words (in the interface language) and
+ * styles.
  */
 
-export const STATUS_LABELS: Record<TicketStatus, string> = {
-  BACKLOG: 'Backlog',
-  TODO: 'To do',
-  IN_PROGRESS: 'In progress',
-  REVIEW: 'Review',
-  DONE: 'Done',
+/** Every status, in workflow order: the board's columns and every list of statuses. */
+export const TICKET_STATUSES: readonly TicketStatus[] = ['BACKLOG', 'TODO', 'IN_PROGRESS', 'REVIEW', 'DONE']
+
+/** Every priority, lowest first. */
+export const TICKET_PRIORITIES: readonly TicketPriority[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
+
+/**
+ * A status's name in the interface language. For code outside components;
+ * a component uses its own `t` (useTranslation), so it re-renders when the
+ * language changes.
+ */
+export function statusLabel(status: TicketStatus): string {
+  return i18n.t(`tickets:status.${status}`)
+}
+
+/** A priority's name in the interface language (see statusLabel). */
+export function priorityLabel(priority: TicketPriority): string {
+  return i18n.t(`tickets:priority.${priority}`)
 }
 
 /**
@@ -64,13 +78,6 @@ export const STATUS_TONE: Record<TicketStatus, { text: string; fill: string; sof
     soft: 'bg-success-subtle text-success-text',
     rule: 'shadow-[inset_0_3px_0_0_var(--color-success)]',
   },
-}
-
-export const PRIORITY_LABELS: Record<TicketPriority, string> = {
-  LOW: 'Low',
-  MEDIUM: 'Medium',
-  HIGH: 'High',
-  CRITICAL: 'Critical',
 }
 
 /** The label next to the priority icon: only High and Critical draw attention. */

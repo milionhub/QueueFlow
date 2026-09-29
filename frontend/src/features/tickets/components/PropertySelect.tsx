@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 import { useEffect, useId, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Spinner } from '../../../components/ui/Spinner'
 
@@ -38,6 +39,7 @@ const SAVED_FOR = 1200
  * save fails it goes back to the confirmed value and says why.
  */
 export function PropertySelect({ label, value, options, icon, onSave, saving, disabled }: PropertySelectProps) {
+  const { t } = useTranslation()
   const id = useId()
   const [chosen, setChosen] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -105,7 +107,7 @@ export function PropertySelect({ label, value, options, icon, onSave, saving, di
         </div>
         {saving && (
           <span id={statusId} className="sr-only">
-            Saving…
+            {t('actions.saving')}
           </span>
         )}
         {!saving && error && (

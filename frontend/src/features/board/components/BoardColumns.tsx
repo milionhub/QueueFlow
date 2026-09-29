@@ -1,10 +1,11 @@
 import { pointerIntersection } from '@dnd-kit/collision'
 import { useDragOperation, useDroppable } from '@dnd-kit/react'
 import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { Ticket, TicketStatus } from '../../../api/tickets'
 import { StatusIcon } from '../../tickets/TicketBadges'
-import { STATUS_LABELS, STATUS_TONE } from '../../tickets/ticketDisplay'
+import { STATUS_TONE } from '../../tickets/ticketDisplay'
 import { groupByStatus, STATUS_ORDER } from '../boardColumns'
 import type { CardDragData, ColumnDropData } from './BoardDragDrop'
 
@@ -80,6 +81,7 @@ function ColumnJump({
   scrollerRef: RefObject<HTMLDivElement | null>
   counts: { status: TicketStatus; count: number }[]
 }) {
+  const { t } = useTranslation(['board', 'tickets'])
   const [inView, setInView] = useState<TicketStatus>(STATUS_ORDER[0])
 
   useEffect(() => {
@@ -129,7 +131,7 @@ function ColumnJump({
   }
 
   return (
-    <nav aria-label="Board columns" className="-mx-4 overflow-x-auto px-4 sm:hidden">
+    <nav aria-label={t('columnsNav')} className="-mx-4 overflow-x-auto px-4 sm:hidden">
       <ul className="flex w-max gap-1.5 pb-1">
         {counts.map(({ status, count }) => (
           <li key={status}>
@@ -144,7 +146,7 @@ function ColumnJump({
               }`}
             >
               <StatusIcon status={status} className="size-3" />
-              {STATUS_LABELS[status]}
+              {t(`tickets:status.${status}`)}
               <span className="text-ink-subtle tabular-nums">{count}</span>
             </button>
           </li>
@@ -201,6 +203,7 @@ interface BoardColumnProps {
  * nothing shifts.
  */
 function BoardColumn({ status, tickets, total, renderTicket }: BoardColumnProps) {
+  const { t } = useTranslation(['board', 'tickets'])
   const headingId = useId()
   const { ref, isDropTarget } = useDroppable<ColumnDropData>({
     id: status,
@@ -223,22 +226,22 @@ function BoardColumn({ status, tickets, total, renderTicket }: BoardColumnProps)
           aria-hidden="true"
           className="pointer-events-none absolute inset-x-2 top-9 z-10 animate-fade-in rounded-md bg-accent px-2 py-1.5 text-center text-xs font-medium text-white shadow-md"
         >
-          Drop to move to {STATUS_LABELS[status]}
+          {t('column.dropHint', { status: t(`tickets:status.${status}`) })}
         </p>
       )}
       <h2 id={headingId} className="flex items-center gap-2 px-1 pt-0.5 text-sm font-semibold text-ink">
         <StatusIcon status={status} />
-        <span className="min-w-0 truncate">{STATUS_LABELS[status]}</span>
+        <span className="min-w-0 truncate">{t(`tickets:status.${status}`)}</span>
         <span
           aria-hidden="true"
           className={`ml-auto shrink-0 rounded-full px-2 text-xs leading-5 font-semibold tabular-nums ${STATUS_TONE[status].soft}`}
         >
-          {total === null ? count : `${count} of ${total}`}
+          {total === null ? count : t('column.countOf', { count, total })}
         </span>
         <span className="sr-only">
           {total === null
-            ? `, ${count} ${count === 1 ? 'ticket' : 'tickets'}`
-            : `, ${count} of ${total} ${total === 1 ? 'ticket' : 'tickets'} shown`}
+            ? t('column.count', { count })
+            : t('column.filteredCount', { shown: count, count: total })}
         </span>
       </h2>
       {count > 0 ? (
@@ -251,7 +254,7 @@ function BoardColumn({ status, tickets, total, renderTicket }: BoardColumnProps)
         </ul>
       ) : (
         <p className="flex min-h-20 items-center justify-center rounded-md border border-dashed border-line-strong px-2 text-center text-xs text-ink-subtle">
-          {total ? 'No matching tickets' : 'No tickets'}
+          {total ? t('column.noMatching') : t('column.empty')}
         </p>
       )}
     </section>

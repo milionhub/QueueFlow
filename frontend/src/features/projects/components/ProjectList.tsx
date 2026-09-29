@@ -1,4 +1,5 @@
 import { ChevronRight, Pencil } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import type { Project } from '../../../api/projects'
@@ -20,6 +21,7 @@ interface ProjectListProps {
  * name, leaving the text the full width.
  */
 export function ProjectList({ projects, onEdit }: ProjectListProps) {
+  const { t } = useTranslation('projects')
   return (
     <div className="@container">
       <ul className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface shadow-xs">
@@ -52,7 +54,7 @@ export function ProjectList({ projects, onEdit }: ProjectListProps) {
             {onEdit && (
               <IconButton
                 icon={Pencil}
-                label={`Edit ${project.key}`}
+                label={t('editProject', { key: project.key })}
                 onClick={(event) => onEdit(project, event.currentTarget)}
                 className="relative z-10 shrink-0"
               />

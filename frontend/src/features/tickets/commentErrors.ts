@@ -1,4 +1,5 @@
 import { ApiError } from '../../api/errors'
+import { i18n } from '../../i18n'
 import { genericErrorMessage } from '../../lib/formErrors'
 
 function httpStatus(error: unknown): number | null {
@@ -19,11 +20,16 @@ export function commentChangeError(error: unknown, action: 'add' | 'edit' | 'del
   switch (httpStatus(error)) {
     case 400:
       // The backend's only rule for the content: it must not be blank.
-      return 'A comment cannot be empty.'
+      return i18n.t('tickets:comments.errors.empty')
     case 403:
-      return action === 'add' ? 'You are not allowed to comment here.' : `Only the author can ${action} this comment.`
+      if (action === 'add') {
+        return i18n.t('tickets:comments.errors.notAllowed')
+      }
+      return action === 'edit'
+        ? i18n.t('tickets:comments.errors.onlyAuthorEdit')
+        : i18n.t('tickets:comments.errors.onlyAuthorDelete')
     case 404:
-      return isCommentGone(error) ? 'This comment no longer exists.' : 'This ticket is no longer available.'
+      return isCommentGone(error) ? i18n.t('tickets:comments.errors.gone') : i18n.t('tickets:errors.ticketGone')
     default:
       return genericErrorMessage(error)
   }

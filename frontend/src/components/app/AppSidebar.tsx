@@ -1,4 +1,5 @@
 import { FolderKanban, LayoutDashboard, Users, X, type LucideIcon } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { NavLink } from 'react-router'
 
 import { useCurrentWorkspace } from '../../features/workspace/useCurrentWorkspace'
@@ -8,7 +9,8 @@ import { IconButton } from '../ui/IconButton'
 import { UserMenu } from './UserMenu'
 
 interface NavEntry {
-  label: string
+  /** The entry's name: a message in shell.nav. */
+  labelKey: 'dashboard' | 'projects' | 'members'
   icon: LucideIcon
   to: string
   /** Active only on exactly `to`, not on the pages below it. */
@@ -20,9 +22,9 @@ interface NavEntry {
  * the project's own List | Board navigation, not from here.
  */
 const NAVIGATION: NavEntry[] = [
-  { label: 'Dashboard', icon: LayoutDashboard, to: '/app', end: true },
-  { label: 'Projects', icon: FolderKanban, to: '/app/projects' },
-  { label: 'Members', icon: Users, to: '/app/members' },
+  { labelKey: 'dashboard', icon: LayoutDashboard, to: '/app', end: true },
+  { labelKey: 'projects', icon: FolderKanban, to: '/app/projects' },
+  { labelKey: 'members', icon: Users, to: '/app/members' },
 ]
 
 interface AppSidebarProps {
@@ -35,6 +37,7 @@ interface AppSidebarProps {
 }
 
 export function AppSidebar({ onNavigate, onClose, drawer = false }: AppSidebarProps) {
+  const { t } = useTranslation('shell')
   const row = drawer ? 'h-11 text-[15px]' : 'h-9 text-sm'
   return (
     <div
@@ -42,15 +45,15 @@ export function AppSidebar({ onNavigate, onClose, drawer = false }: AppSidebarPr
     >
       <div className="flex h-14 shrink-0 items-center justify-between gap-2 pr-3 pl-5">
         <QueueFlowLogo size="sm" />
-        {onClose && <IconButton icon={X} label="Close navigation" title="" onClick={onClose} />}
+        {onClose && <IconButton icon={X} label={t('closeNavigation')} title="" onClick={onClose} />}
       </div>
 
       <WorkspaceIdentity />
 
-      <nav aria-label="Main" className="mt-3 flex-1 overflow-y-auto px-3">
+      <nav aria-label={t('nav.main')} className="mt-3 flex-1 overflow-y-auto px-3">
         <ul className="flex flex-col gap-0.5">
-          {NAVIGATION.map(({ label, icon: Icon, to, end }) => (
-            <li key={label}>
+          {NAVIGATION.map(({ labelKey, icon: Icon, to, end }) => (
+            <li key={labelKey}>
               <NavLink
                 to={to}
                 end={end}
@@ -64,7 +67,7 @@ export function AppSidebar({ onNavigate, onClose, drawer = false }: AppSidebarPr
                 }
               >
                 <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
-                {label}
+                {t(`nav.${labelKey}`)}
               </NavLink>
             </li>
           ))}
@@ -86,8 +89,9 @@ export function AppSidebar({ onNavigate, onClose, drawer = false }: AppSidebarPr
  * it cannot be fetched, a neutral "Your workspace" - never a raw id or a guess.
  */
 function WorkspaceIdentity() {
+  const { t } = useTranslation()
   const { status, workspace } = useCurrentWorkspace()
-  const name = workspace?.name ?? 'Your workspace'
+  const name = workspace?.name ?? t('workspace.fallback')
   const initial = workspace ? ([...workspace.name.trim()].find((char) => /[\p{L}\p{N}]/u.test(char)) ?? '·') : null
   const tint = workspace ? avatarTint(workspace.id) : 'bg-canvas-strong text-ink-muted'
 
@@ -100,7 +104,7 @@ function WorkspaceIdentity() {
         {status === 'loading' ? '' : (initial?.toLocaleUpperCase() ?? '·')}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[11px] leading-4 font-medium tracking-wide text-ink-muted uppercase">Workspace</p>
+        <p className="text-[11px] leading-4 font-medium tracking-wide text-ink-muted uppercase">{t('workspace.label')}</p>
         {status === 'loading' ? (
           <div aria-hidden="true" className="skeleton mt-1 h-3.5 w-28" />
         ) : (

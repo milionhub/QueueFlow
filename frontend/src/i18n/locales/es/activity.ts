@@ -1,0 +1,35 @@
+import type { activity as en } from '../en/activity'
+import type { Messages } from '../types'
+
+export const activity: Messages<typeof en> = {
+  title: 'Actividad',
+  loading: 'Cargando la actividad…',
+  loadError: 'No se ha podido cargar la actividad.',
+  empty: 'Todavía no hay actividad.',
+  stale: 'No se ha podido actualizar la actividad, así que puede que no esté al día.',
+  showRecent: 'Mostrar solo los eventos recientes',
+  showEarlier_one: 'Mostrar {{count}} evento anterior',
+  showEarlier_other: 'Mostrar {{count}} eventos anteriores',
+  none: 'ninguno',
+  entries: {
+    created: '{{actor}} creó el ticket',
+    renamedTo: '{{actor}} cambió el título a «{{title}}»',
+    renamed: '{{actor}} cambió el título',
+    descriptionAdded: '{{actor}} añadió una descripción',
+    descriptionRemoved: '{{actor}} eliminó la descripción',
+    descriptionUpdated: '{{actor}} actualizó la descripción',
+    statusChanged: '{{actor}} movió el ticket de {{from}} a {{to}}',
+    priorityChanged: '{{actor}} cambió la prioridad de {{from}} a {{to}}',
+    assignedSelf: '{{actor}} se asignó el ticket',
+    assigned: '{{actor}} asignó el ticket a {{person}}',
+    unassignedSelf: '{{actor}} dejó de ser responsable del ticket',
+    unassigned: '{{actor}} quitó a {{person}} como responsable',
+    reassigned: '{{actor}} reasignó el ticket de {{from}} a {{to}}',
+    assigneeChanged: '{{actor}} cambió el responsable',
+    labelAdded: '{{actor}} añadió la etiqueta {{label}}',
+    labelAddedUnknown: '{{actor}} añadió una etiqueta',
+    labelRemoved: '{{actor}} quitó la etiqueta {{label}}',
+    labelRemovedUnknown: '{{actor}} quitó una etiqueta',
+    other: '{{actor}} actualizó el ticket',
+  },
+}

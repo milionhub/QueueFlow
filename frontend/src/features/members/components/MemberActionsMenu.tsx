@@ -1,5 +1,6 @@
 import { MoreHorizontal, Pencil, UserMinus } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { IconButton } from '../../../components/ui/IconButton'
 
@@ -18,11 +19,12 @@ interface MemberActionsMenuProps {
  * returns to the button, a tap or click elsewhere closes it.
  */
 export function MemberActionsMenu({ memberName, onEdit, onRemove }: MemberActionsMenuProps) {
+  const { t } = useTranslation('members')
   const [open, setOpen] = useState(false)
   const menuId = useId()
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
-  const label = `Actions for ${memberName}`
+  const label = t('actions.trigger', { name: memberName })
 
   useEffect(() => {
     if (!open) {
@@ -69,7 +71,7 @@ export function MemberActionsMenu({ memberName, onEdit, onRemove }: MemberAction
         ref={triggerRef}
         icon={MoreHorizontal}
         label={label}
-        title="Member actions"
+        title={t('actions.tooltip')}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -90,7 +92,7 @@ export function MemberActionsMenu({ memberName, onEdit, onRemove }: MemberAction
             className="flex h-10 w-full items-center gap-2 rounded-md px-2.5 text-sm text-ink hover:bg-canvas-strong focus-visible:bg-canvas-strong pointer-coarse:h-11"
           >
             <Pencil aria-hidden="true" className="size-4 text-ink-muted" strokeWidth={2} />
-            Edit member
+            {t('actions.edit')}
           </button>
           <button
             type="button"
@@ -99,7 +101,7 @@ export function MemberActionsMenu({ memberName, onEdit, onRemove }: MemberAction
             className="flex h-10 w-full items-center gap-2 rounded-md px-2.5 text-sm text-danger hover:bg-danger/5 focus-visible:bg-danger/5 pointer-coarse:h-11"
           >
             <UserMinus aria-hidden="true" className="size-4" strokeWidth={2} />
-            Remove member
+            {t('actions.remove')}
           </button>
         </div>
       )}

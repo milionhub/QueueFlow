@@ -1,0 +1,115 @@
+/** Words shared across the whole interface. */
+export const common = {
+  actions: {
+    cancel: 'Cancel',
+    save: 'Save',
+    saving: 'Saving…',
+    saveChanges: 'Save changes',
+    delete: 'Delete',
+    deleting: 'Deleting…',
+    edit: 'Edit',
+    close: 'Close',
+    done: 'Done',
+    retry: 'Retry',
+    refresh: 'Refresh',
+    tryAgain: 'Try again',
+    dismiss: 'Dismiss',
+    open: 'Open',
+    clearFilters: 'Clear filters',
+  },
+  password: {
+    show: 'Show',
+    hide: 'Hide',
+    showLabel: 'Show password',
+    hideLabel: 'Hide password',
+  },
+  errors: {
+    unreachable: "QueueFlow couldn't reach the server. Please try again.",
+    unexpected: 'Something went wrong. Please try again.',
+    notConfigured: 'QueueFlow is not configured correctly. Please contact the administrator.',
+    checkForm: 'Please check the form and try again.',
+    busy: 'Another change is still being saved. Try again in a moment.',
+  },
+  load: {
+    serverUnreachable: 'The server could not be reached.',
+    serverProblem: 'The server ran into a problem.',
+    pleaseTryAgain: 'Please try again.',
+    listOutdated: 'The list could not be refreshed and may be out of date.',
+  },
+  /**
+   * The backend's validation messages that are known, with the field's
+   * label. Anything else it says is shown with `unknown`.
+   */
+  validation: {
+    blank: '{{field}} must not be blank.',
+    required: '{{field}} is required.',
+    maxCharacters: '{{field}} must be at most {{max}} characters.',
+    minCharacters: '{{field}} must be at least {{min}} characters.',
+    maxBytes: '{{field}} must be at most {{max}} bytes when UTF-8 encoded.',
+    email: '{{field}} must be a valid email address.',
+    keyFormat: '{{field}} must be 2-10 characters, using only letters A-Z and digits 0-9.',
+    unknown: '{{field}} {{problem}}.',
+  },
+  people: {
+    formerMember: 'Former member',
+    unassigned: 'Unassigned',
+    unknownUser: 'Unknown user',
+    you: 'You',
+    nameYou: '{{name}} (you)',
+  },
+  roles: {
+    ADMIN: 'Admin',
+    MEMBER: 'Member',
+  },
+  rolePrefix: 'Role: ',
+  workspace: {
+    label: 'Workspace',
+    fallback: 'Your workspace',
+  },
+  time: {
+    now: 'now',
+    justNow: 'just now',
+    onDate: 'on {{date}}',
+    today: 'Today',
+    yesterday: 'Yesterday',
+  },
+  toast: {
+    region: 'Notifications',
+    dismiss: 'Dismiss notification',
+  },
+  language: {
+    label: 'Language',
+    en: 'English',
+    es: 'Español',
+  },
+  notFound: {
+    title: 'Page not found',
+    body: 'The page you are looking for does not exist.',
+    home: 'Go to QueueFlow',
+  },
+  routeError: {
+    title: 'Something went wrong',
+    body: 'An unexpected error occurred while showing this page.',
+    back: 'Back to start',
+  },
+  health: {
+    documentTitle: 'Health',
+    title: 'Backend connectivity',
+    description: "Checks the backend's public health endpoint.",
+    status: 'Status',
+    baseUrl: 'API base URL',
+    notConfigured: 'Not configured',
+    reason: 'Reason',
+    checkAgain: 'Check again',
+    unhealthy: 'The backend is running but reports that it is not healthy.',
+    unreachable: 'The backend could not be reached. Is it running?',
+    httpStatus: 'The backend responded with status {{status}}.',
+    failed: 'The health check failed unexpectedly.',
+    missingBaseUrl: 'The frontend is not configured: VITE_API_BASE_URL is missing or invalid.',
+    states: {
+      checking: 'Checking…',
+      connected: 'Connected',
+      unavailable: 'Unavailable',
+    },
+  },
+}

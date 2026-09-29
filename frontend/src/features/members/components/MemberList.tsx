@@ -1,10 +1,11 @@
 import { ShieldCheck } from 'lucide-react'
 import type { Ref } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { Member } from '../../../api/members'
 import { Avatar } from '../../../components/ui/Avatar'
 import { SkeletonFrame } from '../../../components/ui/States'
-import { ROLE_LABELS } from '../../auth/userDisplay'
+import { roleLabel } from '../../auth/userDisplay'
 import { MemberActionsMenu } from './MemberActionsMenu'
 
 interface MemberListProps {
@@ -38,11 +39,12 @@ function isManageable(member: Member, currentUserId: string): boolean {
  * the row it was on has just been removed.
  */
 export function MemberList({ ref, members, currentUserId, actions }: MemberListProps) {
+  const { t } = useTranslation(['members', 'common'])
   return (
     <ul
       ref={ref}
       tabIndex={-1}
-      aria-label="Workspace members"
+      aria-label={t('list.label')}
       className="divide-y divide-line rounded-lg border border-line bg-surface shadow-xs"
     >
       {members.map((member) => (
@@ -55,7 +57,7 @@ export function MemberList({ ref, members, currentUserId, actions }: MemberListP
               </span>
               {member.id === currentUserId && (
                 <span className="shrink-0 rounded-full bg-canvas-strong px-2 text-[11px] leading-[18px] font-medium text-ink-muted">
-                  You
+                  {t('common:people.you')}
                 </span>
               )}
             </p>
@@ -69,8 +71,8 @@ export function MemberList({ ref, members, currentUserId, actions }: MemberListP
             }`}
           >
             {member.role === 'ADMIN' && <ShieldCheck aria-hidden="true" className="size-3.5" strokeWidth={2} />}
-            <span className="sr-only">Role: </span>
-            {ROLE_LABELS[member.role]}
+            <span className="sr-only">{t('common:rolePrefix')}</span>
+            {roleLabel(member.role)}
           </span>
           {actions &&
             (isManageable(member, currentUserId) ? (
@@ -90,8 +92,9 @@ export function MemberList({ ref, members, currentUserId, actions }: MemberListP
 
 /** The list's shape while the members load: a few rows as tall as the real ones. */
 export function MembersSkeleton() {
+  const { t } = useTranslation('members')
   return (
-    <SkeletonFrame label="Loading members…">
+    <SkeletonFrame label={t('loading')}>
       <div className="divide-y divide-line rounded-lg border border-line bg-surface shadow-xs">
         {[40, 56, 48].map((width) => (
           <div key={width} className="flex min-h-16 items-center gap-3 px-4 py-3">

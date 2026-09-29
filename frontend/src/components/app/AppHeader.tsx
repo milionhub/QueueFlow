@@ -1,5 +1,6 @@
 import { ChevronLeft, ChevronRight, Menu } from 'lucide-react'
 import { Fragment, type Ref } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import { QueueFlowLogo } from '../QueueFlowMark'
@@ -25,6 +26,7 @@ interface AppHeaderProps {
  * there, with the navigation button and a link back to the parent page.
  */
 export function AppHeader({ trail, navigationOpen, onOpenNavigation, menuButtonRef, navigationId }: AppHeaderProps) {
+  const { t } = useTranslation('shell')
   const parent = trail.at(-1)
   return (
     <header
@@ -37,7 +39,7 @@ export function AppHeader({ trail, navigationOpen, onOpenNavigation, menuButtonR
           ref={menuButtonRef}
           type="button"
           onClick={onOpenNavigation}
-          aria-label="Open navigation"
+          aria-label={t('openNavigation')}
           aria-expanded={navigationOpen}
           aria-controls={navigationId}
           className="press -ml-2 inline-flex size-10 shrink-0 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-canvas-strong hover:text-ink lg:hidden"
@@ -54,9 +56,9 @@ export function AppHeader({ trail, navigationOpen, onOpenNavigation, menuButtonR
             >
               <ChevronLeft aria-hidden="true" className="size-4 shrink-0" strokeWidth={2} />
               <span className="truncate">{parent.label}</span>
-              <span className="sr-only"> (back)</span>
+              <span className="sr-only">{t('back')}</span>
             </Link>
-            <nav aria-label="Breadcrumb" className="hidden min-w-0 lg:block">
+            <nav aria-label={t('breadcrumb')} className="hidden min-w-0 lg:block">
               <ol className="flex min-w-0 items-center gap-1 text-[13px]">
                 {trail.map((crumb, index) => (
                   <Fragment key={crumb.to}>

@@ -1,13 +1,14 @@
 import { Pencil, Plus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { Button } from '../../../components/ui/Button'
 import { IconButton } from '../../../components/ui/IconButton'
 import { focusAtEnd } from '../../../lib/focusAtEnd'
 
 interface EditableTicketTextProps {
-  /** The field's name, for the Edit button's label and the error ("title", "description"). */
-  field: string
+  /** The Edit button's accessible name, e.g. "Edit title" (in the interface language). */
+  editLabel: string
   /** The confirmed value, as text for the input ("" for no description). */
   value: string
   /** How the confirmed value is shown when not editing. */
@@ -50,7 +51,7 @@ const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(n
  * save stays in editing with the typed text and the error.
  */
 export function EditableTicketText({
-  field,
+  editLabel,
   value,
   display,
   renderInput,
@@ -62,6 +63,7 @@ export function EditableTicketText({
   emptyPrompt,
   saveShortcut = false,
 }: EditableTicketTextProps) {
+  const { t } = useTranslation(['tickets', 'common'])
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const editButtonRef = useRef<HTMLButtonElement>(null)
@@ -135,7 +137,7 @@ export function EditableTicketText({
     <IconButton
       ref={editButtonRef}
       icon={Pencil}
-      label={`Edit ${field}`}
+      label={editLabel}
       onClick={startEditing}
       disabled={busy || editing}
       className={editing ? 'invisible' : ''}
@@ -163,13 +165,15 @@ export function EditableTicketText({
           })}
           <div className="flex flex-wrap items-center gap-2">
             <Button type="submit" size="sm" disabled={busy} loading={saving}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('common:actions.saving') : t('common:actions.save')}
             </Button>
             <Button variant="ghost" size="sm" onClick={cancel} disabled={saving}>
-              Cancel
+              {t('common:actions.cancel')}
             </Button>
             <span aria-hidden="true" className="ml-auto hidden text-xs text-ink-subtle sm:inline">
-              {saveShortcut ? `${IS_MAC ? '⌘' : 'Ctrl'}+Enter to save · ` : 'Enter to save · '}Esc to cancel
+              {saveShortcut
+                ? t('detail.saveShortcut', { keys: IS_MAC ? '⌘' : 'Ctrl' })
+                : t('detail.enterShortcut')}
             </span>
           </div>
         </form>

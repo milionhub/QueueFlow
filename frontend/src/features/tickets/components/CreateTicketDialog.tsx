@@ -1,5 +1,6 @@
 import { TicketPlus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 
 import { createTicket, type Ticket, type TicketPriority, type TicketStatus } from '../../../api/tickets'
 import { Alert } from '../../../components/ui/Alert'
@@ -13,12 +14,10 @@ import type { FormErrors } from '../../../lib/formErrors'
 import { useAuth } from '../../auth/useAuth'
 import { useProjectContext } from '../../projects/projectContext'
 import { createTicketErrors, type TicketField } from '../ticketErrors'
-import { PRIORITY_LABELS, STATUS_LABELS } from '../ticketDisplay'
+import { TICKET_PRIORITIES, TICKET_STATUSES } from '../ticketDisplay'
 
 const TITLE_MAX_LENGTH = 255
 const NO_ERRORS: FormErrors<TicketField> = { form: null, fields: {} }
-const STATUSES = Object.keys(STATUS_LABELS) as TicketStatus[]
-const PRIORITIES = Object.keys(PRIORITY_LABELS) as TicketPriority[]
 
 interface CreateTicketDialogProps {
   onClose: () => void
@@ -35,6 +34,7 @@ interface CreateTicketDialogProps {
  * here - the backend keeps it as sent.
  */
 export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFocus }: CreateTicketDialogProps) {
+  const { t } = useTranslation(['tickets', 'common'])
   const { authorizedRequest, user } = useAuth()
   const { project, members } = useProjectContext()
   const [title, setTitle] = useState('')
@@ -69,9 +69,9 @@ export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFo
     const trimmedTitle = title.trim()
     const found: FormErrors<TicketField> = { form: null, fields: {} }
     if (trimmedTitle === '') {
-      found.fields.title = 'Enter a title.'
+      found.fields.title = t('create.enterTitle')
     } else if (trimmedTitle.length > TITLE_MAX_LENGTH) {
-      found.fields.title = `Title must be at most ${TITLE_MAX_LENGTH} characters.`
+      found.fields.title = t('create.titleTooLong', { max: TITLE_MAX_LENGTH })
     }
     setErrors(found)
     if (Object.keys(found.fields).length > 0) {
@@ -101,12 +101,15 @@ export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFo
 
   return (
     <Dialog
-      title="New ticket"
+      title={t('create.title')}
       icon={TicketPlus}
       description={
-        <>
-          In <KeyBadge>{project.key}</KeyBadge> {project.name}
-        </>
+        <Trans
+          t={t}
+          i18nKey="create.inProject"
+          values={{ key: project.key, name: project.name }}
+          components={{ key: <KeyBadge>{project.key}</KeyBadge> }}
+        />
       }
       onClose={onClose}
       dismissible={!pending}
@@ -118,7 +121,7 @@ export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFo
         <DialogBody>
           {errors.form && <Alert tone="error">{errors.form}</Alert>}
           <TextField
-            label="Title"
+            label={t('fields.title')}
             name="title"
             autoComplete="off"
             maxLength={TITLE_MAX_LENGTH}
@@ -130,9 +133,9 @@ export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFo
             data-autofocus
           />
           <TextAreaField
-            label="Description"
+            label={t('fields.description')}
             name="description"
-            hint="Optional."
+            hint={t('fields.optional')}
             rows={3}
             maxRows={10}
             value={description}
@@ -140,49 +143,49 @@ export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFo
             error={errors.fields.description}
             disabled={pending}
           />
-          <DialogFieldGroup title="Details">
+          <DialogFieldGroup title={t('create.details')}>
             <div className="grid gap-4 sm:grid-cols-2">
               <SelectField
-                label="Status"
+                label={t('fields.status')}
                 name="status"
                 value={status}
                 onChange={(event) => setStatus(event.target.value as TicketStatus)}
                 error={errors.fields.status}
                 disabled={pending}
               >
-                {STATUSES.map((value) => (
+                {TICKET_STATUSES.map((value) => (
                   <option key={value} value={value}>
-                    {STATUS_LABELS[value]}
+                    {t(`status.${value}`)}
                   </option>
                 ))}
               </SelectField>
               <SelectField
-                label="Priority"
+                label={t('fields.priority')}
                 name="priority"
                 value={priority}
                 onChange={(event) => setPriority(event.target.value as TicketPriority)}
                 error={errors.fields.priority}
                 disabled={pending}
               >
-                {PRIORITIES.map((value) => (
+                {TICKET_PRIORITIES.map((value) => (
                   <option key={value} value={value}>
-                    {PRIORITY_LABELS[value]}
+                    {t(`priority.${value}`)}
                   </option>
                 ))}
               </SelectField>
             </div>
             <SelectField
-              label="Assignee"
+              label={t('fields.assignee')}
               name="assigneeId"
               value={assigneeId}
               onChange={(event) => setAssigneeId(event.target.value)}
               error={errors.fields.assigneeId}
               disabled={pending}
             >
-              <option value="">Unassigned</option>
+              <option value="">{t('common:people.unassigned')}</option>
               {members.map((member) => (
                 <option key={member.id} value={member.id}>
-                  {member.id === user?.id ? `${member.name} (you)` : member.name}
+                  {member.id === user?.id ? t('common:people.nameYou', { name: member.name }) : member.name}
                 </option>
               ))}
             </SelectField>
@@ -190,10 +193,10 @@ export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFo
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose} disabled={pending}>
-            Cancel
+            {t('common:actions.cancel')}
           </Button>
           <Button type="submit" disabled={pending} loading={pending}>
-            {pending ? 'Creating…' : 'Create ticket'}
+            {pending ? t('create.submitting') : t('create.submit')}
           </Button>
         </DialogFooter>
       </form>

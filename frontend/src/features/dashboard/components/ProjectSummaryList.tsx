@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import type { DashboardProject } from '../../../api/dashboard'
@@ -11,6 +12,7 @@ import { ProjectMark } from '../../projects/components/ProjectMark'
  * project's page.
  */
 export function ProjectSummaryList({ projects }: { projects: DashboardProject[] }) {
+  const { t } = useTranslation('dashboard')
   return (
     <ul className="divide-y divide-line">
       {projects.map((project) => {
@@ -33,10 +35,11 @@ export function ProjectSummaryList({ projects }: { projects: DashboardProject[] 
               </Link>
               <span className="shrink-0 text-xs whitespace-nowrap text-ink-muted tabular-nums">
                 {project.ticketCount === 0 ? (
-                  <span className="text-ink-subtle">No tickets</span>
+                  <span className="text-ink-subtle">{t('projects.noTickets')}</span>
                 ) : (
                   <>
-                    <span className="font-medium text-ink">{project.openTicketCount}</span> open
+                    <span className="font-medium text-ink">{project.openTicketCount}</span>{' '}
+                    {t('projects.open', { count: project.openTicketCount })}
                   </>
                 )}
               </span>
@@ -47,7 +50,7 @@ export function ProjectSummaryList({ projects }: { projects: DashboardProject[] 
                   <div className="h-full rounded-full bg-success" style={{ width: `${percent}%` }} />
                 </div>
                 <span className="shrink-0 text-xs text-ink-subtle tabular-nums">
-                  {done}/{project.ticketCount} done
+                  {t('projects.done', { done, total: project.ticketCount })}
                   <span className="sr-only"> ({percent}%)</span>
                 </span>
               </div>

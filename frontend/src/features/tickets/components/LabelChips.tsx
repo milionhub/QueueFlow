@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 
 import type { Label } from '../../../api/labels'
 import { Spinner } from '../../../components/ui/Spinner'
@@ -28,10 +29,11 @@ function LabelDot({ name }: { name: string }) {
  * dot's colour follows the label's name; the name itself is the meaning.
  */
 export function LabelChips({ labels, limit, onRemove, removingId = null, disabled = false }: LabelChipsProps) {
+  const { t } = useTranslation('tickets')
   const shown = limit === undefined ? labels : labels.slice(0, limit)
   const hidden = labels.length - shown.length
   return (
-    <ul aria-label="Labels" className="flex min-w-0 flex-wrap items-center gap-1">
+    <ul aria-label={t('labelChips.list')} className="flex min-w-0 flex-wrap items-center gap-1">
       {shown.map((label) =>
         onRemove ? (
           <li
@@ -46,7 +48,7 @@ export function LabelChips({ labels, limit, onRemove, removingId = null, disable
               type="button"
               onClick={() => onRemove(label)}
               disabled={disabled}
-              aria-label={`Remove label ${label.name}`}
+              aria-label={t('labelChips.remove', { name: label.name })}
               className="press inline-flex size-6 shrink-0 items-center justify-center rounded-full text-ink-subtle transition-colors hover:bg-line hover:text-ink disabled:cursor-not-allowed disabled:opacity-60 pointer-coarse:size-8"
             >
               {removingId === label.id ? (
@@ -73,12 +75,12 @@ export function LabelChips({ labels, limit, onRemove, removingId = null, disable
         >
           +{hidden}
           <span className="sr-only">
-            {' '}
-            more:{' '}
-            {labels
-              .slice(shown.length)
-              .map((label) => label.name)
-              .join(', ')}
+            {t('labelChips.more', {
+              names: labels
+                .slice(shown.length)
+                .map((label) => label.name)
+                .join(', '),
+            })}
           </span>
         </li>
       )}

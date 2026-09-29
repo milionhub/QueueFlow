@@ -1,5 +1,6 @@
 import { Plus } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { ApiError } from '../../../api/errors'
 import { createLabel, listLabels, type Label } from '../../../api/labels'
@@ -38,6 +39,7 @@ interface TicketLabelsProps {
  * "Add label" is opened, and kept while the page is open.
  */
 export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) {
+  const { t } = useTranslation(['tickets', 'common'])
   const { authorizedRequest, user } = useAuth()
   const workspaceId = user?.workspaceId ?? ''
   const [opened, setOpened] = useState(false)
@@ -107,9 +109,9 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
     const result = await mutation.run(`label:${label.id}`, () => addTicketLabel(authorizedRequest, ticket.id, label.id))
     if (result?.ok) {
       setUnattached((current) => (current?.id === label.id ? null : current))
-      announce(`Label ${label.name} added.`)
+      announce(t('labels.added', { name: label.name }))
     } else if (result) {
-      setError(`Could not add ${label.name}: ${ticketChangeError(result.error).message}`)
+      setError(t('labels.addFailed', { name: label.name, reason: ticketChangeError(result.error).message }))
     }
   }
 
@@ -119,10 +121,10 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
       removeTicketLabel(authorizedRequest, ticket.id, label.id),
     )
     if (result?.ok) {
-      announce(`Label ${label.name} removed.`)
+      announce(t('labels.removed', { name: label.name }))
       focus(pickerOpen ? 'picker' : 'add')
     } else if (result) {
-      setError(`Could not remove ${label.name}: ${ticketChangeError(result.error).message}`)
+      setError(t('labels.removeFailed', { name: label.name, reason: ticketChangeError(result.error).message }))
     }
   }
 
@@ -146,12 +148,12 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
     }
     const trimmed = name.trim()
     if (trimmed === '') {
-      setNameError('Enter a label name.')
+      setNameError(t('labels.enterName'))
       focus('name')
       return
     }
     if (trimmed.length > NAME_MAX_LENGTH) {
-      setNameError(`Name must be at most ${NAME_MAX_LENGTH} characters.`)
+      setNameError(t('labels.nameTooLong', { max: NAME_MAX_LENGTH }))
       focus('name')
       return
     }
@@ -172,7 +174,7 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
       return
     }
     if (result.ok) {
-      announce(`Label ${trimmed} created and added.`)
+      announce(t('labels.createdAndAdded', { name: trimmed }))
       setCreating(false)
       setName('')
       focus('picker')
@@ -188,10 +190,10 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
     }
     const failure = result.error
     if (failure instanceof ApiError && failure.kind === 'http' && failure.status === 409) {
-      setNameError('A label with that name already exists.')
+      setNameError(t('labels.exists'))
     } else if (failure instanceof ApiError && failure.kind === 'http' && failure.status === 400 && failure.body) {
-      const mapped = fieldValidationErrors(failure.body.message, { name: 'Name' })
-      setNameError(mapped.fields.name ?? 'That name is not valid.')
+      const mapped = fieldValidationErrors(failure.body.message, { name: t('labels.nameField') })
+      setNameError(mapped.fields.name ?? t('labels.invalidName'))
     } else {
       setNameError(ticketChangeError(failure).message)
     }
@@ -210,18 +212,18 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
           disabled={busy}
         />
       ) : (
-        <span className="text-sm text-ink-subtle xl:px-0.5">No labels</span>
+        <span className="text-sm text-ink-subtle xl:px-0.5">{t('labels.none')}</span>
       )}
       {unattached && (
         <p role="alert" className="text-xs text-danger">
-          Label “{unattached.name}” was created but could not be added to this ticket.{' '}
+          {t('labels.unattached', { name: unattached.name })}{' '}
           <button
             type="button"
             onClick={() => void attach(unattached)}
             disabled={busy}
             className="font-medium text-accent underline-offset-4 hover:underline disabled:opacity-60"
           >
-            Try again
+            {t('common:actions.tryAgain')}
           </button>
         </p>
       )}
@@ -241,7 +243,7 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
             className="-ml-2 h-7 px-2 text-xs pointer-coarse:h-9"
           >
             <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
-            Add label
+            {t('labels.add')}
           </Button>
         </div>
       ) : (
@@ -249,28 +251,28 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
           id={pickerId}
           ref={pickerRef}
           tabIndex={-1}
-          aria-label="Add labels"
+          aria-label={t('labels.picker')}
           className="flex animate-pop flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 shadow-sm outline-none"
         >
           {catalogue.state.status === 'loading' || catalogue.state.status === 'idle' ? (
             <p role="status" className="text-xs text-ink-muted">
-              Loading labels…
+              {t('labels.loading')}
             </p>
           ) : catalogue.state.status === 'error' ? (
             <p role="alert" className="text-xs text-danger">
-              The labels could not be loaded.{' '}
+              {t('labels.loadError')}{' '}
               <button
                 type="button"
                 onClick={catalogue.retry}
                 className="font-medium text-accent underline-offset-4 hover:underline"
               >
-                Retry
+                {t('common:actions.retry')}
               </button>
             </p>
           ) : (
             <>
               <label className="sr-only" htmlFor={`${pickerId}-select`}>
-                Add a label
+                {t('labels.select')}
               </label>
               <select
                 id={`${pickerId}-select`}
@@ -281,22 +283,22 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
               >
                 <option value="" disabled>
                   {labels.length === 0
-                    ? 'No labels yet'
+                    ? t('labels.noLabelsYet')
                     : available.length === 0
-                      ? 'Every label is already added'
-                      : 'Choose a label…'}
+                      ? t('labels.allAdded')
+                      : t('labels.choose')}
                 </option>
                 {available.map((label) => (
                   <option key={label.id} value={label.id}>
                     {label.name}
                   </option>
                 ))}
-                <option value={CREATE}>Create label…</option>
+                <option value={CREATE}>{t('labels.createOption')}</option>
               </select>
               {creating && (
                 <form noValidate onSubmit={handleCreate} className="flex flex-col gap-2">
                   <TextField
-                    label="New label name"
+                    label={t('labels.newName')}
                     name="labelName"
                     autoComplete="off"
                     maxLength={NAME_MAX_LENGTH}
@@ -315,7 +317,7 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
                   />
                   <div className="flex gap-2">
                     <Button type="submit" size="sm" disabled={busy} loading={mutation.pending === 'label:create'}>
-                      {mutation.pending === 'label:create' ? 'Creating…' : 'Create and add'}
+                      {mutation.pending === 'label:create' ? t('labels.creating') : t('labels.createAndAdd')}
                     </Button>
                     <Button
                       variant="ghost"
@@ -327,7 +329,7 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
                       }}
                       disabled={mutation.pending === 'label:create'}
                     >
-                      Cancel
+                      {t('common:actions.cancel')}
                     </Button>
                   </div>
                 </form>
@@ -336,7 +338,7 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
           )}
           <div className="flex justify-end">
             <Button variant="secondary" size="sm" onClick={closePicker} disabled={mutation.pending === 'label:create'}>
-              Done
+              {t('common:actions.done')}
             </Button>
           </div>
         </div>

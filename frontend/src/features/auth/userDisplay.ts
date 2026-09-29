@@ -1,7 +1,14 @@
+import { i18n } from '../../i18n'
 import type { UserRole } from './types'
 
-/** How the two roles are named in the UI. */
-export const ROLE_LABELS: Record<UserRole, string> = { ADMIN: 'Admin', MEMBER: 'Member' }
+/**
+ * How a role is named in the interface language; the role itself (ADMIN,
+ * MEMBER) is never changed. The component showing it uses useTranslation,
+ * so it renders again when the language changes.
+ */
+export function roleLabel(role: UserRole): string {
+  return i18n.t(`common:roles.${role}`)
+}
 
 const LETTER_OR_NUMBER = /[\p{L}\p{N}]/u
 const PICTOGRAPH = /\p{Extended_Pictographic}/u

@@ -1,5 +1,6 @@
 import { Columns3, Plus, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 
 import type { Ticket, TicketStatus } from '../../../api/tickets'
@@ -24,7 +25,6 @@ import {
   withoutFilters,
   type FilterParam,
 } from '../../tickets/ticketFilters'
-import { STATUS_LABELS } from '../../tickets/ticketDisplay'
 import { BoardColumns } from '../components/BoardColumns'
 import { BoardDragDrop, type DropMethod } from '../components/BoardDragDrop'
 import { BoardSkeleton } from '../components/BoardSkeleton'
@@ -50,6 +50,7 @@ export function ProjectBoardPage() {
 }
 
 function ProjectBoard() {
+  const { t } = useTranslation(['board', 'tickets', 'common', 'shell'])
   const { project, members, memberName } = useProjectContext()
   const { user } = useAuth()
   const currentUserId = user?.id ?? ''
@@ -59,7 +60,7 @@ function ProjectBoard() {
   const [announcement, setAnnouncement] = useState('')
   const toast = useToast()
   const newTicketId = useId()
-  usePageTitle(project.name, `${project.key} Board`)
+  usePageTitle(project.name, t('shell:titles.boardDocument', { key: project.key }))
 
   // Creating the first ticket replaces the empty state (and its button)
   // with the board: once that reload lands, focus moves to the header's
@@ -118,7 +119,7 @@ function ProjectBoard() {
     }
     const outcome = await move(ticket.id, status)
     if (outcome === 'moved') {
-      setAnnouncement(`${ticket.displayKey} moved to ${STATUS_LABELS[status]}.`)
+      setAnnouncement(t('moved', { key: ticket.displayKey, status: t(`tickets:status.${status}`) }))
     } else if (outcome === 'failed' && focus) {
       followFocus(ticket.id, focus)
     } else if (outcome === 'gone') {
@@ -140,7 +141,7 @@ function ProjectBoard() {
         message: error.message,
         action: ticket
           ? {
-              label: 'Retry',
+              label: t('common:actions.retry'),
               onClick: () => {
                 // The toast (and its button) goes away: let focus follow the card to its Move button instead.
                 ;(document.activeElement as HTMLElement | null)?.blur()
@@ -181,7 +182,9 @@ function ProjectBoard() {
   const shown = useMemo(() => filterTickets(tickets, filters, currentUserId), [tickets, filters, currentUserId])
 
   // The result count, for screen readers, once the filters have settled (as on the list).
-  const resultSummary = filtering ? `${shown.length} of ${tickets.length} tickets shown.` : ''
+  const resultSummary = filtering
+    ? t('tickets:list.shownAnnouncement', { shown: shown.length, count: tickets.length })
+    : ''
   const [announcedSummary, setAnnouncedSummary] = useState('')
   useEffect(() => {
     const timer = setTimeout(() => setAnnouncedSummary(resultSummary), 600)
@@ -206,8 +209,8 @@ function ProjectBoard() {
   function handleCreated(ticket: Ticket) {
     setCreatingFrom(undefined)
     toast.show({
-      message: `${ticket.displayKey} created.`,
-      action: { label: 'Open', to: ticketPath(ticket.projectKey, ticket.ticketNumber) },
+      message: t('tickets:list.created', { key: ticket.displayKey }),
+      action: { label: t('common:actions.open'), to: ticketPath(ticket.projectKey, ticket.ticketNumber) },
     })
     focusNewTicketAfterReload.current = true
     reload()
@@ -220,29 +223,33 @@ function ProjectBoard() {
       content = <BoardSkeleton />
       break
     case 'error':
-      content = <LoadError message="The tickets could not be loaded." reason={state.reason} onRetry={retry} />
+      content = <LoadError message={t('tickets:list.loadError')} reason={state.reason} onRetry={retry} />
       break
     case 'ready':
       content =
         state.data.length === 0 ? (
           <EmptyState
             icon={Columns3}
-            title="No tickets yet"
+            title={t('tickets:list.emptyTitle')}
             className="max-w-2xl"
             action={
               <Button onClick={openCreate}>
                 <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
-                New ticket
+                {t('tickets:list.newTicket')}
               </Button>
             }
           >
-            The board shows this project's tickets in a column for each status. Each ticket gets a key like{' '}
-            <span className="font-mono text-xs text-ink">{project.key}-1</span>.
+            <Trans
+              t={t}
+              i18nKey="emptyBody"
+              values={{ key: project.key }}
+              components={{ key: <span className="font-mono text-xs text-ink" /> }}
+            />
           </EmptyState>
         ) : (
           <div className="flex flex-col gap-3">
             {state.refreshFailed && (
-              <StaleNotice onRefresh={reload}>The board could not be refreshed and may be out of date.</StaleNotice>
+              <StaleNotice onRefresh={reload}>{t('stale')}</StaleNotice>
             )}
             {moveError && (
               <div
@@ -254,7 +261,7 @@ function ProjectBoard() {
                 <p className="min-w-0 flex-1 break-words">{moveError.message}</p>
                 <IconButton
                   icon={X}
-                  label="Dismiss"
+                  label={t('common:actions.dismiss')}
                   size="sm"
                   onClick={() => {
                     // The button goes away with the message: focus moves to
@@ -277,19 +284,19 @@ function ProjectBoard() {
               hideStatus
               summary={
                 filtering
-                  ? `${shown.length} of ${state.data.length} tickets`
-                  : `${state.data.length} ${state.data.length === 1 ? 'ticket' : 'tickets'}`
+                  ? t('tickets:list.filteredCount', { shown: shown.length, count: state.data.length })
+                  : t('tickets:list.count', { count: state.data.length })
               }
             />
             {filtering && shown.length === 0 && (
               <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-surface px-4 py-3 text-sm text-ink-muted shadow-xs">
-                <span className="font-medium text-ink">No tickets match these filters.</span>
+                <span className="font-medium text-ink">{t('noMatch')}</span>
                 <button
                   type="button"
                   onClick={clearFilters}
                   className="rounded-sm font-medium text-accent underline-offset-4 hover:underline"
                 >
-                  Clear filters
+                  {t('common:actions.clearFilters')}
                 </button>
               </p>
             )}
@@ -336,7 +343,7 @@ function ProjectBoard() {
           ticketCount > 0 && (
             <Button id={newTicketId} onClick={openCreate}>
               <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
-              New ticket
+              {t('tickets:list.newTicket')}
             </Button>
           )
         }

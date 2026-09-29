@@ -1,6 +1,6 @@
 import type { Label } from '../../api/labels'
 import type { Ticket, TicketPriority, TicketStatus } from '../../api/tickets'
-import { PRIORITY_LABELS, STATUS_LABELS } from './ticketDisplay'
+import { TICKET_PRIORITIES, TICKET_STATUSES } from './ticketDisplay'
 
 /**
  * The ticket list's filters live in the address (?q=&status=&priority=
@@ -24,8 +24,8 @@ export interface TicketFilters {
   label: string | null
 }
 
-const STATUSES = new Set<string>(Object.keys(STATUS_LABELS))
-const PRIORITIES = new Set<string>(Object.keys(PRIORITY_LABELS))
+const STATUSES = new Set<string>(TICKET_STATUSES)
+const PRIORITIES = new Set<string>(TICKET_PRIORITIES)
 
 /**
  * The filters in the address, validated. A value that means nothing here -

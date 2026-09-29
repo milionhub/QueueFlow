@@ -1,10 +1,12 @@
 import { Columns3, History, MessageSquare } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { TicketPriority, TicketStatus } from '../../../api/tickets'
+import { LanguageSwitcher } from '../../../components/LanguageSwitcher'
 import { QueueFlowLogo } from '../../../components/QueueFlowMark'
 import { PriorityIcon, StatusIcon } from '../../tickets/TicketBadges'
-import { STATUS_LABELS, STATUS_TONE } from '../../tickets/ticketDisplay'
+import { STATUS_TONE } from '../../tickets/ticketDisplay'
 
 interface AuthLayoutProps {
   title: string
@@ -20,9 +22,11 @@ interface AuthLayoutProps {
  * picture of work moving across a board) and the form on a calm white
  * side. Below `lg` one column: the brand, the heading and the form - the
  * workflow appears only as a thin strip of the five status colours, so the
- * form stays on the first screen of a phone.
+ * form stays on the first screen of a phone. Under the footer, a quiet
+ * switch of the interface language (there is no account menu yet).
  */
 export function AuthLayout({ title, description, children, footer }: AuthLayoutProps) {
+  const { t } = useTranslation('auth')
   return (
     <div className="min-h-dvh bg-canvas lg:grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
       <BrandPanel />
@@ -32,7 +36,9 @@ export function AuthLayout({ title, description, children, footer }: AuthLayoutP
         <main className="w-full max-w-sm animate-enter">
           <div className="flex items-center justify-between gap-3 lg:hidden">
             <QueueFlowLogo size="md" />
-            <span className="text-xs font-medium tracking-wide text-ink-muted">Plan. Build. Ship.</span>
+            <span className="min-w-0 text-right text-xs font-medium tracking-wide text-ink-muted">
+              {t('brand.tagline')}
+            </span>
           </div>
 
           <div className="mt-8 sm:rounded-xl sm:border sm:border-line sm:bg-surface sm:px-8 sm:py-8 sm:shadow-sm lg:mt-0 lg:rounded-none lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
@@ -42,6 +48,7 @@ export function AuthLayout({ title, description, children, footer }: AuthLayoutP
           </div>
 
           <p className="mt-6 text-sm text-ink-muted sm:text-center lg:text-left">{footer}</p>
+          <LanguageSwitcher className="mt-4 sm:justify-center lg:justify-start" />
         </main>
       </div>
     </div>
@@ -60,9 +67,12 @@ function WorkflowStrip({ className = '' }: { className?: string }) {
   )
 }
 
+type SampleTitle = 'pricing' | 'rateLimit' | 'footer' | 'onboarding' | 'sso' | 'emptyStates' | 'projectKeys'
+
 interface MiniCard {
   key: string
-  title: string
+  /** The made-up title: a message in auth.brand.sample. */
+  titleKey: SampleTitle
   priority: TicketPriority
   /** The card being moved on: lifted, with the accent ring. */
   moving?: boolean
@@ -73,25 +83,25 @@ const MINI_BOARD: { status: TicketStatus; cards: MiniCard[]; wideOnly?: boolean 
   {
     status: 'BACKLOG',
     wideOnly: true,
-    cards: [{ key: 'APP-12', title: 'Pricing table refresh', priority: 'LOW' }],
+    cards: [{ key: 'APP-12', titleKey: 'pricing', priority: 'LOW' }],
   },
   {
     status: 'TODO',
     cards: [
-      { key: 'APP-9', title: 'Rate-limit sign-in', priority: 'HIGH' },
-      { key: 'APP-11', title: 'Footer links', priority: 'LOW' },
+      { key: 'APP-9', titleKey: 'rateLimit', priority: 'HIGH' },
+      { key: 'APP-11', titleKey: 'footer', priority: 'LOW' },
     ],
   },
   {
     status: 'IN_PROGRESS',
-    cards: [{ key: 'APP-7', title: 'Onboarding checklist', priority: 'CRITICAL', moving: true }],
+    cards: [{ key: 'APP-7', titleKey: 'onboarding', priority: 'CRITICAL', moving: true }],
   },
-  { status: 'REVIEW', cards: [{ key: 'APP-5', title: 'SSO for workspaces', priority: 'MEDIUM' }] },
+  { status: 'REVIEW', cards: [{ key: 'APP-5', titleKey: 'sso', priority: 'MEDIUM' }] },
   {
     status: 'DONE',
     cards: [
-      { key: 'APP-2', title: 'Empty states', priority: 'MEDIUM' },
-      { key: 'APP-1', title: 'Project keys', priority: 'LOW' },
+      { key: 'APP-2', titleKey: 'emptyStates', priority: 'MEDIUM' },
+      { key: 'APP-1', titleKey: 'projectKeys', priority: 'LOW' },
     ],
   },
 ]
@@ -102,9 +112,10 @@ const MINI_BOARD: { status: TicketStatus; cards: MiniCard[]; wideOnly?: boolean 
  * five status columns and a card moving towards Review.
  */
 function BrandPanel() {
+  const { t } = useTranslation(['auth', 'tickets'])
   return (
     <aside
-      aria-label="About QueueFlow"
+      aria-label={t('brand.about')}
       className="auth-dots relative hidden min-h-dvh flex-col justify-between overflow-hidden bg-brand-deep px-12 py-12 text-white lg:flex xl:px-16"
     >
       <QueueFlowLogo size="lg" tone="inverse" />
@@ -112,10 +123,10 @@ function BrandPanel() {
       <div className="flex flex-col gap-10">
         <div className="max-w-md">
           <p className="text-4xl leading-tight font-semibold tracking-tight text-white xl:text-5xl xl:leading-[1.1]">
-            Plan. Build. Ship.
+            {t('brand.tagline')}
           </p>
           <p className="mt-4 text-base leading-7 text-[#c7cdf5]">
-            A focused workspace for software teams to move work forward, from backlog to done.
+            {t('brand.promise')}
           </p>
         </div>
 
@@ -129,7 +140,7 @@ function BrandPanel() {
             >
               <div className="flex items-center gap-1.5 px-0.5 text-[11px] font-medium text-[#c7cdf5]">
                 <StatusIcon status={status} className="size-3" />
-                <span className="truncate">{STATUS_LABELS[status]}</span>
+                <span className="truncate">{t(`tickets:status.${status}`)}</span>
               </div>
               {cards.map((card) => (
                 <div
@@ -141,7 +152,7 @@ function BrandPanel() {
                   }`}
                 >
                   <span className="font-mono text-[10px] text-[#9aa2de]">{card.key}</span>
-                  <span className="text-[11px] leading-4 font-medium text-white/90">{card.title}</span>
+                  <span className="text-[11px] leading-4 font-medium text-white/90">{t(`brand.sample.${card.titleKey}`)}</span>
                   <span className="flex items-center justify-between">
                     <PriorityIcon priority={card.priority} className="size-3" inverse />
                     <span className="size-3.5 rounded-full bg-[#3a4190] ring-1 ring-white/10" />
@@ -156,14 +167,15 @@ function BrandPanel() {
       <ul className="flex flex-wrap gap-x-6 gap-y-2 text-sm text-[#c7cdf5]">
         <li className="flex items-center gap-2">
           <Columns3 aria-hidden="true" className="size-4 text-[#9aa2de]" strokeWidth={2} />
-          Boards and lists
+          {t('brand.features.boards')}
         </li>
         <li className="flex items-center gap-2">
           <MessageSquare aria-hidden="true" className="size-4 text-[#9aa2de]" strokeWidth={2} />
-          Conversations on every ticket
+          {t('brand.features.conversations')}
         </li>
         <li className="flex items-center gap-2">
-          <History aria-hidden="true" className="size-4 text-[#9aa2de]" strokeWidth={2} />A full history of changes
+          <History aria-hidden="true" className="size-4 text-[#9aa2de]" strokeWidth={2} />
+          {t('brand.features.history')}
         </li>
       </ul>
     </aside>

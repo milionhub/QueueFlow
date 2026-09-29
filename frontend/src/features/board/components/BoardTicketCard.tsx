@@ -1,6 +1,7 @@
 import { useDraggable } from '@dnd-kit/react'
 import { GripVertical } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import type { Ticket } from '../../../api/tickets'
@@ -39,6 +40,7 @@ interface BoardTicketCardProps {
  * the pointer.
  */
 export function BoardTicketCard({ ticket, memberName, saving, headerAction, note, footer }: BoardTicketCardProps) {
+  const { t } = useTranslation(['board', 'tickets', 'common'])
   const { ref, handleRef, isDragSource } = useDraggable<CardDragData>({
     id: ticket.id,
     data: { ticket },
@@ -62,7 +64,7 @@ export function BoardTicketCard({ ticket, memberName, saving, headerAction, note
           ref={handleRef}
           type="button"
           data-drag-handle={ticket.id}
-          aria-label={`Drag ${ticket.displayKey}`}
+          aria-label={t('card.drag', { key: ticket.displayKey })}
           aria-disabled={saving || undefined}
           className="-mr-1.5 inline-flex size-8 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-ink-subtle transition-colors hover:bg-canvas-strong hover:text-ink aria-disabled:cursor-not-allowed aria-disabled:opacity-40 aria-disabled:hover:bg-transparent max-sm:size-11"
         >
@@ -84,13 +86,16 @@ export function BoardTicketCard({ ticket, memberName, saving, headerAction, note
       {ticket.labels.length > 0 && <LabelChips labels={ticket.labels} limit={2} />}
       <div className="flex min-w-0 items-center justify-between gap-2">
         <PriorityLabel priority={ticket.priority} />
-        <span className="shrink-0" title={assignee ?? 'Unassigned'}>
+        <span className="shrink-0" title={assignee ?? t('common:people.unassigned')}>
           {assignee && ticket.assigneeId ? (
             <Avatar name={assignee} seed={ticket.assigneeId} size="sm" />
           ) : (
             <EmptyAvatar size="sm" />
           )}
-          <span className="sr-only">Assignee: {assignee ?? 'Unassigned'}</span>
+          <span className="sr-only">
+            {t('tickets:row.assigneePrefix')}
+            {assignee ?? t('common:people.unassigned')}
+          </span>
         </span>
       </div>
       {footer}

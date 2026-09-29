@@ -1,4 +1,5 @@
 import { Compass } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import { buttonLinkClasses } from '../components/ui/buttonStyles'
@@ -6,20 +7,21 @@ import { EmptyState } from '../components/ui/States'
 import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export function NotFoundPage() {
-  useDocumentTitle('Page not found')
+  const { t } = useTranslation()
+  useDocumentTitle(t('notFound.title'))
   return (
     <EmptyState
       as="h1"
       icon={Compass}
-      title="Page not found"
+      title={t('notFound.title')}
       className="max-w-xl"
       action={
         <Link to="/" className={buttonLinkClasses('secondary')}>
-          Go to QueueFlow
+          {t('notFound.home')}
         </Link>
       }
     >
-      The page you are looking for does not exist.
+      {t('notFound.body')}
     </EmptyState>
   )
 }

@@ -1,9 +1,12 @@
+import { useTranslation } from 'react-i18next'
+
 import { SkeletonFrame } from '../../../components/ui/States'
 
 /** The dashboard's shape while it loads: your tickets and recent changes, then status and projects. */
 export function DashboardSkeleton() {
+  const { t } = useTranslation('dashboard')
   return (
-    <SkeletonFrame label="Loading dashboard…">
+    <SkeletonFrame label={t('loading')}>
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
         <div className="flex flex-col gap-5">
           <SkeletonCard rows={4} />

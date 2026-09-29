@@ -1,5 +1,6 @@
 import { UserPen } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import { updateMember, type Member } from '../../../api/members'
 import { Alert } from '../../../components/ui/Alert'
@@ -40,6 +41,7 @@ export function EditMemberDialog({
   returnFocus,
   fallbackFocus,
 }: EditMemberDialogProps) {
+  const { t } = useTranslation(['members', 'common'])
   const { authorizedRequest } = useAuth()
   const [name, setName] = useState(member.name)
   const [errors, setErrors] = useState<FormErrors<'name'>>(NO_ERRORS)
@@ -64,12 +66,12 @@ export function EditMemberDialog({
     }
     const trimmed = name.trim()
     if (trimmed === '') {
-      setErrors({ form: null, fields: { name: 'Enter a name.' } })
+      setErrors({ form: null, fields: { name: t('validation.enterName') } })
       setFocusRequest((current) => current + 1)
       return
     }
     if (trimmed.length > NAME_MAX_LENGTH) {
-      setErrors({ form: null, fields: { name: `Name must be at most ${NAME_MAX_LENGTH} characters.` } })
+      setErrors({ form: null, fields: { name: t('validation.nameTooLong', { max: NAME_MAX_LENGTH }) } })
       setFocusRequest((current) => current + 1)
       return
     }
@@ -92,9 +94,9 @@ export function EditMemberDialog({
 
   return (
     <Dialog
-      title="Edit member"
+      title={t('edit.title')}
       icon={UserPen}
-      description="Change how this member's name appears across the workspace."
+      description={t('edit.description')}
       onClose={onClose}
       dismissible={!pending}
       returnFocus={returnFocus}
@@ -110,19 +112,19 @@ export function EditMemberDialog({
                 {member.name}
               </p>
               <p className="truncate text-sm text-ink-muted" title={member.email}>
-                <span className="sr-only">Email: </span>
+                <span className="sr-only">{t('list.emailPrefix')}</span>
                 {member.email}
               </p>
             </div>
           </div>
           <TextField
-            label="Name"
+            label={t('fields.name')}
             name="name"
             autoComplete="off"
             maxLength={NAME_MAX_LENGTH}
             value={name}
             onChange={(event) => setName(event.target.value)}
-            hint="Their email and password stay the same."
+            hint={t('edit.nameHint')}
             error={errors.fields.name}
             disabled={pending}
             required
@@ -131,10 +133,10 @@ export function EditMemberDialog({
         </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose} disabled={pending}>
-            Cancel
+            {t('common:actions.cancel')}
           </Button>
           <Button type="submit" disabled={pending || unchanged} loading={pending}>
-            {pending ? 'Saving…' : 'Save changes'}
+            {pending ? t('common:actions.saving') : t('common:actions.saveChanges')}
           </Button>
         </DialogFooter>
       </form>

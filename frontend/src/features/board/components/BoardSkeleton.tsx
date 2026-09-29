@@ -1,3 +1,5 @@
+import { useTranslation } from 'react-i18next'
+
 import { SkeletonFrame } from '../../../components/ui/States'
 import { BOARD_COLUMN, BOARD_GRID, BOARD_SCROLLER } from './BoardColumns'
 
@@ -5,8 +7,9 @@ const CARDS_PER_COLUMN = [2, 3, 1, 2, 1]
 
 /** The board's five columns while its tickets load, laid out exactly as the real ones. */
 export function BoardSkeleton() {
+  const { t } = useTranslation('tickets')
   return (
-    <SkeletonFrame label="Loading tickets…">
+    <SkeletonFrame label={t('list.loading')}>
       <div className="flex flex-col gap-3">
         <div className="skeleton h-10 w-full max-w-80 sm:h-9" />
         <div className={BOARD_SCROLLER}>

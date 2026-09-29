@@ -1,11 +1,7 @@
+import { useTranslation } from 'react-i18next'
+
 import type { TicketPriority, TicketStatus } from '../../api/tickets'
-import {
-  PRIORITY_LABELS,
-  PRIORITY_TEXT_CLASSES,
-  STATUS_BADGE_CLASSES,
-  STATUS_LABELS,
-  STATUS_TONE,
-} from './ticketDisplay'
+import { PRIORITY_TEXT_CLASSES, STATUS_BADGE_CLASSES, STATUS_TONE } from './ticketDisplay'
 
 /**
  * A status's icon: an outline that fills as the work advances - dashed
@@ -47,12 +43,13 @@ export function StatusIcon({ status, className = 'size-3.5' }: { status: TicketS
 
 /** A small pill with the status's icon and name; the tint only reinforces the text. */
 export function StatusBadge({ status }: { status: TicketStatus }) {
+  const { t } = useTranslation('tickets')
   return (
     <span
       className={`inline-flex h-5 items-center gap-1 rounded-full pr-2 pl-1.5 text-xs font-medium whitespace-nowrap ${STATUS_BADGE_CLASSES[status]}`}
     >
       <StatusIcon status={status} className="size-3" />
-      {STATUS_LABELS[status]}
+      {t(`status.${status}`)}
     </span>
   )
 }
@@ -105,12 +102,13 @@ export function PriorityIcon({
 
 /** The priority's icon and name, never colour alone. */
 export function PriorityLabel({ priority }: { priority: TicketPriority }) {
+  const { t } = useTranslation('tickets')
   return (
     <span className={`inline-flex items-center gap-1.5 text-xs whitespace-nowrap ${PRIORITY_TEXT_CLASSES[priority]}`}>
       <PriorityIcon priority={priority} />
       <span>
-        <span className="sr-only">Priority: </span>
-        {PRIORITY_LABELS[priority]}
+        <span className="sr-only">{t('priorityPrefix')}</span>
+        {t(`priority.${priority}`)}
       </span>
     </span>
   )

@@ -1,4 +1,5 @@
 import { CircleCheck, FolderKanban, History, Inbox } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 
 import type { DashboardResponse } from '../../../api/dashboard'
@@ -30,22 +31,23 @@ export function DashboardPage() {
 }
 
 function Dashboard({ user }: { user: CurrentUser }) {
+  const { t } = useTranslation('dashboard')
   const { state, retry } = useDashboard(user.workspaceId)
   const counts = state.status === 'ready' ? summarize(state.dashboard) : null
 
   return (
     <div className="flex max-w-7xl flex-col gap-6">
       <PageHeader
-        title="Dashboard"
+        title={t('title')}
         description={
           <>
             <WorkspaceName />
             {counts && counts.projects > 0 && (
               <>
                 {' · '}
-                {counts.projects} {counts.projects === 1 ? 'project' : 'projects'}
+                {t('projectCount', { count: counts.projects })}
                 {' · '}
-                {counts.open} open {counts.open === 1 ? 'ticket' : 'tickets'}
+                {t('openTicketCount', { count: counts.open })}
               </>
             )}
           </>
@@ -64,11 +66,12 @@ function summarize(dashboard: DashboardResponse) {
 }
 
 function DashboardContent({ state, retry, user }: { state: DashboardState; retry: () => void; user: CurrentUser }) {
+  const { t } = useTranslation('dashboard')
   switch (state.status) {
     case 'loading':
       return <DashboardSkeleton />
     case 'error':
-      return <LoadError message="The dashboard could not be loaded." reason={state.reason} onRetry={retry} />
+      return <LoadError message={t('loadError')} reason={state.reason} onRetry={retry} />
     case 'ready':
       return state.dashboard.projects.length === 0 ? (
         <DashboardEmptyState role={user.role} />
@@ -86,18 +89,20 @@ function DashboardContent({ state, retry, user }: { state: DashboardState; retry
  * interleave them.)
  */
 function PopulatedDashboard({ dashboard, now }: { dashboard: DashboardResponse; now: number }) {
+  const { t } = useTranslation('dashboard')
   const { total, open } = summarize(dashboard)
 
   const projects = (
     <SectionCard
       id="dashboard-projects"
-      title="Projects"
+      title={t('projects.title')}
       icon={FolderKanban}
       tone="success"
       className="order-4"
       aside={
         <Link to="/app/projects" className="rounded-sm font-medium text-accent underline-offset-4 hover:underline">
-          View all<span className="sr-only"> projects</span>
+          {t('projects.viewAll')}
+          <span className="sr-only">{t('projects.viewAllHidden')}</span>
         </Link>
       }
     >
@@ -108,8 +113,8 @@ function PopulatedDashboard({ dashboard, now }: { dashboard: DashboardResponse; 
   if (total === 0) {
     return (
       <div className="flex max-w-2xl flex-col gap-5">
-        <EmptyState icon={CircleCheck} title="No tickets yet">
-          Tickets created in any project will show up here.
+        <EmptyState icon={CircleCheck} title={t('noTickets.title')}>
+          {t('noTickets.body')}
         </EmptyState>
         {projects}
       </div>
@@ -122,37 +127,41 @@ function PopulatedDashboard({ dashboard, now }: { dashboard: DashboardResponse; 
       <div className="contents xl:flex xl:min-w-0 xl:flex-col xl:gap-5">
         <SectionCard
           id="dashboard-assigned"
-          title="Assigned to you"
+          title={t('assigned.title')}
           icon={Inbox}
           tone="accent"
           primary
-          count={`${assignedToMe.openCount} open`}
+          count={t('assigned.openCount', { count: assignedToMe.openCount })}
           className="order-1"
           footer={
             assignedToMe.openCount > assignedToMe.tickets.length &&
-            `Showing ${assignedToMe.tickets.length} of ${assignedToMe.openCount}`
+            t('assigned.showing', { shown: assignedToMe.tickets.length, total: assignedToMe.openCount })
           }
         >
           {assignedToMe.tickets.length > 0 ? (
             <TicketList tickets={assignedToMe.tickets} detail="priority" now={now} />
           ) : (
-            <EmptyState icon={CircleCheck} title="You're all caught up" tone="plain" as="h3" className="py-8">
+            <EmptyState icon={CircleCheck} title={t('assigned.caughtUp')} tone="plain" as="h3" className="py-8">
               {open === 0 ? (
-                'No open tickets assigned to you.'
+                t('assigned.noOpenAssigned')
               ) : (
                 <>
-                  Nothing assigned to you.
+                  {t('assigned.nothingAssigned')}
                   {dashboard.unassignedOpenCount > 0 &&
-                    ` ${dashboard.unassignedOpenCount} open ${
-                      dashboard.unassignedOpenCount === 1 ? 'ticket is' : 'tickets are'
-                    } unassigned.`}
+                    ` ${t('assigned.unassignedOpen', { count: dashboard.unassignedOpenCount })}`}
                 </>
               )}
             </EmptyState>
           )}
         </SectionCard>
 
-        <SectionCard id="dashboard-recent" title="Recently updated" icon={History} tone="info" className="order-3">
+        <SectionCard
+          id="dashboard-recent"
+          title={t('recent.title')}
+          icon={History}
+          tone="info"
+          className="order-3"
+        >
           <TicketList tickets={dashboard.recentlyUpdated} detail="assignee" now={now} />
         </SectionCard>
       </div>

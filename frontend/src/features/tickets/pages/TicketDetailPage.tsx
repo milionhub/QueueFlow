@@ -1,5 +1,6 @@
 import { AlignLeft, ChevronDown, FileSearch, SlidersHorizontal } from 'lucide-react'
 import { useCallback, useId, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router'
 
 import { isNotFound } from '../../../api/errors'
@@ -29,20 +30,12 @@ import { TicketComments } from '../components/TicketComments'
 import { TicketLabels } from '../components/TicketLabels'
 import { PriorityIcon, StatusIcon } from '../TicketBadges'
 import { ticketChangeError } from '../ticketErrors'
-import { PRIORITY_LABELS, STATUS_LABELS } from '../ticketDisplay'
+import { TICKET_PRIORITIES, TICKET_STATUSES } from '../ticketDisplay'
 import { useTicket } from '../useTicket'
 import { useTicketActivities } from '../useTicketActivities'
 import { useTicketMutation, type TicketMutation } from '../useTicketMutation'
 
 const TITLE_MAX_LENGTH = 255
-const STATUS_OPTIONS: PropertyOption[] = (Object.keys(STATUS_LABELS) as TicketStatus[]).map((value) => ({
-  value,
-  label: STATUS_LABELS[value],
-}))
-const PRIORITY_OPTIONS: PropertyOption[] = (Object.keys(PRIORITY_LABELS) as TicketPriority[]).map((value) => ({
-  value,
-  label: PRIORITY_LABELS[value],
-}))
 
 /** A blank description is no description. */
 function normalizeDescription(value: string | null): string | null {
@@ -60,6 +53,7 @@ function normalizeDescription(value: string | null): string | null {
  * is in the shell's breadcrumbs.
  */
 export function TicketDetailPage() {
+  const { t } = useTranslation('tickets')
   const { project } = useProjectContext()
   const { ticketNumber: rawNumber } = useParams()
   const ticketNumber = parseTicketNumber(rawNumber)
@@ -79,7 +73,7 @@ export function TicketDetailPage() {
       {state.status === 'error' && (
         <div className="flex flex-col gap-5">
           <h1 className="text-xl font-semibold tracking-tight text-ink">{displayKey}</h1>
-          <LoadError message="The ticket could not be loaded." reason={state.reason} onRetry={retry} />
+          <LoadError message={t('detail.loadError')} reason={state.reason} onRetry={retry} />
         </div>
       )}
       {(state.status === 'loading' || state.status === 'idle') && <TicketDetailSkeleton displayKey={displayKey} />}
@@ -114,6 +108,7 @@ interface TicketDetailProps {
  * activity, which the backend records.
  */
 function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps) {
+  const { t } = useTranslation(['tickets', 'common'])
   const { authorizedRequest } = useAuth()
   const activity = useTicketActivities(ticket.id)
   const mutation = useTicketMutation(ticket.id, replace, onTicketGone, activity.reload)
@@ -128,7 +123,7 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
   async function save(part: string, changes: UpdateTicketRequest, message: string): Promise<string | null> {
     const result = await mutation.run(part, () => updateTicket(authorizedRequest, ticket.id, changes))
     if (result === null) {
-      return 'Another change is still being saved. Try again in a moment.'
+      return t('common:errors.busy')
     }
     if (!result.ok) {
       return ticketChangeError(result.error).message
@@ -140,12 +135,12 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
   async function saveTitle(value: string): Promise<string | null> {
     const title = value.trim()
     if (title === '') {
-      return 'Enter a title.'
+      return t('create.enterTitle')
     }
     if (title.length > TITLE_MAX_LENGTH) {
-      return `Title must be at most ${TITLE_MAX_LENGTH} characters.`
+      return t('create.titleTooLong', { max: TITLE_MAX_LENGTH })
     }
-    return title === ticket.title ? null : save('title', { title }, 'Title updated.')
+    return title === ticket.title ? null : save('title', { title }, t('detail.titleUpdated'))
   }
 
   async function saveDescription(value: string): Promise<string | null> {
@@ -153,7 +148,11 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
     if (description === normalizeDescription(ticket.description)) {
       return null
     }
-    return save('description', { description }, description === null ? 'Description removed.' : 'Description updated.')
+    return save(
+      'description',
+      { description },
+      description === null ? t('detail.descriptionRemoved') : t('detail.descriptionUpdated'),
+    )
   }
 
   const description = normalizeDescription(ticket.description)
@@ -165,13 +164,13 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
           <KeyBadge>{ticket.displayKey}</KeyBadge>
         </div>
         <EditableTicketText
-          field="title"
+          editLabel={t('detail.editTitle')}
           value={ticket.title}
           display={<h1 className={titleClasses}>{ticket.title}</h1>}
           whileEditing={<h1 className="sr-only">{ticket.title}</h1>}
           renderInput={({ value, onChange, onKeyDown, error, disabled }) => (
             <TextField
-              label="Title"
+              label={t('fields.title')}
               labelHidden
               name="title"
               autoComplete="off"
@@ -193,7 +192,7 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
       <div className="flex min-w-0 flex-col gap-8">
         <section aria-labelledby="ticket-description" className="min-w-0">
           <EditableTicketText
-            field="description"
+            editLabel={t('detail.editDescription')}
             heading={
               <h2 id="ticket-description" className="flex items-center gap-2 text-sm font-semibold text-ink">
                 <span
@@ -202,11 +201,11 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
                 >
                   <AlignLeft className="size-3.5" strokeWidth={2.25} />
                 </span>
-                Description
+                {t('fields.description')}
               </h2>
             }
             value={description ?? ''}
-            emptyPrompt="Add a description"
+            emptyPrompt={t('detail.addDescription')}
             saveShortcut
             display={
               description && (
@@ -217,7 +216,7 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
             }
             renderInput={({ value, onChange, onKeyDown, error, disabled }) => (
               <TextAreaField
-                label="Description"
+                label={t('fields.description')}
                 labelHidden
                 name="description"
                 rows={6}
@@ -260,6 +259,7 @@ interface TicketPropertiesProps {
  * is duplicated for assistive technology.
  */
 function TicketProperties({ ticket, now, mutation, save, announce }: TicketPropertiesProps) {
+  const { t } = useTranslation(['tickets', 'common'])
   const { members, memberName } = useProjectContext()
   const { user } = useAuth()
   const [moreOpen, setMoreOpen] = useState(false)
@@ -267,11 +267,16 @@ function TicketProperties({ ticket, now, mutation, save, announce }: TicketPrope
   const created = formatRelativeTime(ticket.createdAt, now)
   const updated = formatRelativeTime(ticket.updatedAt, now)
   const busy = mutation.pending !== null
+  const statusOptions: PropertyOption[] = TICKET_STATUSES.map((value) => ({ value, label: t(`status.${value}`) }))
+  const priorityOptions: PropertyOption[] = TICKET_PRIORITIES.map((value) => ({
+    value,
+    label: t(`priority.${value}`),
+  }))
   const assigneeOptions: PropertyOption[] = [
-    { value: '', label: 'Unassigned' },
+    { value: '', label: t('common:people.unassigned') },
     ...members.map((member) => ({
       value: member.id,
-      label: member.id === user?.id ? `${member.name} (you)` : member.name,
+      label: member.id === user?.id ? t('common:people.nameYou', { name: member.name }) : member.name,
     })),
   ]
   // An assignee missing from the loaded members still shows by id, never as "Unassigned".
@@ -290,41 +295,41 @@ function TicketProperties({ ticket, now, mutation, save, announce }: TicketPrope
         className="sr-only xl:not-sr-only xl:-mx-3 xl:-mt-3 xl:mb-2 xl:flex xl:items-center xl:gap-2 xl:rounded-t-lg xl:border-b xl:border-line xl:bg-canvas xl:px-4 xl:py-2.5 xl:text-sm xl:font-semibold xl:text-ink"
       >
         <SlidersHorizontal aria-hidden="true" className="hidden size-4 text-accent xl:block" strokeWidth={2} />
-        Details
+        {t('detail.details')}
       </h2>
       <dl className="flex flex-wrap items-start gap-2 xl:flex-col xl:flex-nowrap xl:items-stretch xl:gap-1">
         <PropertySelect
-          label="Status"
+          label={t('fields.status')}
           value={ticket.status}
-          options={STATUS_OPTIONS}
+          options={statusOptions}
           icon={(value) => <StatusIcon status={value as TicketStatus} />}
           onSave={(value) =>
             save(
               'status',
               { status: value as TicketStatus },
-              `Status changed to ${STATUS_LABELS[value as TicketStatus]}.`,
+              t('detail.statusChanged', { status: t(`status.${value as TicketStatus}`) }),
             )
           }
           saving={mutation.pending === 'status'}
           disabled={busy}
         />
         <PropertySelect
-          label="Priority"
+          label={t('fields.priority')}
           value={ticket.priority}
-          options={PRIORITY_OPTIONS}
+          options={priorityOptions}
           icon={(value) => <PriorityIcon priority={value as TicketPriority} />}
           onSave={(value) =>
             save(
               'priority',
               { priority: value as TicketPriority },
-              `Priority changed to ${PRIORITY_LABELS[value as TicketPriority]}.`,
+              t('detail.priorityChanged', { priority: t(`priority.${value as TicketPriority}`) }),
             )
           }
           saving={mutation.pending === 'priority'}
           disabled={busy}
         />
         <PropertySelect
-          label="Assignee"
+          label={t('fields.assignee')}
           value={ticket.assigneeId ?? ''}
           options={assigneeOptions}
           icon={(value) =>
@@ -334,13 +339,13 @@ function TicketProperties({ ticket, now, mutation, save, announce }: TicketPrope
             save(
               'assignee',
               { assigneeId: value === '' ? null : value },
-              value === '' ? 'Ticket unassigned.' : `Assigned to ${memberName(value)}.`,
+              value === '' ? t('detail.unassigned') : t('detail.assignedTo', { name: memberName(value) }),
             )
           }
           saving={mutation.pending === 'assignee'}
           disabled={busy}
         />
-        <Property term="Labels" wide>
+        <Property term={t('fields.labels')} wide>
           <TicketLabels ticket={ticket} mutation={mutation} announce={announce} />
         </Property>
       </dl>
@@ -354,7 +359,7 @@ function TicketProperties({ ticket, now, mutation, save, announce }: TicketPrope
           onClick={() => setMoreOpen((open) => !open)}
           className="press -ml-2 inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs font-medium text-ink-muted transition-colors hover:bg-canvas-strong hover:text-ink xl:hidden"
         >
-          More details
+          {t('detail.moreDetails')}
           <ChevronDown
             aria-hidden="true"
             className={`size-3.5 transition-transform duration-150 ${moreOpen ? 'rotate-180' : ''}`}
@@ -365,18 +370,18 @@ function TicketProperties({ ticket, now, mutation, save, announce }: TicketPrope
           id={moreId}
           className={`${moreOpen ? 'grid animate-fade-in' : 'hidden'} gap-1 rounded-lg border border-line bg-surface px-3 py-2 xl:grid xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0`}
         >
-          <Property term="Created by">
+          <Property term={t('detail.createdBy')}>
             <span className="inline-flex min-w-0 items-center gap-2">
               <Avatar name={creator} seed={ticket.creatorId} size="xs" />
               <span className="truncate">{creator}</span>
             </span>
           </Property>
-          <Property term="Created">
+          <Property term={t('detail.created')}>
             <time dateTime={ticket.createdAt} title={created.full}>
               {created.full}
             </time>
           </Property>
-          <Property term="Updated">
+          <Property term={t('detail.updated')}>
             <time dateTime={ticket.updatedAt} title={updated.full}>
               {updated.full}
             </time>
@@ -403,27 +408,29 @@ function Property({ term, wide = false, children }: { term: string; wide?: boole
 
 /** Unknown number, invalid address, or another workspace's ticket: the same answer. */
 function TicketNotFound({ displayKey }: { displayKey: string }) {
+  const { t } = useTranslation('tickets')
   const { project } = useProjectContext()
-  usePageTitle('Ticket not found')
+  usePageTitle(t('detail.notFoundDocument'))
   return (
     <EmptyState
       as="h1"
       icon={FileSearch}
-      title={`Ticket ${displayKey} not found`}
+      title={t('detail.notFoundTitle', { key: displayKey })}
       className="max-w-xl"
       action={
         <Link to={projectPath(project.key)} className={buttonLinkClasses('secondary')}>
-          Back to {project.key} tickets
+          {t('detail.backToTickets', { key: project.key })}
         </Link>
       }
     >
-      There is no such ticket in {project.name}.
+      {t('detail.notFoundBody', { name: project.name })}
     </EmptyState>
   )
 }
 
 /** The page's own shape while the ticket loads; the key is known from the address already. */
 function TicketDetailSkeleton({ displayKey }: { displayKey: string }) {
+  const { t } = useTranslation('tickets')
   return (
     <div className="grid grid-cols-1 gap-x-10 gap-y-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
       <div className="flex flex-col gap-2">
@@ -431,7 +438,7 @@ function TicketDetailSkeleton({ displayKey }: { displayKey: string }) {
           <KeyBadge>{displayKey}</KeyBadge>
         </div>
         <h1 className="sr-only">{displayKey}</h1>
-        <SkeletonFrame label="Loading ticket…">
+        <SkeletonFrame label={t('detail.loading')}>
           <div className="flex flex-col gap-6">
             <div className="skeleton h-7 w-3/4" />
             <div className="flex flex-wrap gap-2 xl:hidden">

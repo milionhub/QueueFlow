@@ -1,5 +1,6 @@
 import { CircleAlert, type LucideIcon } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { LoadFailure } from '../../api/errors'
 import { Button } from './Button'
@@ -61,18 +62,19 @@ interface ErrorStateProps {
 
 /** Data that could not be loaded: what failed, why in plain words, and Retry. */
 export function ErrorState({ message, reason, onRetry, size = 'page' }: ErrorStateProps) {
-  const why = reason === 'network' ? 'The server could not be reached.' : 'The server ran into a problem.'
+  const { t } = useTranslation()
+  const why = reason === 'network' ? t('load.serverUnreachable') : t('load.serverProblem')
   if (size === 'inline') {
     return (
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2.5">
         <p role="alert" className="flex min-w-0 flex-1 items-start gap-2 text-sm leading-5 text-danger">
           <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" strokeWidth={2} />
           <span>
-            {message} {why} Please try again.
+            {message} {why} {t('load.pleaseTryAgain')}
           </span>
         </p>
         <Button variant="secondary" size="sm" onClick={onRetry}>
-          Retry
+          {t('actions.retry')}
         </Button>
       </div>
     )
@@ -85,11 +87,13 @@ export function ErrorState({ message, reason, onRetry, size = 'page' }: ErrorSta
         </span>
         <div className="min-w-0">
           <p className="text-sm font-semibold text-ink">{message}</p>
-          <p className="mt-0.5 text-sm leading-6 text-ink-muted">{why} Please try again.</p>
+          <p className="mt-0.5 text-sm leading-6 text-ink-muted">
+            {why} {t('load.pleaseTryAgain')}
+          </p>
         </div>
       </div>
       <Button variant="secondary" onClick={onRetry} className="ml-11">
-        Retry
+        {t('actions.retry')}
       </Button>
     </section>
   )
@@ -102,12 +106,14 @@ export function ErrorState({ message, reason, onRetry, size = 'page' }: ErrorSta
 export function StaleNotice({
   children,
   onRefresh,
-  label = 'Refresh',
+  label,
 }: {
   children: ReactNode
   onRefresh: () => void
+  /** The button's text; "Refresh" by default. */
   label?: string
 }) {
+  const { t } = useTranslation()
   return (
     <p className="flex flex-wrap items-center gap-x-2 text-sm text-ink-muted">
       <CircleAlert aria-hidden="true" className="size-4 shrink-0 text-warning" strokeWidth={2} />
@@ -117,7 +123,7 @@ export function StaleNotice({
         onClick={onRefresh}
         className="rounded-sm font-medium text-accent underline-offset-4 hover:underline"
       >
-        {label}
+        {label ?? t('actions.refresh')}
       </button>
     </p>
   )

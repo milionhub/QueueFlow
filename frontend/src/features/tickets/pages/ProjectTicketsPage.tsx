@@ -1,5 +1,6 @@
 import { ListTodo, Plus, SearchX } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react'
+import { Trans, useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router'
 
 import type { Ticket } from '../../../api/tickets'
@@ -35,6 +36,7 @@ import { useProjectTickets } from '../useProjectTickets'
  * requests.
  */
 export function ProjectTicketsPage() {
+  const { t } = useTranslation(['tickets', 'common'])
   const { project, members, memberName } = useProjectContext()
   const { user } = useAuth()
   const toast = useToast()
@@ -79,7 +81,7 @@ export function ProjectTicketsPage() {
   // The result count, for screen readers, once the filters have settled:
   // announcing on every keystroke of a search would queue one message per
   // character.
-  const resultSummary = filtering ? `${shown.length} of ${tickets.length} tickets shown.` : ''
+  const resultSummary = filtering ? t('list.shownAnnouncement', { shown: shown.length, count: tickets.length }) : ''
   const [announcedSummary, setAnnouncedSummary] = useState('')
   useEffect(() => {
     const timer = setTimeout(() => setAnnouncedSummary(resultSummary), 600)
@@ -100,8 +102,8 @@ export function ProjectTicketsPage() {
   function handleCreated(ticket: Ticket) {
     setCreatingFrom(undefined)
     toast.show({
-      message: `${ticket.displayKey} created.`,
-      action: { label: 'Open', to: ticketPath(ticket.projectKey, ticket.ticketNumber) },
+      message: t('list.created', { key: ticket.displayKey }),
+      action: { label: t('common:actions.open'), to: ticketPath(ticket.projectKey, ticket.ticketNumber) },
     })
     focusNewTicketAfterReload.current = true
     reload()
@@ -117,29 +119,33 @@ export function ProjectTicketsPage() {
       content = <TicketsSkeleton />
       break
     case 'error':
-      content = <LoadError message="The tickets could not be loaded." reason={state.reason} onRetry={retry} />
+      content = <LoadError message={t('list.loadError')} reason={state.reason} onRetry={retry} />
       break
     case 'ready':
       content =
         state.data.length === 0 ? (
           <EmptyState
             icon={ListTodo}
-            title="No tickets yet"
+            title={t('list.emptyTitle')}
             action={
               <Button onClick={openCreate}>
                 <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
-                New ticket
+                {t('list.newTicket')}
               </Button>
             }
             className="max-w-2xl"
           >
-            Tickets track the work in this project. Each one gets a key like{' '}
-            <span className="font-mono text-xs text-ink">{project.key}-1</span>.
+            <Trans
+              t={t}
+              i18nKey="list.emptyBody"
+              values={{ key: project.key }}
+              components={{ key: <span className="font-mono text-xs text-ink" /> }}
+            />
           </EmptyState>
         ) : (
           <div className="flex flex-col gap-3">
             {state.refreshFailed && (
-              <StaleNotice onRefresh={reload}>The list could not be refreshed and may be out of date.</StaleNotice>
+              <StaleNotice onRefresh={reload}>{t('common:load.listOutdated')}</StaleNotice>
             )}
             <TicketFilterBar
               filters={filters}
@@ -151,8 +157,8 @@ export function ProjectTicketsPage() {
               onClear={filtering && shown.length > 0 ? clearFilters : undefined}
               summary={
                 filtering
-                  ? `${shown.length} of ${state.data.length} tickets`
-                  : `${state.data.length} ${state.data.length === 1 ? 'ticket' : 'tickets'}`
+                  ? t('list.filteredCount', { shown: shown.length, count: state.data.length })
+                  : t('list.count', { count: state.data.length })
               }
             />
             {shown.length > 0 ? (
@@ -160,15 +166,14 @@ export function ProjectTicketsPage() {
             ) : (
               <EmptyState
                 icon={SearchX}
-                title="No tickets match these filters"
+                title={t('list.noMatchTitle')}
                 action={
                   <Button variant="secondary" onClick={clearFilters}>
-                    Clear filters
+                    {t('common:actions.clearFilters')}
                   </Button>
                 }
               >
-                Try a different search, or clear the filters to see all {state.data.length}{' '}
-                {state.data.length === 1 ? 'ticket' : 'tickets'}.
+                {t('list.noMatchBody', { count: state.data.length })}
               </EmptyState>
             )}
           </div>
@@ -185,7 +190,7 @@ export function ProjectTicketsPage() {
           hasTickets && (
             <Button id={newTicketId} onClick={openCreate}>
               <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
-              New ticket
+              {t('list.newTicket')}
             </Button>
           )
         }
@@ -207,8 +212,9 @@ export function ProjectTicketsPage() {
 }
 
 function TicketsSkeleton() {
+  const { t } = useTranslation('tickets')
   return (
-    <SkeletonFrame label="Loading tickets…">
+    <SkeletonFrame label={t('list.loading')}>
       <div className="flex flex-col gap-3">
         <div className="skeleton h-9 w-full max-w-80" />
         <div className="divide-y divide-line rounded-lg border border-line bg-surface shadow-xs">

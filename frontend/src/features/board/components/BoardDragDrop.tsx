@@ -13,10 +13,13 @@ import {
   type Droppable,
 } from '@dnd-kit/dom'
 import { DragDropProvider, DragOverlay, KeyboardSensor, PointerSensor, useDragDropManager } from '@dnd-kit/react'
+import type { TFunction } from 'i18next'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 
 import type { Ticket, TicketStatus } from '../../../api/tickets'
-import { STATUS_LABELS } from '../../tickets/ticketDisplay'
+import { i18n } from '../../../i18n'
+import { statusLabel } from '../../tickets/ticketDisplay'
 import { STATUS_ORDER } from '../boardColumns'
 import { BoardCardPreview } from './BoardTicketCard'
 
@@ -48,54 +51,59 @@ function statusOf(target: Droppable | null | undefined): TicketStatus | null {
 
 /**
  * Spoken during a drag, with the ticket's key and the columns' names -
- * never ids. They say what the drag is doing; whether the move was saved
- * is announced by the board once the server has answered.
+ * never ids - in the interface language. They say what the drag is doing;
+ * whether the move was saved is announced by the board once the server has
+ * answered. The instructions are fixed when the plugin is made, so it is
+ * made again when the language changes; the announcements are worded as
+ * they happen.
  */
-const ACCESSIBILITY = {
-  plugin: Accessibility,
-  options: {
-    screenReaderInstructions: {
-      draggable:
-        'To move this ticket to another status, press Space or Enter to pick it up, use the Left and Right arrow ' +
-        'keys to choose a column, then press Space or Enter to drop it there. Press Escape to cancel.',
+function accessibility(t: TFunction<'board'>) {
+  return {
+    plugin: Accessibility,
+    options: {
+      screenReaderInstructions: {
+        draggable: t('dnd.instructions'),
+      },
+      announcements: {
+        dragstart({ operation: { source } }: DragStartEvent) {
+          const ticket = ticketOf(source)
+          return ticket
+            ? t('dnd.pickedUp', { key: ticket.displayKey, status: statusLabel(ticket.status) })
+            : undefined
+        },
+        dragover({ operation: { source, target } }: DragOverEvent) {
+          const ticket = ticketOf(source)
+          const status = statusOf(target)
+          if (!ticket) {
+            return undefined
+          }
+          if (!status) {
+            return t('dnd.notOverColumn', { key: ticket.displayKey })
+          }
+          return status === ticket.status
+            ? t('dnd.overCurrent', { key: ticket.displayKey, status: statusLabel(status) })
+            : t('dnd.over', { key: ticket.displayKey, status: statusLabel(status) })
+        },
+        dragend({ operation: { source, target }, canceled }: DragEndEvent) {
+          const ticket = ticketOf(source)
+          const status = statusOf(target)
+          if (!ticket) {
+            return undefined
+          }
+          if (canceled) {
+            return t('dnd.cancelled', { key: ticket.displayKey, status: statusLabel(ticket.status) })
+          }
+          if (!status) {
+            return t('dnd.droppedOutside', { key: ticket.displayKey, status: statusLabel(ticket.status) })
+          }
+          if (status === ticket.status) {
+            return t('dnd.droppedSame', { key: ticket.displayKey })
+          }
+          return t('dnd.dropped', { key: ticket.displayKey, status: statusLabel(status) })
+        },
+      },
     },
-    announcements: {
-      dragstart({ operation: { source } }: DragStartEvent) {
-        const ticket = ticketOf(source)
-        return ticket ? `Picked up ${ticket.displayKey}, currently in ${STATUS_LABELS[ticket.status]}.` : undefined
-      },
-      dragover({ operation: { source, target } }: DragOverEvent) {
-        const ticket = ticketOf(source)
-        const status = statusOf(target)
-        if (!ticket) {
-          return undefined
-        }
-        if (!status) {
-          return `${ticket.displayKey} is not over a column.`
-        }
-        return status === ticket.status
-          ? `${ticket.displayKey} is over its current column, ${STATUS_LABELS[status]}.`
-          : `${ticket.displayKey} is over ${STATUS_LABELS[status]}.`
-      },
-      dragend({ operation: { source, target }, canceled }: DragEndEvent) {
-        const ticket = ticketOf(source)
-        const status = statusOf(target)
-        if (!ticket) {
-          return undefined
-        }
-        if (canceled) {
-          return `Cancelled. ${ticket.displayKey} stays in ${STATUS_LABELS[ticket.status]}.`
-        }
-        if (!status) {
-          return `Dropped ${ticket.displayKey} outside the columns. It stays in ${STATUS_LABELS[ticket.status]}.`
-        }
-        if (status === ticket.status) {
-          return `Dropped ${ticket.displayKey} in its current column. Nothing changed.`
-        }
-        return `Dropped ${ticket.displayKey}. Moving to ${STATUS_LABELS[status]}.`
-      },
-    },
-  },
+  }
 }
 
 function prefersReducedMotion(): boolean {
@@ -127,6 +135,9 @@ interface BoardDragDropProps {
  * drop animation is off for reduced motion (and brief otherwise).
  */
 export function BoardDragDrop({ onDrop, resetKey, children }: BoardDragDropProps) {
+  const {
+    i18n: { language },
+  } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
   const [reducedMotion] = useState(prefersReducedMotion)
 
@@ -150,18 +161,19 @@ export function BoardDragDrop({ onDrop, resetKey, children }: BoardDragDropProps
   )
 
   // dnd-kit's default plugins, with announcements that name tickets and
-  // columns, a brief (or, for reduced motion, no) drop animation, and
-  // sideways-only auto-scroll: the board scrolls horizontally, and the
-  // page's own scrolling is left alone.
+  // columns (in the interface language - remade when it changes), a brief
+  // (or, for reduced motion, no) drop animation, and sideways-only
+  // auto-scroll: the board scrolls horizontally, and the page's own
+  // scrolling is left alone.
   const plugins = useMemo(
     () => [
-      ACCESSIBILITY,
+      accessibility(i18n.getFixedT(language, 'board')),
       AutoScroller.configure({ threshold: { x: 0.15, y: 0 } }),
       Cursor,
       Feedback.configure({ dropAnimation: reducedMotion ? null : { duration: 150, easing: 'ease-out' } }),
       PreventSelection,
     ],
-    [reducedMotion],
+    [reducedMotion, language],
   )
 
   const endDrag = useRef<(() => void) | null>(null)
