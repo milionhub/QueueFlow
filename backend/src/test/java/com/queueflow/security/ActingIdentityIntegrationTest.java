@@ -207,7 +207,7 @@ class ActingIdentityIntegrationTest {
         workspaces.add(UUID.fromString(read(other, "$.user.workspaceId")));
         String outsider = read(other, "$.accessToken");
         UUID labelId = UUID.fromString(read(perform(juanToken, post("/api/labels"), """
-                {"name": "bug"}
+                {"name": "regression"}
                 """), "$.id"));
 
         assertThat(status(outsider, post("/api/tickets"), """

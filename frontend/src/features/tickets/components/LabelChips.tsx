@@ -1,10 +1,11 @@
 import { X } from 'lucide-react'
 
 import type { Label } from '../../../api/labels'
+import { Spinner } from '../../../components/ui/Spinner'
+import { labelDotClass } from '../ticketDisplay'
 
 const CHIP =
-  'inline-block h-5 max-w-40 truncate rounded border border-line bg-canvas px-1.5 text-xs leading-[1.125rem] ' +
-  'text-ink-muted'
+  'inline-flex h-5 max-w-40 min-w-0 items-center gap-1.5 rounded-full bg-canvas-strong px-2 text-xs text-ink-muted'
 
 interface LabelChipsProps {
   labels: Label[]
@@ -18,7 +19,14 @@ interface LabelChipsProps {
   disabled?: boolean
 }
 
-/** A ticket's labels as small neutral chips, in the order they come (by name). */
+function LabelDot({ name }: { name: string }) {
+  return <span aria-hidden="true" className={`size-1.5 shrink-0 rounded-full ${labelDotClass(name)}`} />
+}
+
+/**
+ * A ticket's labels as soft chips, in the order they come (by name). The
+ * dot's colour follows the label's name; the name itself is the meaning.
+ */
 export function LabelChips({ labels, limit, onRemove, removingId = null, disabled = false }: LabelChipsProps) {
   const shown = limit === undefined ? labels : labels.slice(0, limit)
   const hidden = labels.length - shown.length
@@ -28,8 +36,9 @@ export function LabelChips({ labels, limit, onRemove, removingId = null, disable
         onRemove ? (
           <li
             key={label.id}
-            className="inline-flex h-6 max-w-full items-center gap-0.5 rounded border border-line bg-canvas pl-1.5 text-xs text-ink-muted"
+            className="inline-flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-full bg-canvas-strong pr-0.5 pl-2.5 text-xs text-ink-muted pointer-coarse:h-9"
           >
+            <LabelDot name={label.name} />
             <span className="truncate" title={label.name}>
               {label.name}
             </span>
@@ -38,27 +47,39 @@ export function LabelChips({ labels, limit, onRemove, removingId = null, disable
               onClick={() => onRemove(label)}
               disabled={disabled}
               aria-label={`Remove label ${label.name}`}
-              className="inline-flex size-6 shrink-0 items-center justify-center rounded text-ink-subtle hover:bg-line/60 hover:text-ink disabled:cursor-not-allowed disabled:opacity-60"
+              className="press inline-flex size-6 shrink-0 items-center justify-center rounded-full text-ink-subtle transition-colors hover:bg-line hover:text-ink disabled:cursor-not-allowed disabled:opacity-60 pointer-coarse:size-8"
             >
               {removingId === label.id ? (
-                <span aria-hidden="true" className="text-[10px]">
-                  …
-                </span>
+                <Spinner className="size-3" />
               ) : (
-                <X aria-hidden="true" className="size-3" strokeWidth={2} />
+                <X aria-hidden="true" className="size-3" strokeWidth={2.25} />
               )}
             </button>
           </li>
         ) : (
           <li key={label.id} className={CHIP} title={label.name}>
-            {label.name}
+            <LabelDot name={label.name} />
+            <span className="truncate">{label.name}</span>
           </li>
         ),
       )}
       {hidden > 0 && (
-        <li className="text-xs text-ink-subtle" title={labels.slice(shown.length).map((label) => label.name).join(', ')}>
+        <li
+          className="inline-flex h-5 items-center rounded-full px-1.5 text-xs text-ink-subtle tabular-nums"
+          title={labels
+            .slice(shown.length)
+            .map((label) => label.name)
+            .join(', ')}
+        >
           +{hidden}
-          <span className="sr-only"> more</span>
+          <span className="sr-only">
+            {' '}
+            more:{' '}
+            {labels
+              .slice(shown.length)
+              .map((label) => label.name)
+              .join(', ')}
+          </span>
         </li>
       )}
     </ul>

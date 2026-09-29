@@ -1,9 +1,11 @@
+import { FolderPen, FolderPlus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { createProject, updateProject, type Project, type UpdateProjectRequest } from '../../../api/projects'
 import { Alert } from '../../../components/ui/Alert'
 import { Button } from '../../../components/ui/Button'
-import { Dialog, DialogFooter } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFooter } from '../../../components/ui/Dialog'
+import { KeyBadge } from '../../../components/ui/PageHeader'
 import { TextAreaField } from '../../../components/ui/TextAreaField'
 import { TextField } from '../../../components/ui/TextField'
 import { useAuth } from '../../auth/useAuth'
@@ -145,14 +147,19 @@ export function ProjectFormDialog({
   return (
     <Dialog
       title={editing ? `Edit ${editing.key}` : 'New project'}
-      description={editing ? undefined : 'Projects group your tickets. Every project has a short, permanent key.'}
+      icon={editing ? FolderPen : FolderPlus}
+      description={
+        editing
+          ? `Update ${editing.name}'s name or description.`
+          : 'Projects group your tickets. Every project has a short, permanent key.'
+      }
       onClose={onClose}
       dismissible={!pending}
       returnFocus={returnFocus}
       fallbackFocus={fallbackFocus}
     >
       <form ref={formRef} noValidate aria-busy={pending} onSubmit={handleSubmit}>
-        <div className="flex flex-col gap-5 px-5 py-5">
+        <DialogBody>
           {errors.form && <Alert tone="error">{errors.form}</Alert>}
           <TextField
             label="Name"
@@ -170,7 +177,9 @@ export function ProjectFormDialog({
           {editing ? (
             <div>
               <p className="text-sm font-medium text-ink">Key</p>
-              <p className="mt-1.5 font-mono text-sm text-ink">{editing.key}</p>
+              <p className="mt-1.5">
+                <KeyBadge>{editing.key}</KeyBadge>
+              </p>
               <p className="mt-1 text-xs leading-5 text-ink-muted">
                 Keys can't be changed because they're part of every ticket ID.
               </p>
@@ -197,17 +206,18 @@ export function ProjectFormDialog({
             label="Description"
             name="description"
             hint="Optional."
+            maxRows={8}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             error={errors.fields.description}
             disabled={pending}
           />
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button type="submit" disabled={pending || unchanged}>
+          <Button type="submit" disabled={pending || unchanged} loading={pending}>
             {editing ? (pending ? 'Saving…' : 'Save changes') : pending ? 'Creating…' : 'Create project'}
           </Button>
         </DialogFooter>

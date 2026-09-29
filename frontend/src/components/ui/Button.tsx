@@ -1,34 +1,39 @@
 import type { ButtonHTMLAttributes, Ref } from 'react'
 
-type ButtonVariant = 'primary' | 'secondary' | 'danger'
-type ButtonSize = 'sm' | 'md' | 'lg'
+import { BUTTON_BASE, BUTTON_SIZE_CLASSES, BUTTON_VARIANT_CLASSES, type ButtonVariant } from './buttonStyles'
+import { Spinner } from './Spinner'
+
+type ButtonSize = keyof typeof BUTTON_SIZE_CLASSES
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   ref?: Ref<HTMLButtonElement>
   variant?: ButtonVariant
   /** `lg` matches the height of form inputs; `sm` is for actions inside list rows. */
   size?: ButtonSize
+  /**
+   * A request started by this button is under way: a spinner leads the
+   * text, which should say so too ("Saving…").
+   */
+  loading?: boolean
 }
 
-const VARIANT_CLASSES: Record<ButtonVariant, string> = {
-  primary: 'bg-accent text-white shadow-xs hover:bg-accent-strong',
-  secondary: 'border border-line bg-surface text-ink shadow-xs hover:bg-canvas',
-  /** The confirming action of something that cannot be undone. */
-  danger: 'bg-danger text-white shadow-xs hover:bg-danger/90',
-}
-
-const SIZE_CLASSES: Record<ButtonSize, string> = {
-  sm: 'h-8 px-3',
-  md: 'h-9 px-3.5',
-  lg: 'h-10 px-4',
-}
-
-export function Button({ variant = 'primary', size = 'md', type = 'button', className = '', ...props }: ButtonProps) {
+export function Button({
+  variant = 'primary',
+  size = 'md',
+  type = 'button',
+  loading = false,
+  className = '',
+  children,
+  ...props
+}: ButtonProps) {
   return (
     <button
       type={type}
-      className={`inline-flex items-center justify-center gap-2 rounded-md text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${VARIANT_CLASSES[variant]} ${SIZE_CLASSES[size]} ${className}`}
+      className={`${BUTTON_BASE} ${BUTTON_VARIANT_CLASSES[variant]} ${BUTTON_SIZE_CLASSES[size]} ${className}`}
       {...props}
-    />
+    >
+      {loading && <Spinner className="size-4" />}
+      {children}
+    </button>
   )
 }

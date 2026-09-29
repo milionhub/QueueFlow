@@ -1,34 +1,72 @@
+import { Layers } from 'lucide-react'
+
 import type { DashboardStatusCount } from '../../../api/dashboard'
-import { STATUS_LABELS } from '../../tickets/ticketDisplay'
-import { SectionHeading } from './SectionHeading'
+import { StatusIcon } from '../../tickets/TicketBadges'
+import { STATUS_LABELS, STATUS_TONE } from '../../tickets/ticketDisplay'
+import { SectionCard } from './SectionHeading'
 
 interface StatusSummaryProps {
   statusCounts: DashboardStatusCount[]
   unassignedOpenCount: number
+  className?: string
 }
 
 /**
- * The five statuses and their counts in one strip: two columns on phones,
- * one row from `sm` up.
+ * The five statuses and their counts: a bar of their proportions (a picture
+ * of the numbers below, so hidden from assistive technology) and the list
+ * of counts itself. Nothing but the backend's own counts.
  */
-export function StatusSummary({ statusCounts, unassignedOpenCount }: StatusSummaryProps) {
+export function StatusSummary({ statusCounts, unassignedOpenCount, className }: StatusSummaryProps) {
+  const total = statusCounts.reduce((sum, { count }) => sum + count, 0)
   return (
-    <section aria-labelledby="dashboard-status">
-      <SectionHeading id="dashboard-status" title="Tickets by status">
-        {unassignedOpenCount > 0 && (
-          <span>
+    <SectionCard
+      id="dashboard-status"
+      title="Tickets by status"
+      icon={Layers}
+      tone="review"
+      count={`${total} total`}
+      className={className}
+      footer={
+        unassignedOpenCount > 0 && (
+          <>
             {unassignedOpenCount} open {unassignedOpenCount === 1 ? 'ticket' : 'tickets'} unassigned
-          </span>
-        )}
-      </SectionHeading>
-      <dl className="grid grid-cols-2 rounded-md border border-line bg-surface sm:grid-cols-5 sm:divide-x sm:divide-line">
-        {statusCounts.map(({ status, count }) => (
-          <div key={status} className="flex min-w-0 items-baseline justify-between gap-3 px-4 py-2.5">
-            <dt className="truncate text-sm text-ink-muted">{STATUS_LABELS[status]}</dt>
-            <dd className="text-base font-semibold text-ink tabular-nums">{count}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
+          </>
+        )
+      }
+    >
+      <div className="px-4 pt-4 pb-3">
+        <div aria-hidden="true" className="flex h-2.5 gap-0.5 overflow-hidden rounded-full bg-canvas-strong">
+          {statusCounts
+            .filter(({ count }) => count > 0)
+            .map(({ status, count }) => (
+              <span
+                key={status}
+                className={`min-w-1 first:rounded-l-full last:rounded-r-full ${STATUS_TONE[status].fill}`}
+                style={{ flexGrow: count, flexBasis: 0 }}
+              />
+            ))}
+        </div>
+        <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-0.5 min-[28rem]:grid-cols-2 xl:grid-cols-1">
+          {statusCounts.map(({ status, count }) => (
+            <div key={status} className="flex h-8 min-w-0 items-center gap-2 text-sm">
+              <StatusIcon status={status} />
+              <dt className="min-w-0 flex-1 truncate text-ink-muted">{STATUS_LABELS[status]}</dt>
+              <dd className="flex items-center gap-2">
+                <span className="w-9 text-right text-xs text-ink-subtle tabular-nums">
+                  {total === 0 ? 0 : Math.round((count / total) * 100)}%
+                </span>
+                <span
+                  className={`min-w-7 rounded-full px-2 text-center text-xs leading-5 font-semibold tabular-nums ${
+                    count === 0 ? 'bg-canvas-strong text-ink-subtle' : STATUS_TONE[status].soft
+                  }`}
+                >
+                  {count}
+                </span>
+              </dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </SectionCard>
   )
 }

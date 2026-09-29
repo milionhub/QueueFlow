@@ -1,5 +1,6 @@
-import { useCallback, useState, type ReactNode } from 'react'
-import { Link, useLocation, useParams } from 'react-router'
+import { AlignLeft, ChevronDown, FileSearch, SlidersHorizontal } from 'lucide-react'
+import { useCallback, useId, useState, type ReactNode } from 'react'
+import { Link, useParams } from 'react-router'
 
 import { isNotFound } from '../../../api/errors'
 import {
@@ -9,26 +10,30 @@ import {
   type TicketStatus,
   type UpdateTicketRequest,
 } from '../../../api/tickets'
+import { Avatar, EmptyAvatar } from '../../../components/ui/Avatar'
+import { buttonLinkClasses } from '../../../components/ui/buttonStyles'
 import { LoadError } from '../../../components/ui/LoadError'
+import { KeyBadge } from '../../../components/ui/PageHeader'
+import { EmptyState, SkeletonFrame } from '../../../components/ui/States'
 import { TextAreaField } from '../../../components/ui/TextAreaField'
 import { TextField } from '../../../components/ui/TextField'
 import { usePageTitle } from '../../../hooks/usePageTitle'
 import { formatRelativeTime } from '../../../lib/relativeTime'
-import { isFromBoard, parseTicketNumber, projectBoardPath, projectPath } from '../../../routes/paths'
+import { parseTicketNumber, projectPath } from '../../../routes/paths'
 import { useAuth } from '../../auth/useAuth'
 import { useProjectContext } from '../../projects/projectContext'
 import { EditableTicketText } from '../components/EditableTicketText'
+import { PropertySelect, type PropertyOption } from '../components/PropertySelect'
 import { TicketActivity } from '../components/TicketActivity'
 import { TicketComments } from '../components/TicketComments'
 import { TicketLabels } from '../components/TicketLabels'
-import { PropertySelect, type PropertyOption } from '../components/PropertySelect'
+import { PriorityIcon, StatusIcon } from '../TicketBadges'
 import { ticketChangeError } from '../ticketErrors'
 import { PRIORITY_LABELS, STATUS_LABELS } from '../ticketDisplay'
 import { useTicket } from '../useTicket'
 import { useTicketActivities } from '../useTicketActivities'
 import { useTicketMutation, type TicketMutation } from '../useTicketMutation'
 
-const BLOCK = 'rounded bg-line motion-safe:animate-pulse'
 const TITLE_MAX_LENGTH = 255
 const STATUS_OPTIONS: PropertyOption[] = (Object.keys(STATUS_LABELS) as TicketStatus[]).map((value) => ({
   value,
@@ -50,7 +55,9 @@ function normalizeDescription(value: string | null): string | null {
  * come from ProjectLayout; only the ticket is loaded here. An address whose
  * number is not a positive integer is "not found" without asking the
  * backend. Every field is edited in place and saved on its own; the ticket
- * each save returns replaces the page's copy - no reload.
+ * each save returns replaces the page's copy - no reload. The way back
+ * (to the project's list, or its board when the ticket was opened there)
+ * is in the shell's breadcrumbs.
  */
 export function TicketDetailPage() {
   const { project } = useProjectContext()
@@ -61,22 +68,21 @@ export function TicketDetailPage() {
 
   const ready = state.status === 'ready' ? state : null
   const ticket = ready?.data ?? null
-  usePageTitle(
-    ticket ? ticket.displayKey : null,
-    ticket ? `${ticket.displayKey} ${ticket.title}` : undefined,
-  )
+  usePageTitle(ticket ? ticket.displayKey : null, ticket ? `${ticket.displayKey} ${ticket.title}` : undefined)
 
   if (ticketNumber === null || (state.status === 'error' && isNotFound(state.error))) {
     return <TicketNotFound displayKey={displayKey} />
   }
 
   return (
-    <div className="flex max-w-6xl flex-col gap-5">
-      <BackToProject />
+    <div className="max-w-7xl">
       {state.status === 'error' && (
-        <LoadError message="The ticket could not be loaded." reason={state.reason} onRetry={retry} />
+        <div className="flex flex-col gap-5">
+          <h1 className="text-xl font-semibold tracking-tight text-ink">{displayKey}</h1>
+          <LoadError message="The ticket could not be loaded." reason={state.reason} onRetry={retry} />
+        </div>
       )}
-      {(state.status === 'loading' || state.status === 'idle') && <TicketDetailSkeleton />}
+      {(state.status === 'loading' || state.status === 'idle') && <TicketDetailSkeleton displayKey={displayKey} />}
       {ready && (
         // Keyed by ticket: nothing of one ticket's editing carries over to another.
         <TicketDetail
@@ -91,29 +97,6 @@ export function TicketDetailPage() {
   )
 }
 
-const BACK_LINK = 'w-fit max-w-full truncate text-sm text-ink-muted underline-offset-4 hover:text-ink hover:underline'
-
-/** Back to the board when the ticket was opened from it; otherwise to the project's ticket list. */
-function BackToProject() {
-  const { project } = useProjectContext()
-  const location = useLocation()
-  if (isFromBoard(location.state)) {
-    return (
-      <Link to={projectBoardPath(project.key)} className={BACK_LINK}>
-        <span aria-hidden="true">← </span>
-        Back to <span className="font-mono text-xs">{project.key}</span> board
-      </Link>
-    )
-  }
-  return (
-    <Link to={projectPath(project.key)} className={BACK_LINK}>
-      <span aria-hidden="true">← </span>
-      <span className="font-mono text-xs">{project.key}</span> · {project.name}
-      <span className="sr-only"> (back to the project's tickets)</span>
-    </Link>
-  )
-}
-
 interface TicketDetailProps {
   ticket: Ticket
   now: number
@@ -123,10 +106,12 @@ interface TicketDetailProps {
 }
 
 /**
- * Title, then the details, then the description, comments and activity in
- * one column; from `xl` the details move to a side column. Comments and
- * activity load alongside each other once the ticket is known; every saved
- * change of the ticket reloads the activity, which the backend records.
+ * Key and title, then the properties, then the description, comments and
+ * activity in one column. Below `xl` the properties are a compact row of
+ * chips under the title, with the rest behind "More details"; from `xl`
+ * they are a side panel. Comments and activity load alongside each other
+ * once the ticket is known; every saved change of the ticket reloads the
+ * activity, which the backend records.
  */
 function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps) {
   const { authorizedRequest } = useAuth()
@@ -135,7 +120,7 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
   const [announcement, setAnnouncement] = useState('')
   // The same message twice in a row still changes the live region, so it is announced again.
   const announce = useCallback(
-    (message: string) => setAnnouncement((current) => (current === message ? `${message}\u00a0` : message)),
+    (message: string) => setAnnouncement((current) => (current === message ? `${message} ` : message)),
     [],
   )
 
@@ -172,54 +157,75 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
   }
 
   const description = normalizeDescription(ticket.description)
+  const titleClasses = 'text-xl leading-7 font-semibold tracking-tight break-words text-ink sm:text-2xl sm:leading-8'
   return (
-    <div className="grid grid-cols-1 gap-x-8 gap-y-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:grid-rows-[auto_1fr]">
-      <EditableTicketText
-        field="title"
-        value={ticket.title}
-        display={<h2 className="text-xl leading-8 font-semibold tracking-tight break-words text-ink">{ticket.title}</h2>}
-        renderInput={({ value, onChange, onKeyDown, error, disabled }) => (
-          <TextField
-            label="Title"
-            name="title"
-            autoComplete="off"
-            maxLength={TITLE_MAX_LENGTH}
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={onKeyDown}
-            error={error}
-            disabled={disabled}
-            required
-          />
-        )}
-        onSave={saveTitle}
-        saving={mutation.pending === 'title'}
-        busy={mutation.pending !== null}
-      />
+    <div className="grid grid-cols-1 gap-x-10 gap-y-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
+      <header className="flex min-w-0 flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <KeyBadge>{ticket.displayKey}</KeyBadge>
+        </div>
+        <EditableTicketText
+          field="title"
+          value={ticket.title}
+          display={<h1 className={titleClasses}>{ticket.title}</h1>}
+          whileEditing={<h1 className="sr-only">{ticket.title}</h1>}
+          renderInput={({ value, onChange, onKeyDown, error, disabled }) => (
+            <TextField
+              label="Title"
+              labelHidden
+              name="title"
+              autoComplete="off"
+              maxLength={TITLE_MAX_LENGTH}
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              onKeyDown={onKeyDown}
+              error={error}
+              disabled={disabled}
+              required
+            />
+          )}
+          onSave={saveTitle}
+          saving={mutation.pending === 'title'}
+          busy={mutation.pending !== null}
+        />
+      </header>
       <TicketProperties ticket={ticket} now={now} mutation={mutation} save={save} announce={announce} />
-      <div className="flex min-w-0 flex-col gap-6">
+      <div className="flex min-w-0 flex-col gap-8">
         <section aria-labelledby="ticket-description" className="min-w-0">
-          <h3 id="ticket-description" className="mb-2 text-sm font-semibold text-ink">
-            Description
-          </h3>
           <EditableTicketText
             field="description"
+            heading={
+              <h2 id="ticket-description" className="flex items-center gap-2 text-sm font-semibold text-ink">
+                <span
+                  aria-hidden="true"
+                  className="flex size-6 items-center justify-center rounded-md bg-accent-subtle text-accent"
+                >
+                  <AlignLeft className="size-3.5" strokeWidth={2.25} />
+                </span>
+                Description
+              </h2>
+            }
             value={description ?? ''}
+            emptyPrompt="Add a description"
+            saveShortcut
             display={
-              description ? (
-                <p className="text-sm leading-6 break-words whitespace-pre-wrap text-ink">{description}</p>
-              ) : (
-                <p className="text-sm text-ink-subtle">No description.</p>
+              description && (
+                <p className="text-[15px] leading-7 break-words whitespace-pre-wrap text-ink sm:text-sm sm:leading-6">
+                  {description}
+                </p>
               )
             }
             renderInput={({ value, onChange, onKeyDown, error, disabled }) => (
               <TextAreaField
                 label="Description"
+                labelHidden
                 name="description"
-                rows={8}
+                rows={6}
+                maxRows={20}
                 value={value}
                 onChange={(event) => onChange(event.target.value)}
                 onKeyDown={onKeyDown}
+                aria-keyshortcuts="Control+Enter Meta+Enter Escape"
                 error={error}
                 disabled={disabled}
               />
@@ -227,7 +233,6 @@ function TicketDetail({ ticket, now, replace, onTicketGone }: TicketDetailProps)
             onSave={saveDescription}
             saving={mutation.pending === 'description'}
             busy={mutation.pending !== null}
-            layout="stacked"
           />
         </section>
         <TicketComments ticketId={ticket.id} announce={announce} onTicketGone={onTicketGone} />
@@ -250,11 +255,15 @@ interface TicketPropertiesProps {
 
 /**
  * Status, priority and assignee save as soon as they change; labels are
- * added and removed one by one; the rest never changes.
+ * added and removed one by one; the rest never changes. One set of
+ * controls for every screen size - only their layout changes - so nothing
+ * is duplicated for assistive technology.
  */
 function TicketProperties({ ticket, now, mutation, save, announce }: TicketPropertiesProps) {
   const { members, memberName } = useProjectContext()
   const { user } = useAuth()
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreId = useId()
   const created = formatRelativeTime(ticket.createdAt, now)
   const updated = formatRelativeTime(ticket.updatedAt, now)
   const busy = mutation.pending !== null
@@ -269,20 +278,26 @@ function TicketProperties({ ticket, now, mutation, save, announce }: TicketPrope
   if (ticket.assigneeId && !members.some((member) => member.id === ticket.assigneeId)) {
     assigneeOptions.push({ value: ticket.assigneeId, label: memberName(ticket.assigneeId) })
   }
+  const creator = memberName(ticket.creatorId)
 
   return (
     <section
       aria-labelledby="ticket-details"
-      className="rounded-md border border-line bg-surface px-4 py-4 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start"
+      className="min-w-0 xl:col-start-2 xl:row-span-2 xl:row-start-1 xl:self-start xl:rounded-lg xl:border xl:border-line xl:bg-surface xl:px-3 xl:py-3 xl:shadow-xs"
     >
-      <h3 id="ticket-details" className="text-sm font-semibold text-ink">
+      <h2
+        id="ticket-details"
+        className="sr-only xl:not-sr-only xl:-mx-3 xl:-mt-3 xl:mb-2 xl:flex xl:items-center xl:gap-2 xl:rounded-t-lg xl:border-b xl:border-line xl:bg-canvas xl:px-4 xl:py-2.5 xl:text-sm xl:font-semibold xl:text-ink"
+      >
+        <SlidersHorizontal aria-hidden="true" className="hidden size-4 text-accent xl:block" strokeWidth={2} />
         Details
-      </h3>
-      <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2 xl:grid-cols-1">
+      </h2>
+      <dl className="flex flex-wrap items-start gap-2 xl:flex-col xl:flex-nowrap xl:items-stretch xl:gap-1">
         <PropertySelect
           label="Status"
           value={ticket.status}
           options={STATUS_OPTIONS}
+          icon={(value) => <StatusIcon status={value as TicketStatus} />}
           onSave={(value) =>
             save(
               'status',
@@ -297,6 +312,7 @@ function TicketProperties({ ticket, now, mutation, save, announce }: TicketPrope
           label="Priority"
           value={ticket.priority}
           options={PRIORITY_OPTIONS}
+          icon={(value) => <PriorityIcon priority={value as TicketPriority} />}
           onSave={(value) =>
             save(
               'priority',
@@ -311,6 +327,9 @@ function TicketProperties({ ticket, now, mutation, save, announce }: TicketPrope
           label="Assignee"
           value={ticket.assigneeId ?? ''}
           options={assigneeOptions}
+          icon={(value) =>
+            value ? <Avatar name={memberName(value)} seed={value} size="xs" /> : <EmptyAvatar size="xs" />
+          }
           onSave={(value) =>
             save(
               'assignee',
@@ -321,31 +340,62 @@ function TicketProperties({ ticket, now, mutation, save, announce }: TicketPrope
           saving={mutation.pending === 'assignee'}
           disabled={busy}
         />
-        <Property term="Labels">
+        <Property term="Labels" wide>
           <TicketLabels ticket={ticket} mutation={mutation} announce={announce} />
         </Property>
-        <Property term="Created by">
-          <span className="break-words">{memberName(ticket.creatorId)}</span>
-        </Property>
-        <Property term="Created">
-          <time dateTime={ticket.createdAt} title={created.full}>
-            {created.full}
-          </time>
-        </Property>
-        <Property term="Updated">
-          <time dateTime={ticket.updatedAt} title={updated.full}>
-            {updated.full}
-          </time>
-        </Property>
       </dl>
+
+      {/* Below `xl`: who and when, behind a disclosure. From `xl`: always shown. */}
+      <div className="mt-3 xl:mt-2 xl:border-t xl:border-line xl:pt-2">
+        <button
+          type="button"
+          aria-expanded={moreOpen}
+          aria-controls={moreId}
+          onClick={() => setMoreOpen((open) => !open)}
+          className="press -ml-2 inline-flex h-9 items-center gap-1 rounded-md px-2 text-xs font-medium text-ink-muted transition-colors hover:bg-canvas-strong hover:text-ink xl:hidden"
+        >
+          More details
+          <ChevronDown
+            aria-hidden="true"
+            className={`size-3.5 transition-transform duration-150 ${moreOpen ? 'rotate-180' : ''}`}
+            strokeWidth={2}
+          />
+        </button>
+        <dl
+          id={moreId}
+          className={`${moreOpen ? 'grid animate-fade-in' : 'hidden'} gap-1 rounded-lg border border-line bg-surface px-3 py-2 xl:grid xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0`}
+        >
+          <Property term="Created by">
+            <span className="inline-flex min-w-0 items-center gap-2">
+              <Avatar name={creator} seed={ticket.creatorId} size="xs" />
+              <span className="truncate">{creator}</span>
+            </span>
+          </Property>
+          <Property term="Created">
+            <time dateTime={ticket.createdAt} title={created.full}>
+              {created.full}
+            </time>
+          </Property>
+          <Property term="Updated">
+            <time dateTime={ticket.updatedAt} title={updated.full}>
+              {updated.full}
+            </time>
+          </Property>
+        </dl>
+      </div>
     </section>
   )
 }
 
-function Property({ term, children }: { term: string; children: ReactNode }) {
+/** A read-only (or composite) property: label and value side by side from `xl`, stacked below it. */
+function Property({ term, wide = false, children }: { term: string; wide?: boolean; children: ReactNode }) {
   return (
-    <div className="flex min-w-0 flex-col gap-1">
-      <dt className="text-xs font-medium text-ink-subtle">{term}</dt>
+    <div
+      className={`grid min-w-0 grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-x-2 py-1 xl:min-h-8 ${
+        wide ? 'w-full items-start max-xl:grid-cols-1 xl:items-start xl:pt-1.5' : ''
+      }`}
+    >
+      <dt className={`text-xs font-medium text-ink-muted ${wide ? 'max-xl:sr-only xl:pt-1' : ''}`}>{term}</dt>
       <dd className="min-w-0 text-sm text-ink">{children}</dd>
     </div>
   )
@@ -356,33 +406,58 @@ function TicketNotFound({ displayKey }: { displayKey: string }) {
   const { project } = useProjectContext()
   usePageTitle('Ticket not found')
   return (
-    <section aria-labelledby="ticket-not-found" className="max-w-lg rounded-md border border-line bg-surface px-5 py-4">
-      <h2 id="ticket-not-found" className="text-sm font-semibold break-words text-ink">
-        Ticket {displayKey} not found
-      </h2>
-      <p className="mt-1.5 text-sm leading-6 text-ink-muted">
-        There is no such ticket in {project.name}.{' '}
-        <Link to={projectPath(project.key)} className="font-medium text-accent underline-offset-4 hover:underline">
+    <EmptyState
+      as="h1"
+      icon={FileSearch}
+      title={`Ticket ${displayKey} not found`}
+      className="max-w-xl"
+      action={
+        <Link to={projectPath(project.key)} className={buttonLinkClasses('secondary')}>
           Back to {project.key} tickets
         </Link>
-      </p>
-    </section>
+      }
+    >
+      There is no such ticket in {project.name}.
+    </EmptyState>
   )
 }
 
-function TicketDetailSkeleton() {
+/** The page's own shape while the ticket loads; the key is known from the address already. */
+function TicketDetailSkeleton({ displayKey }: { displayKey: string }) {
   return (
-    <div aria-busy="true">
-      <span className="sr-only" role="status">
-        Loading ticket…
-      </span>
-      <div aria-hidden="true" className="grid grid-cols-1 gap-x-8 gap-y-6 xl:grid-cols-[minmax(0,1fr)_20rem]">
-        <div className="flex flex-col gap-4">
-          <div className={`h-6 w-3/4 ${BLOCK}`} />
-          <div className={`h-3 w-full ${BLOCK}`} />
-          <div className={`h-3 w-5/6 ${BLOCK}`} />
+    <div className="grid grid-cols-1 gap-x-10 gap-y-6 xl:grid-cols-[minmax(0,1fr)_19rem]">
+      <div className="flex flex-col gap-2">
+        <div className="flex">
+          <KeyBadge>{displayKey}</KeyBadge>
         </div>
-        <div className="h-64 rounded-md border border-line bg-surface" />
+        <h1 className="sr-only">{displayKey}</h1>
+        <SkeletonFrame label="Loading ticket…">
+          <div className="flex flex-col gap-6">
+            <div className="skeleton h-7 w-3/4" />
+            <div className="flex flex-wrap gap-2 xl:hidden">
+              {['w-28', 'w-24', 'w-32'].map((width) => (
+                <div key={width} className={`skeleton h-9 ${width} rounded-full!`} />
+              ))}
+            </div>
+            <div className="flex flex-col gap-2.5">
+              <div className="skeleton h-3.5 w-24" />
+              <div className="skeleton h-3 w-full" />
+              <div className="skeleton h-3 w-11/12" />
+              <div className="skeleton h-3 w-2/3" />
+            </div>
+          </div>
+        </SkeletonFrame>
+      </div>
+      <div
+        aria-hidden="true"
+        className="skeleton-delay hidden flex-col gap-3 rounded-lg border border-line bg-surface p-4 shadow-xs xl:row-span-2 xl:flex"
+      >
+        {[1, 2, 3, 4].map((row) => (
+          <div key={row} className="flex items-center gap-3">
+            <div className="skeleton h-3 w-16" />
+            <div className="skeleton h-3 flex-1" />
+          </div>
+        ))}
       </div>
     </div>
   )

@@ -106,6 +106,8 @@ class JwtAuthenticationIntegrationTest {
     void cleanUp() {
         jdbcTemplate.update(
                 "DELETE FROM projects WHERE workspace_id IN (SELECT id FROM workspaces WHERE name = ?)", tag);
+        jdbcTemplate.update(
+                "DELETE FROM labels WHERE workspace_id IN (SELECT id FROM workspaces WHERE name = ?)", tag);
         jdbcTemplate.update("DELETE FROM users WHERE email LIKE ?", tag + "%");
         jdbcTemplate.update("DELETE FROM workspaces WHERE name = ?", tag);
     }

@@ -1,26 +1,31 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 /*
  * QueueFlow design tokens. Each --color-* becomes a Tailwind utility
  * (bg-canvas, text-ink, border-line, ...), so components use roles, not raw
- * palette values. A deliberately neutral, restrained base; the product's
- * full visual design is built on top of it later.
+ * palette values. Layered surfaces: the app sits on `canvas`; cards, lists
+ * and panels are `surface` with a `line` border and a minimal shadow;
+ * overlays (menus, dialogs, a dragged card) carry the larger shadows.
  */
 @theme {
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
-    sans-serif;
-  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
 
   --color-canvas: #f7f7f8;
+  /* Hover on something that already sits on the canvas. */
+  --color-canvas-strong: #efeff1;
   --color-surface: #ffffff;
   --color-line: #e4e4e7;
+  /* Hovered control borders; dashed drop zones. */
+  --color-line-strong: #d4d4d8;
   --color-ink: #18181b;
   --color-ink-muted: #52525b;
+  /* 4.8:1 on white, about 4.5:1 on canvas: never lighten it. */
   --color-ink-subtle: #71717a;
 
   --color-accent: #4052d6;
   --color-accent-strong: #3341b3;
-  /* Selected navigation, avatars: the accent at low intensity. */
+  /* Selected navigation, own comments: the accent at low intensity. */
   --color-accent-subtle: #eef0fc;
 
   --color-success: #15803d;
@@ -28,9 +33,54 @@
   --color-warning: #b45309;
   --color-danger: #b91c1c;
 
-  /* The mobile navigation drawer sliding in (AppLayout). */
+  /*
+   * The semantic palette around the indigo brand. Each hue has a text tone
+   * (at least 5:1 on its own tint) and a very soft tint for surfaces, pills
+   * and icon discs. Colour always reinforces a word or an icon shape; it is
+   * never the only cue.
+   *   indigo (accent) - brand, primary actions, selection, In progress
+   *   cool blue       - To do
+   *   violet          - Review, secondary workflow accents
+   *   green           - Done, success, completed progress
+   *   amber           - attention
+   *   red             - Critical, destructive, errors only
+   *   cyan            - informational context (recent activity)
+   */
+  --color-accent-tint: #e6e9fb;
+  --color-status-backlog: #a1a1aa;
+  --color-status-todo: #3d7ab8;
+  --color-status-todo-text: #2b6199;
+  --color-status-todo-subtle: #e9f1fa;
+  --color-status-review: #6d28d9;
+  --color-status-review-subtle: #f3effd;
+  --color-success-text: #166534;
+  --color-success-subtle: #e8f3ec;
+  --color-warning-subtle: #fdf1e3;
+  --color-danger-subtle: #fbeaea;
+  --color-info: #0e6a82;
+  --color-info-subtle: #e7f5f8;
+  /* The deep brand surface of the sign-in panel. */
+  --color-brand-deep: #1b1e48;
+  --color-brand-deep-raised: #262a5c;
+  --color-brand-deep-line: #353a74;
+
+  /* Motion: brief and functional. Micro 100-150ms, enter 180-220ms, exit 120-150ms. */
+  --ease-snappy: cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-fade-in: queueflow-fade-in 180ms var(--ease-snappy) both;
+  --animate-enter: queueflow-enter 200ms var(--ease-snappy) both;
+  --animate-pop: queueflow-pop 160ms var(--ease-snappy) both;
+  --animate-toast-in: queueflow-toast-in 220ms var(--ease-snappy) both;
+  --animate-toast-out: queueflow-fade-out 140ms ease-in both;
+  --animate-lift: queueflow-lift 150ms var(--ease-snappy) both;
+
+  /* The mobile navigation drawer (AppLayout). */
   @keyframes queueflow-drawer-in {
     from {
+      transform: translateX(-100%);
+    }
+  }
+  @keyframes queueflow-drawer-out {
+    to {
       transform: translateX(-100%);
     }
   }
@@ -44,7 +94,70 @@
       transform: translateX(300%);
     }
   }
+
+  @keyframes queueflow-fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+  @keyframes queueflow-fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+  /* Something new in a list or on the page: fades in from 4px below. */
+  @keyframes queueflow-enter {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+  }
+  /* Menus and popovers, from their origin. */
+  @keyframes queueflow-pop {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+  }
+  @keyframes queueflow-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+  }
+  @keyframes queueflow-dialog-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px) scale(0.98);
+    }
+  }
+  @keyframes queueflow-sheet-up {
+    from {
+      transform: translateY(100%);
+    }
+  }
+  /* A board card picked up by a drag. */
+  @keyframes queueflow-lift {
+    to {
+      transform: scale(1.02);
+    }
+  }
+  @keyframes queueflow-shimmer {
+    from {
+      background-position: 100% 0;
+    }
+    to {
+      background-position: -100% 0;
+    }
+  }
 }
+
+/*
+ * For a focus ring drawn by a component itself (a row link's ::after, the
+ * comment box around its textarea): only while the user is on the keyboard,
+ * like the global one below.
+ */
+@custom-variant keyboard (&:where(:root:not([data-input-modality='pointer']) *));
 
 @layer base {
   html {
@@ -69,6 +182,17 @@
     outline-offset: 2px;
   }
 
+  /*
+   * After a tap or click (lib/inputModality.ts) no keyboard ring either,
+   * even where the browser still matches :focus-visible - a text field, or
+   * the button focus returns to when a dialog closes. Text fields keep
+   * their accent border, so the active field stays clear. The first
+   * navigation key brings the ring back.
+   */
+  :root[data-input-modality='pointer'] :focus-visible {
+    outline: none;
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -77,6 +201,81 @@
       animation-iteration-count: 1 !important;
       transition-duration: 0.01ms !important;
       scroll-behavior: auto !important;
+    }
+  }
+}
+
+/*
+ * Pressed feedback for buttons and tappable rows: a slight scale-down, only
+ * when motion is welcome. With reduced motion nothing moves; the colour
+ * change of the hover/active state still shows the press.
+ */
+@utility press {
+  @media (prefers-reduced-motion: no-preference) {
+    &:active:not(:disabled):not([aria-disabled='true']) {
+      transform: scale(0.98);
+    }
+  }
+}
+
+/*
+ * A loading placeholder block. The shimmer only runs when motion is welcome;
+ * otherwise it is a still, light block.
+ */
+@utility skeleton {
+  border-radius: 0.25rem;
+  background-color: var(--color-line);
+  @media (prefers-reduced-motion: no-preference) {
+    background-image: linear-gradient(
+      90deg,
+      transparent 0%,
+      color-mix(in srgb, var(--color-surface) 55%, transparent) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    background-repeat: no-repeat;
+    animation: queueflow-shimmer 1.4s ease-in-out infinite;
+  }
+}
+
+/* The sign-in brand panel's faint dot grid (AuthLayout): texture, not decoration. */
+@utility auth-dots {
+  background-image: radial-gradient(circle at 1px 1px, rgb(255 255 255 / 0.07) 1px, transparent 0);
+  background-size: 22px 22px;
+}
+
+/* The chevron of a styled native select (fieldStyles.ts). */
+@utility select-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%2371717a' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m4 6 4 4 4-4'/%3E%3C/svg%3E");
+  background-size: 1rem 1rem;
+  background-position: right 0.625rem center;
+  background-repeat: no-repeat;
+}
+
+/*
+ * A skeleton is only shown if loading takes longer than 150ms, so fast loads
+ * go straight from nothing to content instead of flashing placeholders.
+ */
+@utility skeleton-delay {
+  opacity: 0;
+  animation: queueflow-fade-in 150ms ease-out 150ms forwards;
+}
+
+/*
+ * The native <dialog> (Dialog.tsx) enters with a fade and a 4px rise, its
+ * backdrop fades in. Below `sm` it is a bottom sheet that slides up. Exit is
+ * immediate: the dialog closes when React unmounts it.
+ */
+@layer components {
+  dialog.queueflow-dialog[open] {
+    animation: queueflow-dialog-in 200ms var(--ease-snappy);
+  }
+  dialog.queueflow-dialog[open]::backdrop {
+    animation: queueflow-fade-in 200ms ease-out;
+  }
+  @media (width < 40rem) {
+    dialog.queueflow-dialog[open] {
+      animation: queueflow-sheet-up 240ms var(--ease-snappy);
     }
   }
 }

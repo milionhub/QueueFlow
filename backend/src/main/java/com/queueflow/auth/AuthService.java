@@ -12,6 +12,7 @@ import com.queueflow.auth.dto.LoginRequest;
 import com.queueflow.auth.dto.RegisterRequest;
 import com.queueflow.common.exception.InvalidCredentialsException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
+import com.queueflow.label.LabelService;
 import com.queueflow.security.AccessTokenService;
 import com.queueflow.user.EmailAddresses;
 import com.queueflow.user.User;
@@ -25,13 +26,15 @@ import com.queueflow.workspace.WorkspaceRepository;
 /**
  * Registration and login. Works on the repositories directly: registration
  * creates a workspace and its first user as one unit, which no single
- * existing service owns.
+ * existing service owns. The new workspace's starter labels come from
+ * LabelService, which owns labels.
  */
 @Service
 public class AuthService {
 
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
+    private final LabelService labelService;
     private final PasswordEncoder passwordEncoder;
     private final AccessTokenService accessTokenService;
 
@@ -44,19 +47,21 @@ public class AuthService {
     private final String unknownUserPasswordHash;
 
     public AuthService(UserRepository userRepository, WorkspaceRepository workspaceRepository,
-            PasswordEncoder passwordEncoder, AccessTokenService accessTokenService) {
+            LabelService labelService, PasswordEncoder passwordEncoder, AccessTokenService accessTokenService) {
         this.userRepository = userRepository;
         this.workspaceRepository = workspaceRepository;
+        this.labelService = labelService;
         this.passwordEncoder = passwordEncoder;
         this.accessTokenService = accessTokenService;
         this.unknownUserPasswordHash = passwordEncoder.encode(UUID.randomUUID().toString());
     }
 
     /**
-     * Creates a new workspace and its first user, always as ADMIN, then
-     * issues that user's access token. One transaction: any failure after
-     * the workspace insert (including a concurrent registration of the same
-     * email winning the users unique index) rolls the workspace back too.
+     * Creates a new workspace with its default labels and its first user,
+     * always as ADMIN, then issues that user's access token. One
+     * transaction: any failure after the workspace insert (including a
+     * concurrent registration of the same email winning the users unique
+     * index) rolls the workspace and its labels back too.
      */
     @Transactional
     public AuthResponse register(RegisterRequest request) {
@@ -75,6 +80,7 @@ public class AuthService {
         }
 
         Workspace workspace = workspaceRepository.save(new Workspace(workspaceName));
+        labelService.createDefaultLabels(workspace);
         User user = userRepository.save(
                 new User(name, email, passwordEncoder.encode(password), UserRole.ADMIN, workspace));
         return authResponse(user);

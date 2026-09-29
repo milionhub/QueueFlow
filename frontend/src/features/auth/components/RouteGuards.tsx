@@ -1,13 +1,9 @@
-import { Navigate, Outlet, useLocation, type Location } from 'react-router'
+import { Navigate, Outlet } from 'react-router'
 
 import { useAuth } from '../useAuth'
 import { SessionLoadingScreen, SessionUnavailableScreen } from './SessionScreens'
 
-/** Where an unauthenticated visitor was going, kept in the router's location state. */
-interface RedirectState {
-  from?: Pick<Location, 'pathname' | 'search' | 'hash'>
-}
-
+/** Where every sign-in and registration lands: the signed-in user's dashboard. */
 const HOME = '/app'
 
 /**
@@ -17,32 +13,29 @@ const HOME = '/app'
  */
 export function ProtectedRoute() {
   const { status } = useAuth()
-  const location = useLocation()
 
   switch (status) {
     case 'checking':
       return <SessionLoadingScreen />
     case 'unavailable':
       return <SessionUnavailableScreen />
-    case 'unauthenticated': {
-      const state: RedirectState = {
-        from: { pathname: location.pathname, search: location.search, hash: location.hash },
-      }
-      return <Navigate to="/login" replace state={state} />
-    }
+    case 'unauthenticated':
+      return <Navigate to="/login" replace />
     case 'authenticated':
       return <Outlet />
   }
 }
 
 /**
- * Parent route for /login and /register. A signed-in user is sent on - to
- * the page they originally asked for, or /app - which is also what happens
- * right after a successful sign-in or registration.
+ * Parent route for /login and /register. A signed-in user is sent to /app,
+ * which is also what happens right after a successful sign-in or
+ * registration. Deliberately never to the page that was open before: after
+ * a sign-out that page belonged to the previous session - possibly another
+ * user's ticket or project - so every session starts from its own
+ * dashboard.
  */
 export function GuestRoute() {
   const { status } = useAuth()
-  const location = useLocation()
 
   switch (status) {
     case 'checking':
@@ -50,7 +43,7 @@ export function GuestRoute() {
     case 'unavailable':
       return <SessionUnavailableScreen />
     case 'authenticated':
-      return <Navigate to={destination(location.state)} replace />
+      return <Navigate to={HOME} replace />
     case 'unauthenticated':
       return <Outlet />
   }
@@ -70,13 +63,4 @@ export function RootRedirect() {
     case 'unauthenticated':
       return <Navigate to="/login" replace />
   }
-}
-
-/** Only an in-app path the router itself recorded; anything else falls back to /app. */
-function destination(state: unknown): string {
-  const from = (state as RedirectState | null)?.from
-  if (from && typeof from.pathname === 'string' && from.pathname.startsWith('/') && !from.pathname.startsWith('//')) {
-    return `${from.pathname}${from.search ?? ''}${from.hash ?? ''}`
-  }
-  return HOME
 }

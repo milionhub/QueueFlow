@@ -1,33 +1,42 @@
-const BLOCK = 'rounded bg-line motion-safe:animate-pulse'
+import { SkeletonFrame } from '../../../components/ui/States'
 
-/** The dashboard's shape while it loads: context line, status strip, ticket rows, projects. */
+/** The dashboard's shape while it loads: your tickets and recent changes, then status and projects. */
 export function DashboardSkeleton() {
   return (
-    <div aria-busy="true" className="flex flex-col gap-6">
-      <span className="sr-only" role="status">
-        Loading dashboard…
-      </span>
-      <div aria-hidden="true" className="flex flex-col gap-6">
-        <div className={`h-4 w-64 max-w-full ${BLOCK}`} />
-        <div className="h-[46px] rounded-md border border-line bg-surface" />
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-          <SkeletonList rows={4} />
-          <SkeletonList rows={3} />
+    <SkeletonFrame label="Loading dashboard…">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+        <div className="flex flex-col gap-5">
+          <SkeletonCard rows={4} />
+          <SkeletonCard rows={3} />
+        </div>
+        <div className="flex flex-col gap-5">
+          <div className="rounded-lg border border-line bg-surface p-4 shadow-xs">
+            <div className="skeleton h-3.5 w-32" />
+            <div className="skeleton mt-5 h-2 w-full rounded-full" />
+            <div className="mt-4 flex flex-col gap-3">
+              {[1, 2, 3].map((row) => (
+                <div key={row} className="skeleton h-3 w-2/3" />
+              ))}
+            </div>
+          </div>
+          <SkeletonCard rows={2} />
         </div>
       </div>
-    </div>
+    </SkeletonFrame>
   )
 }
 
-function SkeletonList({ rows }: { rows: number }) {
+function SkeletonCard({ rows }: { rows: number }) {
   return (
-    <div>
-      <div className={`mb-2 h-4 w-32 ${BLOCK}`} />
-      <div className="divide-y divide-line rounded-md border border-line bg-surface">
+    <div className="rounded-lg border border-line bg-surface shadow-xs">
+      <div className="flex h-12 items-center border-b border-line px-4">
+        <div className="skeleton h-3.5 w-32" />
+      </div>
+      <div className="divide-y divide-line">
         {Array.from({ length: rows }, (_, index) => (
-          <div key={index} className="flex items-center gap-3 px-4 py-3">
-            <div className={`h-3 w-12 shrink-0 ${BLOCK}`} />
-            <div className={`h-3 flex-1 ${BLOCK}`} style={{ maxWidth: `${60 - index * 8}%` }} />
+          <div key={index} className="flex h-11 items-center gap-3 px-4">
+            <div className="skeleton h-3 w-12 shrink-0" />
+            <div className="skeleton h-3 flex-1" style={{ maxWidth: `${60 - index * 8}%` }} />
           </div>
         ))}
       </div>

@@ -68,6 +68,8 @@ class AuthIntegrationTest {
     void cleanUp() {
         executor.shutdownNow();
         jdbcTemplate.update("DELETE FROM users WHERE lower(email) LIKE ?", tag + "%");
+        jdbcTemplate.update(
+                "DELETE FROM labels WHERE workspace_id IN (SELECT id FROM workspaces WHERE name LIKE ?)", tag + "%");
         jdbcTemplate.update("DELETE FROM workspaces WHERE name LIKE ?", tag + "%");
     }
 
@@ -255,6 +257,43 @@ class AuthIntegrationTest {
         assertThat(statuses).containsExactlyInAnyOrder(201, 409);
         assertThat(usersWithEmail(email("twin"))).isEqualTo(1);
         assertThat(workspacesNamed(tag + " Twin 1") + workspacesNamed(tag + " Twin 2")).isEqualTo(1);
+    }
+
+    /**
+     * Every new workspace starts with its own copy of the default catalog:
+     * real labels, listed by the API, bound by the usual per-workspace name
+     * uniqueness, with custom labels still created as before.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void registrationGivesEachNewWorkspaceItsOwnDefaultLabels() throws Exception {
+        List<String> defaults = List.of("backend", "bug", "documentation", "enhancement", "feature", "frontend",
+                "infrastructure", "performance", "release", "security", "testing", "ux");
+        MvcResult first = register(email("labels1"), tag + " Labels 1");
+        MvcResult second = register(email("labels2"), tag + " Labels 2");
+        String workspaceId = read(first, "$.user.workspaceId");
+        String token = read(first, "$.accessToken");
+
+        MvcResult listed = mockMvc.perform(get("/api/workspaces/{id}/labels", workspaceId)
+                .header("Authorization", "Bearer " + token)).andReturn();
+        assertThat(listed.getResponse().getStatus()).isEqualTo(200);
+        assertThat((List<String>) read(listed, "$[*].name")).containsExactlyElementsOf(defaults);
+        assertThat(jdbcTemplate.queryForList("SELECT name FROM labels WHERE workspace_id = ? ORDER BY name",
+                String.class, UUID.fromString(read(second, "$.user.workspaceId"))))
+                .as("the second workspace has its own labels, not the first one's")
+                .containsExactlyElementsOf(defaults);
+
+        assertThat(createLabel(token, "bug").getResponse().getStatus()).isEqualTo(409);
+        assertThat(createLabel(token, "customer-request").getResponse().getStatus()).isEqualTo(201);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM labels WHERE workspace_id = ?", Integer.class,
+                UUID.fromString(workspaceId))).isEqualTo(defaults.size() + 1);
+    }
+
+    private MvcResult createLabel(String token, String name) throws Exception {
+        return mockMvc.perform(post("/api/labels").header("Authorization", "Bearer " + token)
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"name": "%s"}
+                        """.formatted(name))).andReturn();
     }
 
     @Test

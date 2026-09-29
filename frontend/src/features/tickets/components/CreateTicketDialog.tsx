@@ -1,9 +1,11 @@
+import { TicketPlus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { createTicket, type Ticket, type TicketPriority, type TicketStatus } from '../../../api/tickets'
 import { Alert } from '../../../components/ui/Alert'
 import { Button } from '../../../components/ui/Button'
-import { Dialog, DialogFooter } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFieldGroup, DialogFooter } from '../../../components/ui/Dialog'
+import { KeyBadge } from '../../../components/ui/PageHeader'
 import { SelectField } from '../../../components/ui/SelectField'
 import { TextAreaField } from '../../../components/ui/TextAreaField'
 import { TextField } from '../../../components/ui/TextField'
@@ -100,9 +102,10 @@ export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFo
   return (
     <Dialog
       title="New ticket"
+      icon={TicketPlus}
       description={
         <>
-          In <span className="font-mono text-xs text-ink">{project.key}</span> · {project.name}
+          In <KeyBadge>{project.key}</KeyBadge> {project.name}
         </>
       }
       onClose={onClose}
@@ -112,7 +115,7 @@ export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFo
       size="lg"
     >
       <form ref={formRef} noValidate aria-busy={pending} onSubmit={handleSubmit}>
-        <div className="flex flex-col gap-5 px-5 py-5">
+        <DialogBody>
           {errors.form && <Alert tone="error">{errors.form}</Alert>}
           <TextField
             label="Title"
@@ -130,63 +133,66 @@ export function CreateTicketDialog({ onClose, onCreated, returnFocus, fallbackFo
             label="Description"
             name="description"
             hint="Optional."
-            rows={4}
+            rows={3}
+            maxRows={10}
             value={description}
             onChange={(event) => setDescription(event.target.value)}
             error={errors.fields.description}
             disabled={pending}
           />
-          <div className="grid gap-5 sm:grid-cols-2">
+          <DialogFieldGroup title="Details">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <SelectField
+                label="Status"
+                name="status"
+                value={status}
+                onChange={(event) => setStatus(event.target.value as TicketStatus)}
+                error={errors.fields.status}
+                disabled={pending}
+              >
+                {STATUSES.map((value) => (
+                  <option key={value} value={value}>
+                    {STATUS_LABELS[value]}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
+                label="Priority"
+                name="priority"
+                value={priority}
+                onChange={(event) => setPriority(event.target.value as TicketPriority)}
+                error={errors.fields.priority}
+                disabled={pending}
+              >
+                {PRIORITIES.map((value) => (
+                  <option key={value} value={value}>
+                    {PRIORITY_LABELS[value]}
+                  </option>
+                ))}
+              </SelectField>
+            </div>
             <SelectField
-              label="Status"
-              name="status"
-              value={status}
-              onChange={(event) => setStatus(event.target.value as TicketStatus)}
-              error={errors.fields.status}
+              label="Assignee"
+              name="assigneeId"
+              value={assigneeId}
+              onChange={(event) => setAssigneeId(event.target.value)}
+              error={errors.fields.assigneeId}
               disabled={pending}
             >
-              {STATUSES.map((value) => (
-                <option key={value} value={value}>
-                  {STATUS_LABELS[value]}
+              <option value="">Unassigned</option>
+              {members.map((member) => (
+                <option key={member.id} value={member.id}>
+                  {member.id === user?.id ? `${member.name} (you)` : member.name}
                 </option>
               ))}
             </SelectField>
-            <SelectField
-              label="Priority"
-              name="priority"
-              value={priority}
-              onChange={(event) => setPriority(event.target.value as TicketPriority)}
-              error={errors.fields.priority}
-              disabled={pending}
-            >
-              {PRIORITIES.map((value) => (
-                <option key={value} value={value}>
-                  {PRIORITY_LABELS[value]}
-                </option>
-              ))}
-            </SelectField>
-          </div>
-          <SelectField
-            label="Assignee"
-            name="assigneeId"
-            value={assigneeId}
-            onChange={(event) => setAssigneeId(event.target.value)}
-            error={errors.fields.assigneeId}
-            disabled={pending}
-          >
-            <option value="">Unassigned</option>
-            {members.map((member) => (
-              <option key={member.id} value={member.id}>
-                {member.id === user?.id ? `${member.name} (you)` : member.name}
-              </option>
-            ))}
-          </SelectField>
-        </div>
+          </DialogFieldGroup>
+        </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending} loading={pending}>
             {pending ? 'Creating…' : 'Create ticket'}
           </Button>
         </DialogFooter>

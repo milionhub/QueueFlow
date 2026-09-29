@@ -4,9 +4,26 @@ import { NavLink, useLocation } from 'react-router'
 import { projectBoardPath, projectPath } from '../../../routes/paths'
 import { sharedFilterSearch, type TicketFilters } from '../../tickets/ticketFilters'
 
-const VIEWS: { label: string; icon: LucideIcon; to: (projectKey: string) => string; end: boolean }[] = [
+/** Fetches the board's code ahead of a likely visit (hover or focus of its tab). Loaded once. */
+let boardPrefetched = false
+function prefetchBoard() {
+  if (!boardPrefetched) {
+    boardPrefetched = true
+    void import('../../board/pages/ProjectBoardPage').catch(() => {
+      boardPrefetched = false
+    })
+  }
+}
+
+const VIEWS: {
+  label: string
+  icon: LucideIcon
+  to: (projectKey: string) => string
+  end: boolean
+  prefetch?: () => void
+}[] = [
   { label: 'List', icon: List, to: projectPath, end: true },
-  { label: 'Board', icon: Columns3, to: projectBoardPath, end: false },
+  { label: 'Board', icon: Columns3, to: projectBoardPath, end: false, prefetch: prefetchBoard },
 ]
 
 /**
@@ -23,16 +40,18 @@ export function ProjectViewNav({ projectKey, filters }: { projectKey: string; fi
   const shared = filters ? sharedFilterSearch(filters) : ''
   return (
     <nav aria-label="Project views">
-      <ul className="inline-flex rounded-md border border-line bg-canvas p-0.5">
-        {VIEWS.map(({ label, icon: Icon, to, end }) => {
+      <ul className="inline-flex rounded-lg bg-canvas-strong p-0.5">
+        {VIEWS.map(({ label, icon: Icon, to, end, prefetch }) => {
           const pathname = to(projectKey)
           return (
             <li key={label}>
               <NavLink
                 to={{ pathname, search: pathname === location.pathname ? location.search : shared }}
                 end={end}
+                onPointerEnter={prefetch}
+                onFocus={prefetch}
                 className={({ isActive }) =>
-                  `inline-flex h-8 items-center gap-1.5 rounded px-3 text-sm ${
+                  `press inline-flex h-8 items-center gap-1.5 rounded-md px-3 text-sm transition-[color,background-color,box-shadow] duration-150 pointer-coarse:h-9 ${
                     isActive
                       ? 'bg-surface font-semibold text-ink shadow-xs ring-1 ring-line'
                       : 'font-medium text-ink-muted hover:text-ink'

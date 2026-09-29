@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link } from 'react-router'
 
 import { Alert } from '../../../components/ui/Alert'
 import { Button } from '../../../components/ui/Button'
@@ -28,7 +28,6 @@ const REQUIRED_MESSAGES: Record<RegisterField, string> = {
 export function RegisterPage() {
   useDocumentTitle('Create workspace')
   const { register } = useAuth()
-  const location = useLocation()
 
   const [values, setValues] = useState<Record<RegisterField, string>>({
     name: '',
@@ -41,7 +40,8 @@ export function RegisterPage() {
   const submitting = useRef(false)
 
   function update(field: RegisterField) {
-    return (event: { target: { value: string } }) => setValues((current) => ({ ...current, [field]: event.target.value }))
+    return (event: { target: { value: string } }) =>
+      setValues((current) => ({ ...current, [field]: event.target.value }))
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -80,7 +80,10 @@ export function RegisterPage() {
       footer={
         <>
           Already have an account?{' '}
-          <Link to="/login" state={location.state} className="font-medium text-accent underline-offset-4 hover:underline">
+          <Link
+            to="/login"
+            className="font-medium text-accent underline-offset-4 hover:underline"
+          >
             Sign in
           </Link>
         </>
@@ -130,7 +133,7 @@ export function RegisterPage() {
           error={errors.fields.workspaceName}
           required
         />
-        <Button type="submit" size="lg" disabled={pending} className="mt-1 w-full">
+        <Button type="submit" size="lg" disabled={pending} loading={pending} className="mt-1 w-full">
           {pending ? 'Creating workspace…' : 'Create workspace'}
         </Button>
       </form>

@@ -1,8 +1,13 @@
+import { Plus } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type MouseEvent } from 'react'
 
 import type { Project } from '../../../api/projects'
 import { Button } from '../../../components/ui/Button'
 import { LoadError } from '../../../components/ui/LoadError'
+import { PageHeader } from '../../../components/ui/PageHeader'
+import { StaleNotice } from '../../../components/ui/States'
+import { useToast } from '../../../components/ui/toastContext'
+import { projectPath } from '../../../routes/paths'
 import type { CurrentUser } from '../../auth/types'
 import { useAuth } from '../../auth/useAuth'
 import { WorkspaceName } from '../../workspace/WorkspaceName'
@@ -15,7 +20,8 @@ import { useProjects } from '../useProjects'
 /**
  * /app/projects: the workspace's projects. Everyone can read them; an
  * ADMIN also creates and edits them (the backend enforces the same rule).
- * After a save the list is reloaded, so the order stays the backend's.
+ * After a save the list is reloaded, so the order stays the backend's, and
+ * a toast confirms it - the dialog that did it has closed.
  */
 export function ProjectsPage() {
   const { user } = useAuth()
@@ -27,9 +33,9 @@ export function ProjectsPage() {
 
 function Projects({ user }: { user: CurrentUser }) {
   const { state, retry, reload } = useProjects(user.workspaceId)
+  const toast = useToast()
   const isAdmin = user.role === 'ADMIN'
   const [dialog, setDialog] = useState<{ mode: ProjectFormMode; opener: HTMLElement | null } | null>(null)
-  const [announcement, setAnnouncement] = useState('')
   const newProjectId = useId()
 
   // Creating the first project replaces the empty state (and its button)
@@ -49,7 +55,10 @@ function Projects({ user }: { user: CurrentUser }) {
   function handleSaved(project: Project) {
     const created = dialog?.mode.kind === 'create'
     setDialog(null)
-    setAnnouncement(`Project ${project.key} ${created ? 'created' : 'updated'}.`)
+    toast.show({
+      message: `Project ${project.key} ${created ? 'created' : 'updated'}.`,
+      action: { label: 'Open', to: projectPath(project.key) },
+    })
     focusNewProjectAfterReload.current = created
     reload()
   }
@@ -57,6 +66,8 @@ function Projects({ user }: { user: CurrentUser }) {
   const openCreate = isAdmin
     ? (event: MouseEvent<HTMLButtonElement>) => setDialog({ mode: { kind: 'create' }, opener: event.currentTarget })
     : undefined
+
+  const count = state.status === 'ready' ? state.projects.length : null
 
   let content
   switch (state.status) {
@@ -71,30 +82,9 @@ function Projects({ user }: { user: CurrentUser }) {
         state.projects.length === 0 ? (
           <ProjectsEmptyState onCreate={openCreate} />
         ) : (
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-              <p className="text-sm text-ink-muted">
-                <WorkspaceName />
-                {' · '}
-                {state.projects.length} {state.projects.length === 1 ? 'project' : 'projects'}
-              </p>
-              {openCreate && (
-                <Button id={newProjectId} onClick={openCreate}>
-                  New project
-                </Button>
-              )}
-            </div>
+          <div className="flex flex-col gap-3">
             {state.refreshFailed && (
-              <p className="text-sm text-ink-muted">
-                The list could not be refreshed and may be out of date.{' '}
-                <button
-                  type="button"
-                  onClick={reload}
-                  className="font-medium text-accent underline-offset-4 hover:underline"
-                >
-                  Refresh
-                </button>
-              </p>
+              <StaleNotice onRefresh={reload}>The list could not be refreshed and may be out of date.</StaleNotice>
             )}
             <ProjectList
               projects={state.projects}
@@ -106,11 +96,32 @@ function Projects({ user }: { user: CurrentUser }) {
   }
 
   return (
-    <div className="max-w-4xl">
+    <div className="flex max-w-4xl flex-col gap-6">
+      <PageHeader
+        title="Projects"
+        description={
+          <>
+            <WorkspaceName />
+            {count !== null && (
+              <>
+                {' · '}
+                {count} {count === 1 ? 'project' : 'projects'}
+              </>
+            )}
+          </>
+        }
+        actions={
+          openCreate &&
+          count !== null &&
+          count > 0 && (
+            <Button id={newProjectId} onClick={openCreate}>
+              <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
+              New project
+            </Button>
+          )
+        }
+      />
       {content}
-      <p role="status" className="sr-only">
-        {announcement}
-      </p>
       {isAdmin && dialog && (
         <ProjectFormDialog
           mode={dialog.mode}

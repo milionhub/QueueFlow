@@ -15,6 +15,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -150,6 +151,21 @@ class LabelServiceTest {
         assertThat(response.name()).isEqualTo("backend");
         verify(workspaceRepository).getReferenceById(workspaceId);
         verify(labelRepository).existsByWorkspaceIdAndName(workspaceId, "backend");
+    }
+
+    @Test
+    void createDefaultLabelsSavesTheStarterCatalogInTheGivenWorkspace() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+
+        labelService.createDefaultLabels(workspace);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<Label>> saved = ArgumentCaptor.forClass(List.class);
+        verify(labelRepository).saveAll(saved.capture());
+        assertThat(saved.getValue()).extracting(Label::getName).containsExactly(
+                "frontend", "backend", "bug", "feature", "enhancement", "documentation",
+                "testing", "security", "performance", "ux", "infrastructure", "release");
+        assertThat(saved.getValue()).allSatisfy(label -> assertThat(label.getWorkspace()).isSameAs(workspace));
     }
 
     @Test

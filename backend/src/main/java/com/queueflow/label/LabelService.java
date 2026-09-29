@@ -26,6 +26,17 @@ import com.queueflow.workspace.WorkspaceRepository;
 @Service
 public class LabelService {
 
+    /**
+     * The starter catalog every new workspace gets, so its first tickets can
+     * be labelled straight away. Once created they are ordinary labels,
+     * used exactly like the custom ones a workspace adds later. Only new
+     * workspaces receive them (see createDefaultLabels) - existing ones are
+     * never backfilled.
+     */
+    static final List<String> DEFAULT_LABEL_NAMES = List.of(
+            "frontend", "backend", "bug", "feature", "enhancement", "documentation",
+            "testing", "security", "performance", "ux", "infrastructure", "release");
+
     private final LabelRepository labelRepository;
     private final WorkspaceRepository workspaceRepository;
     private final TicketRepository ticketRepository;
@@ -58,6 +69,20 @@ public class LabelService {
         Label label = new Label(normalizedName, workspace);
         Label saved = labelRepository.save(label);
         return LabelResponse.from(saved);
+    }
+
+    /**
+     * Gives a workspace that has just been created the default catalog
+     * (DEFAULT_LABEL_NAMES). Called by registration inside its transaction,
+     * so a registration that fails leaves no labels behind. The workspace is
+     * brand new and has no labels yet, so no name can collide; the
+     * labels.UNIQUE(workspace_id, name) constraint still guards it.
+     */
+    @Transactional
+    public void createDefaultLabels(Workspace workspace) {
+        labelRepository.saveAll(DEFAULT_LABEL_NAMES.stream()
+                .map(name -> new Label(name, workspace))
+                .toList());
     }
 
     @Transactional(readOnly = true)

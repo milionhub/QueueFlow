@@ -16,6 +16,10 @@ interface PendingMove {
 export interface MoveError {
   ticketId: string
   message: string
+  /** `failed`: the card went back and the move can be retried; `gone`: the ticket no longer exists. */
+  kind: 'failed' | 'gone'
+  /** The status the move was going to. */
+  status: TicketStatus
 }
 
 /**
@@ -169,13 +173,15 @@ export function useBoardTickets(projectId: string): BoardTickets {
         }
         if (isTicketGone(error)) {
           // Deleted, or no longer visible: the list is reloaded so the card goes.
-          setMoveError({ ticketId, message: `${ticket.displayKey} is no longer available.` })
+          setMoveError({ ticketId, message: `${ticket.displayKey} is no longer available.`, kind: 'gone', status })
           reload()
           return 'gone'
         } else {
           setMoveError({
             ticketId,
             message: `Couldn't move ${ticket.displayKey} to ${STATUS_LABELS[status]}: ${ticketChangeError(error).message}`,
+            kind: 'failed',
+            status,
           })
         }
         return 'failed'

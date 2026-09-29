@@ -4,9 +4,7 @@ import { useCurrentWorkspace } from './useCurrentWorkspace'
 export function WorkspaceName() {
   const { status, workspace } = useCurrentWorkspace()
   if (status === 'loading') {
-    return (
-      <span aria-hidden="true" className="inline-block h-3 w-24 rounded bg-line align-middle motion-safe:animate-pulse" />
-    )
+    return <span aria-hidden="true" className="skeleton inline-block h-3 w-24 align-middle" />
   }
   return <span className="font-medium text-ink">{workspace?.name ?? 'Your workspace'}</span>
 }

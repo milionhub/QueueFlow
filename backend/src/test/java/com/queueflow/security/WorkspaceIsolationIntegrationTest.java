@@ -35,8 +35,10 @@ import com.queueflow.workspace.WorkspaceRepository;
  * Multi-tenant isolation over the real stack: HTTP, security chain,
  * services, JPA and PostgreSQL. Two fully populated workspaces - A (Ana, the
  * ADMIN, and Pedro) and B (Bruno) - deliberately share a project key (ECOM)
- * and a label name (bug). Every request here uses a workspace-A token unless
- * stated otherwise; workspace B must behave exactly as if it did not exist.
+ * and a label name (regression, not one of the default labels every new
+ * workspace already has). Every request here uses a workspace-A token
+ * unless stated otherwise; workspace B must behave exactly as if it did not
+ * exist.
  * No @Transactional; both workspaces are deleted afterwards.
  */
 @SpringBootTest
@@ -98,7 +100,7 @@ class WorkspaceIsolationIntegrationTest {
                 {"projectId": "%s", "title": "%s ticket", "status": "TODO", "priority": "LOW"}
                 """.formatted(project, name)));
         UUID label = id(ok(token, post("/api/labels"), """
-                {"name": "bug"}
+                {"name": "regression"}
                 """));
         ok(token, put("/api/tickets/{t}/labels/{l}", ticket, label), null);
         ok(token, patch("/api/tickets/{t}", ticket), """
@@ -208,12 +210,13 @@ class WorkspaceIsolationIntegrationTest {
         assertThat((String) read(ok(a.token(), get("/api/users/by-email").param("email", tag + "-pedro@example.com"),
                 null), "$.id")).isEqualTo(pedroId.toString());
 
-        // Both workspaces have a project ECOM and a label "bug": each caller finds their own.
+        // Both workspaces have a project ECOM and a label "regression": each caller finds their own.
         assertThat((String) read(ok(a.token(), get("/api/projects/by-key").param("key", "ecom"), null), "$.id"))
                 .isEqualTo(a.projectId().toString());
         assertThat((String) read(ok(b.token(), get("/api/projects/by-key").param("key", "ecom"), null), "$.id"))
                 .isEqualTo(b.projectId().toString());
-        assertThat((String) read(ok(a.token(), get("/api/labels/by-name").param("name", "bug"), null), "$.id"))
+        assertThat((String) read(ok(a.token(), get("/api/labels/by-name").param("name", "regression"), null),
+                "$.id"))
                 .isEqualTo(a.labelId().toString());
 
         // A key or name that only exists in B is not found for A.
@@ -322,8 +325,8 @@ class WorkspaceIsolationIntegrationTest {
         assertThat((String) read(label, "$.workspaceId")).isEqualTo(a.workspaceId().toString());
         assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM projects WHERE workspace_id = ?", Integer.class,
                 b.workspaceId())).isEqualTo(1);
-        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM labels WHERE workspace_id = ?", Integer.class,
-                b.workspaceId())).isEqualTo(1);
+        assertThat(jdbcTemplate.queryForObject("SELECT count(*) FROM labels WHERE workspace_id = ? AND name = ?",
+                Integer.class, b.workspaceId(), "sneaky")).isZero();
     }
 
     // ------------------------------------------------------------------

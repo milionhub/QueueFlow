@@ -1,9 +1,11 @@
+import { Plus } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
 
 import { ApiError } from '../../../api/errors'
 import { createLabel, listLabels, type Label } from '../../../api/labels'
 import { addTicketLabel, removeTicketLabel, type Ticket } from '../../../api/tickets'
 import { Button } from '../../../components/ui/Button'
+import { FIELD_CONTROL, SELECT_APPEARANCE } from '../../../components/ui/fieldStyles'
 import { TextField } from '../../../components/ui/TextField'
 import { fieldValidationErrors } from '../../../lib/formErrors'
 import { useResource } from '../../../lib/useResource'
@@ -208,7 +210,7 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
           disabled={busy}
         />
       ) : (
-        <span className="text-sm text-ink-subtle">None</span>
+        <span className="text-sm text-ink-subtle xl:px-0.5">No labels</span>
       )}
       {unattached && (
         <p role="alert" className="text-xs text-danger">
@@ -230,7 +232,15 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
       )}
       {!pickerOpen ? (
         <div>
-          <Button ref={addButtonRef} variant="secondary" size="sm" onClick={openPicker} aria-controls={pickerId}>
+          <Button
+            ref={addButtonRef}
+            variant="ghost"
+            size="sm"
+            onClick={openPicker}
+            aria-controls={pickerId}
+            className="-ml-2 h-7 px-2 text-xs pointer-coarse:h-9"
+          >
+            <Plus aria-hidden="true" className="size-3.5" strokeWidth={2} />
             Add label
           </Button>
         </div>
@@ -240,7 +250,7 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
           ref={pickerRef}
           tabIndex={-1}
           aria-label="Add labels"
-          className="flex flex-col gap-2 rounded-md border border-line p-2.5"
+          className="flex animate-pop flex-col gap-2.5 rounded-lg border border-line bg-surface p-3 shadow-sm outline-none"
         >
           {catalogue.state.status === 'loading' || catalogue.state.status === 'idle' ? (
             <p role="status" className="text-xs text-ink-muted">
@@ -267,7 +277,7 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
                 value=""
                 onChange={(event) => choose(event.target.value)}
                 disabled={busy || creating}
-                className="h-9 w-full rounded-md border border-line bg-surface px-2.5 text-sm text-ink shadow-xs hover:border-ink-subtle/50 focus-visible:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+                className={`${FIELD_CONTROL} ${SELECT_APPEARANCE} h-10 pl-2.5 sm:h-9`}
               >
                 <option value="" disabled>
                   {labels.length === 0
@@ -304,11 +314,11 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
                     disabled={mutation.pending === 'label:create'}
                   />
                   <div className="flex gap-2">
-                    <Button type="submit" size="sm" disabled={busy}>
+                    <Button type="submit" size="sm" disabled={busy} loading={mutation.pending === 'label:create'}>
                       {mutation.pending === 'label:create' ? 'Creating…' : 'Create and add'}
                     </Button>
                     <Button
-                      variant="secondary"
+                      variant="ghost"
                       size="sm"
                       onClick={() => {
                         setCreating(false)
@@ -324,7 +334,7 @@ export function TicketLabels({ ticket, mutation, announce }: TicketLabelsProps) 
               )}
             </>
           )}
-          <div>
+          <div className="flex justify-end">
             <Button variant="secondary" size="sm" onClick={closePicker} disabled={mutation.pending === 'label:create'}>
               Done
             </Button>

@@ -3,7 +3,8 @@ import { useEffect, useId, useRef, useState } from 'react'
 import { useNavigate } from 'react-router'
 
 import { useAuth } from '../../features/auth/useAuth'
-import { initials, ROLE_LABELS } from '../../features/auth/userDisplay'
+import { ROLE_LABELS } from '../../features/auth/userDisplay'
+import { Avatar } from '../ui/Avatar'
 
 /**
  * The signed-in user at the bottom of the sidebar. Opens a small menu with
@@ -59,13 +60,16 @@ export function UserMenu() {
           id={menuId}
           role="menu"
           aria-label="Account"
-          className="absolute inset-x-0 bottom-full mb-1.5 rounded-md border border-line bg-surface p-1 shadow-md"
+          className="absolute inset-x-0 bottom-full mb-1.5 origin-bottom animate-pop rounded-lg border border-line bg-surface p-1 shadow-lg"
         >
-          <div className="px-2 py-1.5">
-            <p className="truncate text-sm font-medium text-ink">{user.name}</p>
-            <p className="truncate text-xs text-ink-muted" title={user.email}>
-              {user.email}
-            </p>
+          <div className="flex items-center gap-2.5 px-2 py-2">
+            <Avatar name={user.name} seed={user.id} size="md" />
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-ink">{user.name}</p>
+              <p className="truncate text-xs text-ink-muted" title={user.email}>
+                {user.email}
+              </p>
+            </div>
           </div>
           <div className="my-1 border-t border-line" />
           <button
@@ -73,7 +77,7 @@ export function UserMenu() {
             type="button"
             role="menuitem"
             onClick={signOut}
-            className="flex h-8 w-full items-center gap-2 rounded px-2 text-sm text-ink hover:bg-canvas focus-visible:bg-canvas"
+            className="flex h-9 w-full items-center gap-2 rounded-md px-2 text-sm text-ink transition-colors hover:bg-canvas-strong focus-visible:bg-canvas-strong pointer-coarse:h-11"
           >
             <LogOut aria-hidden="true" className="size-4 text-ink-muted" strokeWidth={2} />
             Sign out
@@ -88,14 +92,11 @@ export function UserMenu() {
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        className="flex w-full items-center gap-2.5 rounded-md p-2 text-left hover:bg-line/60"
+        className={`press flex w-full items-center gap-2.5 rounded-md p-2 text-left transition-colors hover:bg-canvas-strong ${
+          open ? 'bg-canvas-strong' : ''
+        }`}
       >
-        <span
-          aria-hidden="true"
-          className="inline-flex size-8 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-xs font-semibold text-accent"
-        >
-          {initials(user.name)}
-        </span>
+        <Avatar name={user.name} seed={user.id} size="md" />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium text-ink">{user.name}</span>
           <span className="block truncate text-xs text-ink-muted">{ROLE_LABELS[user.role]}</span>

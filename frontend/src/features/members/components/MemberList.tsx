@@ -1,12 +1,9 @@
+import { ShieldCheck } from 'lucide-react'
+
 import type { Member } from '../../../api/members'
-import { initials, ROLE_LABELS } from '../../auth/userDisplay'
-
-const BLOCK = 'rounded bg-line motion-safe:animate-pulse'
-
-const ROLE_BADGE_CLASSES = {
-  ADMIN: 'border-accent/20 bg-accent-subtle text-accent',
-  MEMBER: 'border-line bg-canvas text-ink-muted',
-} as const
+import { Avatar } from '../../../components/ui/Avatar'
+import { SkeletonFrame } from '../../../components/ui/States'
+import { ROLE_LABELS } from '../../auth/userDisplay'
 
 interface MemberListProps {
   members: Member[]
@@ -16,27 +13,26 @@ interface MemberListProps {
 
 /**
  * The workspace's members in the backend's order: who they are, their
- * email and their role, as text. Read-only - V1 has no member management
+ * email and their role, as text (an Admin also gets a shield icon, so the
+ * role never rests on colour). Read-only - V1 has no member management
  * beyond adding one.
  */
 export function MemberList({ members, currentUserId }: MemberListProps) {
   return (
-    <ul aria-label="Workspace members" className="divide-y divide-line rounded-md border border-line bg-surface">
+    <ul
+      aria-label="Workspace members"
+      className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface shadow-xs"
+    >
       {members.map((member) => (
-        <li key={member.id} className="flex items-center gap-3 px-4 py-3">
-          <span
-            aria-hidden="true"
-            className="flex size-8 shrink-0 items-center justify-center rounded-full bg-accent-subtle text-xs font-semibold text-accent"
-          >
-            {initials(member.name)}
-          </span>
+        <li key={member.id} className="flex min-h-16 items-center gap-3 px-4 py-3">
+          <Avatar name={member.name} seed={member.id} size="md" />
           <div className="min-w-0 flex-1">
             <p className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink">
               <span className="truncate" title={member.name}>
                 {member.name}
               </span>
               {member.id === currentUserId && (
-                <span className="shrink-0 rounded border border-line px-1.5 text-[11px] leading-4 font-medium text-ink-muted">
+                <span className="shrink-0 rounded-full bg-canvas-strong px-2 text-[11px] leading-[18px] font-medium text-ink-muted">
                   You
                 </span>
               )}
@@ -46,8 +42,11 @@ export function MemberList({ members, currentUserId }: MemberListProps) {
             </p>
           </div>
           <span
-            className={`shrink-0 rounded-full border px-2 text-xs leading-5 font-medium ${ROLE_BADGE_CLASSES[member.role]}`}
+            className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium ${
+              member.role === 'ADMIN' ? 'bg-accent-subtle text-accent' : 'bg-canvas-strong text-ink-muted'
+            }`}
           >
+            {member.role === 'ADMIN' && <ShieldCheck aria-hidden="true" className="size-3.5" strokeWidth={2} />}
             <span className="sr-only">Role: </span>
             {ROLE_LABELS[member.role]}
           </span>
@@ -57,28 +56,22 @@ export function MemberList({ members, currentUserId }: MemberListProps) {
   )
 }
 
-/** The page's shape while the members load: context line and a few rows. */
+/** The list's shape while the members load: a few rows as tall as the real ones. */
 export function MembersSkeleton() {
   return (
-    <div aria-busy="true" className="flex flex-col gap-4">
-      <span className="sr-only" role="status">
-        Loading members…
-      </span>
-      <div aria-hidden="true" className="flex flex-col gap-4">
-        <div className={`h-4 w-48 max-w-full ${BLOCK}`} />
-        <div className="divide-y divide-line rounded-md border border-line bg-surface">
-          {[40, 56, 48].map((width) => (
-            <div key={width} className="flex items-center gap-3 px-4 py-3">
-              <div className={`size-8 shrink-0 rounded-full ${BLOCK}`} />
-              <div className="flex flex-1 flex-col gap-2">
-                <div className={`h-3 ${BLOCK}`} style={{ width: `${width}%` }} />
-                <div className={`h-3 ${BLOCK}`} style={{ width: `${width - 12}%` }} />
-              </div>
-              <div className={`h-5 w-14 shrink-0 rounded-full ${BLOCK}`} />
+    <SkeletonFrame label="Loading members…">
+      <div className="divide-y divide-line rounded-lg border border-line bg-surface shadow-xs">
+        {[40, 56, 48].map((width) => (
+          <div key={width} className="flex min-h-16 items-center gap-3 px-4 py-3">
+            <div className="skeleton size-8 shrink-0 rounded-full!" />
+            <div className="flex flex-1 flex-col gap-2">
+              <div className="skeleton h-3" style={{ width: `${width}%` }} />
+              <div className="skeleton h-3" style={{ width: `${width - 12}%` }} />
             </div>
-          ))}
-        </div>
+            <div className="skeleton h-6 w-16 shrink-0 rounded-full!" />
+          </div>
+        ))}
       </div>
-    </div>
+    </SkeletonFrame>
   )
 }

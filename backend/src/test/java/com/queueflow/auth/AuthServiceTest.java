@@ -33,6 +33,7 @@ import com.queueflow.auth.dto.RegisterRequest;
 import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.InvalidCredentialsException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
+import com.queueflow.label.LabelService;
 import com.queueflow.security.AccessTokenService;
 import com.queueflow.security.IssuedAccessToken;
 import com.queueflow.user.User;
@@ -57,6 +58,7 @@ class AuthServiceTest {
 
     private final UserRepository userRepository = mock(UserRepository.class);
     private final WorkspaceRepository workspaceRepository = mock(WorkspaceRepository.class);
+    private final LabelService labelService = mock(LabelService.class);
     private final AccessTokenService accessTokenService = mock(AccessTokenService.class);
     private final PasswordEncoder passwordEncoder = spy(PasswordEncoderFactories.createDelegatingPasswordEncoder());
 
@@ -64,7 +66,8 @@ class AuthServiceTest {
 
     @BeforeEach
     void setUp() {
-        authService = new AuthService(userRepository, workspaceRepository, passwordEncoder, accessTokenService);
+        authService = new AuthService(userRepository, workspaceRepository, labelService, passwordEncoder,
+                accessTokenService);
         clearInvocations(passwordEncoder); // the constructor encodes the unknown-user dummy once
         when(accessTokenService.issue(any())).thenReturn(TOKEN);
         when(workspaceRepository.save(any(Workspace.class))).thenAnswer(call -> withId(call.getArgument(0)));
@@ -83,6 +86,8 @@ class AuthServiceTest {
         ArgumentCaptor<Workspace> workspace = ArgumentCaptor.forClass(Workspace.class);
         verify(workspaceRepository).save(workspace.capture());
         assertThat(workspace.getValue().getName()).isEqualTo("Acme Inc.");
+        // The saved workspace (with its id) gets the starter labels.
+        verify(labelService).createDefaultLabels(workspace.getValue());
 
         ArgumentCaptor<User> user = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(user.capture());
@@ -114,6 +119,7 @@ class AuthServiceTest {
                 .hasMessage("Email is already registered");
 
         verify(workspaceRepository, never()).save(any());
+        verifyNoInteractions(labelService);
         verify(userRepository, never()).save(any());
         verifyNoInteractions(accessTokenService);
     }
@@ -155,6 +161,7 @@ class AuthServiceTest {
         }
         verify(passwordEncoder, never()).encode(anyString());
         verify(workspaceRepository, never()).save(any());
+        verifyNoInteractions(labelService);
     }
 
     @Test
@@ -177,6 +184,7 @@ class AuthServiceTest {
         assertThatThrownBy(() -> authService.register(new RegisterRequest("Ada", "ada@example.com", PASSWORD, "  ")))
                 .isInstanceOf(BusinessRuleViolationException.class).hasMessage("workspaceName must not be blank");
         verify(workspaceRepository, never()).save(any());
+        verifyNoInteractions(labelService);
     }
 
     @Test
@@ -217,6 +225,7 @@ class AuthServiceTest {
                     .hasMessage("email must be a valid email address");
         }
         verify(workspaceRepository, never()).save(any());
+        verifyNoInteractions(labelService);
     }
 
     // ------------------------------------------------------------------

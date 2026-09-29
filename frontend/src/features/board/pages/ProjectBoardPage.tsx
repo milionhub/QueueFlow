@@ -1,13 +1,17 @@
-import { X } from 'lucide-react'
+import { Columns3, Plus, X } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { useSearchParams } from 'react-router'
 
 import type { Ticket, TicketStatus } from '../../../api/tickets'
 import { Button } from '../../../components/ui/Button'
+import { IconButton } from '../../../components/ui/IconButton'
 import { LoadError } from '../../../components/ui/LoadError'
+import { EmptyState, StaleNotice } from '../../../components/ui/States'
+import { useToast } from '../../../components/ui/toastContext'
 import { usePageTitle } from '../../../hooks/usePageTitle'
+import { ticketPath } from '../../../routes/paths'
 import { useAuth } from '../../auth/useAuth'
-import { ProjectViewNav } from '../../projects/components/ProjectViewNav'
+import { ProjectPageHeader } from '../../projects/components/ProjectPageHeader'
 import { useProjectContext } from '../../projects/projectContext'
 import { CreateTicketDialog } from '../../tickets/components/CreateTicketDialog'
 import { TicketFilterBar } from '../../tickets/components/TicketFilterBar'
@@ -26,15 +30,15 @@ import { BoardDragDrop, type DropMethod } from '../components/BoardDragDrop'
 import { BoardSkeleton } from '../components/BoardSkeleton'
 import { BoardTicketCard } from '../components/BoardTicketCard'
 import { MoveTicketMenu } from '../components/MoveTicketMenu'
-import { useBoardTickets } from '../useBoardTickets'
+import { useBoardTickets, type MoveError } from '../useBoardTickets'
 
 /**
  * /app/projects/:projectKey/board: the project's tickets - the same ones
  * as its list - in one column per status. A ticket is moved by dragging it
  * to another column, or with its "Move" control; both take the same path:
  * the card changes column at once and the new status is saved (PATCH,
- * status only); if saving fails it goes back and a message above the
- * board says why. Search and the priority, assignee and label filters
+ * status only); if saving fails it goes back and a toast says why, with
+ * Retry (a ticket that no longer exists is reported above the board). Search and the priority, assignee and label filters
  * are the list's own, in the address, and narrow the board without
  * requests; a status in the address is ignored here (the columns are the
  * statuses). Keyed by project, so nothing of one project's board - moves
@@ -53,6 +57,7 @@ function ProjectBoard() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [creatingFrom, setCreatingFrom] = useState<HTMLElement | null | undefined>(undefined)
   const [announcement, setAnnouncement] = useState('')
+  const toast = useToast()
   const newTicketId = useId()
   usePageTitle(project.name, `${project.key} Board`)
 
@@ -78,9 +83,7 @@ function ProjectBoard() {
   const boardRef = useRef<HTMLDivElement>(null)
   const moveErrorRef = useRef<HTMLDivElement>(null)
   /** Which control of which ticket gets focus - or, for `error`, the move's error message. */
-  const [focusRequest, setFocusRequest] = useState<{ ticketId: string; control: FocusControl; n: number } | null>(
-    null,
-  )
+  const [focusRequest, setFocusRequest] = useState<{ ticketId: string; control: FocusControl; n: number } | null>(null)
   const handledFocusRequest = useRef(0)
   useEffect(() => {
     if (!focusRequest || handledFocusRequest.current === focusRequest.n) {
@@ -123,6 +126,37 @@ function ProjectBoard() {
       followFocus(ticket.id, 'error')
     }
   }
+
+  // A failed move becomes a toast - visible wherever the board is scrolled -
+  // with Retry, which moves the ticket the same way again and brings focus
+  // back to its Move button. A ticket that no longer exists stays reported
+  // above the board, where focus can be put on the message.
+  const reportFailure = useRef<(error: MoveError) => void>(() => {})
+  useEffect(() => {
+    reportFailure.current = (error) => {
+      const ticket = tickets.find((candidate) => candidate.id === error.ticketId)
+      toast.show({
+        tone: 'error',
+        message: error.message,
+        action: ticket
+          ? {
+              label: 'Retry',
+              onClick: () => {
+                // The toast (and its button) goes away: let focus follow the card to its Move button instead.
+                ;(document.activeElement as HTMLElement | null)?.blur()
+                void handleMove(ticket, error.status, 'move')
+              },
+            }
+          : undefined,
+      })
+    }
+  })
+  useEffect(() => {
+    if (moveError?.kind === 'failed') {
+      reportFailure.current(moveError)
+      dismissMoveError()
+    }
+  }, [moveError, dismissMoveError])
 
   function handleDrop(ticketId: string, status: TicketStatus, method: DropMethod) {
     const ticket = tickets.find((candidate) => candidate.id === ticketId)
@@ -171,7 +205,10 @@ function ProjectBoard() {
 
   function handleCreated(ticket: Ticket) {
     setCreatingFrom(undefined)
-    setAnnouncement(`${ticket.displayKey} created.`)
+    toast.show({
+      message: `${ticket.displayKey} created.`,
+      action: { label: 'Open', to: ticketPath(ticket.projectKey, ticket.ticketNumber) },
+    })
     focusNewTicketAfterReload.current = true
     reload()
   }
@@ -188,42 +225,45 @@ function ProjectBoard() {
     case 'ready':
       content =
         state.data.length === 0 ? (
-          <BoardEmptyState projectKey={project.key} onCreate={openCreate} />
+          <EmptyState
+            icon={Columns3}
+            title="No tickets yet"
+            className="max-w-2xl"
+            action={
+              <Button onClick={openCreate}>
+                <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
+                New ticket
+              </Button>
+            }
+          >
+            The board shows this project's tickets in a column for each status. Each ticket gets a key like{' '}
+            <span className="font-mono text-xs text-ink">{project.key}-1</span>.
+          </EmptyState>
         ) : (
           <div className="flex flex-col gap-3">
             {state.refreshFailed && (
-              <p className="text-sm text-ink-muted">
-                The board could not be refreshed and may be out of date.{' '}
-                <button
-                  type="button"
-                  onClick={reload}
-                  className="font-medium text-accent underline-offset-4 hover:underline"
-                >
-                  Refresh
-                </button>
-              </p>
+              <StaleNotice onRefresh={reload}>The board could not be refreshed and may be out of date.</StaleNotice>
             )}
             {moveError && (
               <div
                 ref={moveErrorRef}
                 role="alert"
                 tabIndex={-1}
-                className="flex max-w-3xl items-start gap-3 rounded-md border border-danger/25 bg-danger/5 px-3 py-2.5 text-sm leading-5 text-danger"
+                className="flex max-w-3xl animate-fade-in items-start gap-3 rounded-lg border border-danger/20 bg-danger/5 px-3 py-2.5 text-sm leading-5 text-danger"
               >
                 <p className="min-w-0 flex-1 break-words">{moveError.message}</p>
-                <button
-                  type="button"
+                <IconButton
+                  icon={X}
+                  label="Dismiss"
+                  size="sm"
                   onClick={() => {
                     // The button goes away with the message: focus moves to
                     // the ticket's Move button (if it is still on the board).
                     followFocus(moveError.ticketId, 'move')
                     dismissMoveError()
                   }}
-                  aria-label="Dismiss"
-                  className="-my-1 -mr-1 inline-flex size-7 shrink-0 items-center justify-center rounded text-danger hover:bg-danger/10"
-                >
-                  <X aria-hidden="true" className="size-4" strokeWidth={2} />
-                </button>
+                  className="-my-1 -mr-1 text-danger! hover:bg-danger/10!"
+                />
               </div>
             )}
             <TicketFilterBar
@@ -235,38 +275,47 @@ function ProjectBoard() {
               onFilter={filter}
               onClear={filtering ? clearFilters : undefined}
               hideStatus
+              summary={
+                filtering
+                  ? `${shown.length} of ${state.data.length} tickets`
+                  : `${state.data.length} ${state.data.length === 1 ? 'ticket' : 'tickets'}`
+              }
             />
             {filtering && shown.length === 0 && (
-              <section aria-labelledby="board-no-match" className="rounded-md border border-line bg-surface px-5 py-4">
-                <h2 id="board-no-match" className="text-sm font-semibold text-ink">
-                  No tickets match these filters.
-                </h2>
-                <div className="mt-3">
-                  <Button variant="secondary" size="sm" onClick={clearFilters}>
-                    Clear filters
-                  </Button>
-                </div>
-              </section>
+              <p className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-line bg-surface px-4 py-3 text-sm text-ink-muted shadow-xs">
+                <span className="font-medium text-ink">No tickets match these filters.</span>
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="rounded-sm font-medium text-accent underline-offset-4 hover:underline"
+                >
+                  Clear filters
+                </button>
+              </p>
             )}
-            <div ref={boardRef}>
+            <div ref={boardRef} className="flex flex-col gap-2">
               {/* Any change of the filters ends a drag in progress, as cancelled. */}
               <BoardDragDrop onDrop={handleDrop} resetKey={searchParams.toString()}>
                 <BoardColumns
                   tickets={shown}
                   allTickets={filtering ? tickets : undefined}
                   renderTicket={(ticket) => (
-                    <BoardTicketCard
+                    <MoveTicketMenu
                       ticket={ticket}
-                      memberName={memberName}
                       saving={savingIds.has(ticket.id)}
-                      footer={
-                        <MoveTicketMenu
+                      onMove={(status) => void handleMove(ticket, status, 'move')}
+                    >
+                      {({ trigger, saving, panel }) => (
+                        <BoardTicketCard
                           ticket={ticket}
+                          memberName={memberName}
                           saving={savingIds.has(ticket.id)}
-                          onMove={(status) => void handleMove(ticket, status, 'move')}
+                          headerAction={trigger}
+                          note={saving}
+                          footer={panel}
                         />
-                      }
-                    />
+                      )}
+                    </MoveTicketMenu>
                   )}
                 />
               </BoardDragDrop>
@@ -278,32 +327,20 @@ function ProjectBoard() {
 
   const ticketCount = state.status === 'ready' ? state.data.length : null
   return (
-    <div className="flex min-w-0 flex-col gap-4">
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-3">
-        <div className="min-w-0">
-          <p className="text-sm text-ink-muted">
-            <span className="font-mono text-xs text-ink">{project.key}</span>
-            {ticketCount !== null && (
-              <>
-                {' · '}
-                {filtering && ticketCount > 0 ? `${shown.length} of ` : ''}
-                {ticketCount} {ticketCount === 1 ? 'ticket' : 'tickets'}
-              </>
-            )}
-          </p>
-          {project.description && (
-            <p className="mt-1 max-w-3xl text-sm leading-6 break-words text-ink-muted">{project.description}</p>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <ProjectViewNav projectKey={project.key} filters={filters} />
-          {ticketCount !== null && ticketCount > 0 && (
+    <div className="flex min-w-0 flex-col gap-5">
+      <ProjectPageHeader
+        project={project}
+        filters={filters}
+        action={
+          ticketCount !== null &&
+          ticketCount > 0 && (
             <Button id={newTicketId} onClick={openCreate}>
+              <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
               New ticket
             </Button>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
       {content}
       <p role="status" className="sr-only">
         {announcedSummary}
@@ -324,26 +361,3 @@ function ProjectBoard() {
 }
 
 type FocusControl = 'move' | 'handle' | 'error'
-
-function BoardEmptyState({
-  projectKey,
-  onCreate,
-}: {
-  projectKey: string
-  onCreate: (event: MouseEvent<HTMLButtonElement>) => void
-}) {
-  return (
-    <section aria-labelledby="board-empty" className="max-w-lg rounded-md border border-line bg-surface px-5 py-4">
-      <h2 id="board-empty" className="text-sm font-semibold text-ink">
-        No tickets yet
-      </h2>
-      <p className="mt-1.5 text-sm leading-6 text-ink-muted">
-        The board shows this project's tickets in a column for each status. Each ticket gets a key like{' '}
-        <span className="font-mono text-xs text-ink">{projectKey}-1</span>.
-      </p>
-      <div className="mt-3 border-t border-line pt-3">
-        <Button onClick={onCreate}>New ticket</Button>
-      </div>
-    </section>
-  )
-}

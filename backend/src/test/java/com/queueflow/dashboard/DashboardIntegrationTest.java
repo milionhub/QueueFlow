@@ -98,6 +98,7 @@ class DashboardIntegrationTest {
                     + "WHERE p.workspace_id = ?";
             jdbcTemplate.update("DELETE FROM activities WHERE ticket_id IN (" + tickets + ")", w);
             jdbcTemplate.update("DELETE FROM tickets WHERE id IN (" + tickets + ")", w);
+            jdbcTemplate.update("DELETE FROM labels WHERE workspace_id = ?", w);
             jdbcTemplate.update("DELETE FROM projects WHERE workspace_id = ?", w);
             jdbcTemplate.update("DELETE FROM users WHERE workspace_id = ?", w);
             jdbcTemplate.update("DELETE FROM workspaces WHERE id = ?", w);

@@ -1,4 +1,5 @@
 import type { TicketPriority, TicketStatus } from '../../api/tickets'
+import { stableHash } from '../auth/userDisplay'
 
 /**
  * How ticket statuses and priorities are shown. The API values stay as
@@ -14,13 +15,55 @@ export const STATUS_LABELS: Record<TicketStatus, string> = {
   DONE: 'Done',
 }
 
-/** Three quiet tones: not started, in motion, finished. */
+/**
+ * The status chip's tint and text, and the colour of its icon (and of the
+ * dashboard's status bar). Every status also has its own icon shape, and
+ * its name is always written next to it: colour is never the only cue.
+ */
 export const STATUS_BADGE_CLASSES: Record<TicketStatus, string> = {
-  BACKLOG: 'border-line bg-canvas text-ink-muted',
-  TODO: 'border-line bg-canvas text-ink-muted',
-  IN_PROGRESS: 'border-accent/20 bg-accent-subtle text-accent',
-  REVIEW: 'border-accent/20 bg-accent-subtle text-accent',
-  DONE: 'border-success/20 bg-success/5 text-success',
+  BACKLOG: 'bg-canvas-strong text-ink-muted',
+  TODO: 'bg-status-todo-subtle text-status-todo-text',
+  IN_PROGRESS: 'bg-accent-subtle text-accent',
+  REVIEW: 'bg-status-review-subtle text-status-review',
+  DONE: 'bg-success-subtle text-success-text',
+}
+
+/**
+ * Each status's hue: `text` for its icon, `fill` for bars and dots, `soft`
+ * for tinted discs and pills, `rule` for the thin accent line of a Board
+ * column (an inset shadow, so it never changes the column's size).
+ */
+export const STATUS_TONE: Record<TicketStatus, { text: string; fill: string; soft: string; rule: string }> = {
+  BACKLOG: {
+    text: 'text-status-backlog',
+    fill: 'bg-status-backlog',
+    soft: 'bg-canvas-strong text-ink-muted',
+    rule: 'shadow-[inset_0_3px_0_0_var(--color-status-backlog)]',
+  },
+  TODO: {
+    text: 'text-status-todo',
+    fill: 'bg-status-todo',
+    soft: 'bg-status-todo-subtle text-status-todo-text',
+    rule: 'shadow-[inset_0_3px_0_0_var(--color-status-todo)]',
+  },
+  IN_PROGRESS: {
+    text: 'text-accent',
+    fill: 'bg-accent',
+    soft: 'bg-accent-subtle text-accent',
+    rule: 'shadow-[inset_0_3px_0_0_var(--color-accent)]',
+  },
+  REVIEW: {
+    text: 'text-status-review',
+    fill: 'bg-status-review',
+    soft: 'bg-status-review-subtle text-status-review',
+    rule: 'shadow-[inset_0_3px_0_0_var(--color-status-review)]',
+  },
+  DONE: {
+    text: 'text-success',
+    fill: 'bg-success',
+    soft: 'bg-success-subtle text-success-text',
+    rule: 'shadow-[inset_0_3px_0_0_var(--color-success)]',
+  },
 }
 
 export const PRIORITY_LABELS: Record<TicketPriority, string> = {
@@ -30,10 +73,30 @@ export const PRIORITY_LABELS: Record<TicketPriority, string> = {
   CRITICAL: 'Critical',
 }
 
-/** The dot and the label next to it: only High and Critical draw attention. */
-export const PRIORITY_CLASSES: Record<TicketPriority, { dot: string; label: string }> = {
-  LOW: { dot: 'border border-ink-subtle', label: 'text-ink-subtle' },
-  MEDIUM: { dot: 'bg-ink-subtle', label: 'text-ink-muted' },
-  HIGH: { dot: 'bg-warning', label: 'text-ink' },
-  CRITICAL: { dot: 'bg-danger', label: 'font-medium text-danger' },
+/** The label next to the priority icon: only High and Critical draw attention. */
+export const PRIORITY_TEXT_CLASSES: Record<TicketPriority, string> = {
+  LOW: 'text-ink-muted',
+  MEDIUM: 'text-ink-muted',
+  HIGH: 'text-ink',
+  CRITICAL: 'font-medium text-danger',
+}
+
+/**
+ * The soft dot of a label chip, picked from the label's name. Labels have
+ * no colour in the backend: this is only presentation, and the same name
+ * always gets the same dot.
+ */
+const LABEL_DOTS = [
+  'bg-[#6173e0]',
+  'bg-[#2f9e62]',
+  'bg-[#d08a1f]',
+  'bg-[#9061e0]',
+  'bg-[#2b93b3]',
+  'bg-[#d9536f]',
+  'bg-[#7c8798]',
+  'bg-[#7a9a2c]',
+] as const
+
+export function labelDotClass(name: string): string {
+  return LABEL_DOTS[stableHash(name) % LABEL_DOTS.length]
 }

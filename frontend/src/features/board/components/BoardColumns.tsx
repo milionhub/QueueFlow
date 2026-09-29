@@ -1,9 +1,10 @@
 import { pointerIntersection } from '@dnd-kit/collision'
 import { useDragOperation, useDroppable } from '@dnd-kit/react'
-import { useId, useMemo, type ReactNode } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 
 import type { Ticket, TicketStatus } from '../../../api/tickets'
-import { STATUS_LABELS } from '../../tickets/ticketDisplay'
+import { StatusIcon } from '../../tickets/TicketBadges'
+import { STATUS_LABELS, STATUS_TONE } from '../../tickets/ticketDisplay'
 import { groupByStatus, STATUS_ORDER } from '../boardColumns'
 import type { CardDragData, ColumnDropData } from './BoardDragDrop'
 
@@ -28,7 +29,7 @@ export const BOARD_GRID =
   'grid grid-cols-[repeat(5,minmax(85%,1fr))] gap-3 sm:grid-cols-[repeat(5,minmax(15rem,1fr))] ' +
   'xl:grid-cols-[repeat(5,minmax(11.5rem,1fr))]'
 export const BOARD_COLUMN =
-  'relative flex min-h-40 min-w-0 flex-col gap-2 rounded-md border border-line bg-canvas p-2 max-sm:snap-start'
+  'relative flex min-h-40 min-w-0 flex-col gap-2 rounded-lg border border-line bg-canvas-strong/60 p-2 max-sm:snap-start'
 
 interface BoardColumnsProps {
   /** The tickets to show (the filtered ones, while filtering). */
@@ -43,20 +44,113 @@ interface BoardColumnsProps {
 export function BoardColumns({ tickets, allTickets, renderTicket }: BoardColumnsProps) {
   const columns = useMemo(() => groupByStatus(tickets), [tickets])
   const totals = useMemo(() => (allTickets ? groupByStatus(allTickets) : null), [allTickets])
+  const scrollerRef = useRef<HTMLDivElement>(null)
   return (
-    <div className={BOARD_SCROLLER} data-board-scroller="">
-      <div className={BOARD_GRID}>
-        {STATUS_ORDER.map((status) => (
-          <BoardColumn
-            key={status}
-            status={status}
-            tickets={columns[status]}
-            total={totals ? totals[status].length : null}
-            renderTicket={renderTicket}
-          />
-        ))}
+    <>
+      <ColumnJump
+        scrollerRef={scrollerRef}
+        counts={STATUS_ORDER.map((status) => ({ status, count: columns[status].length }))}
+      />
+      <div ref={scrollerRef} className={BOARD_SCROLLER} data-board-scroller="">
+        <div className={BOARD_GRID}>
+          {STATUS_ORDER.map((status) => (
+            <BoardColumn
+              key={status}
+              status={status}
+              tickets={columns[status]}
+              total={totals ? totals[status].length : null}
+              renderTicket={renderTicket}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+    </>
+  )
+}
+
+/**
+ * Phones only: a row of the five columns with their counts, above the
+ * board. Each jumps the board to its column; the one in view is marked
+ * (aria-current). Outside the board's scroller, so dragging is unaffected.
+ */
+function ColumnJump({
+  scrollerRef,
+  counts,
+}: {
+  scrollerRef: RefObject<HTMLDivElement | null>
+  counts: { status: TicketStatus; count: number }[]
+}) {
+  const [inView, setInView] = useState<TicketStatus>(STATUS_ORDER[0])
+
+  useEffect(() => {
+    const scroller = scrollerRef.current
+    if (!scroller) {
+      return
+    }
+    let frame = 0
+    function update() {
+      frame = 0
+      if (!scroller) {
+        return
+      }
+      const left = scroller.getBoundingClientRect().left
+      let nearest: TicketStatus = STATUS_ORDER[0]
+      let distance = Infinity
+      for (const column of scroller.querySelectorAll<HTMLElement>('[data-board-column]')) {
+        const offset = Math.abs(column.getBoundingClientRect().left - left - 16)
+        if (offset < distance) {
+          distance = offset
+          nearest = column.dataset.boardColumn as TicketStatus
+        }
+      }
+      setInView(nearest)
+    }
+    function onScroll() {
+      if (!frame) {
+        frame = window.requestAnimationFrame(update)
+      }
+    }
+    scroller.addEventListener('scroll', onScroll, { passive: true })
+    return () => {
+      scroller.removeEventListener('scroll', onScroll)
+      window.cancelAnimationFrame(frame)
+    }
+  }, [scrollerRef])
+
+  function jump(status: TicketStatus) {
+    const scroller = scrollerRef.current
+    const column = scroller?.querySelector<HTMLElement>(`[data-board-column="${status}"]`)
+    if (!scroller || !column) {
+      return
+    }
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const left = column.getBoundingClientRect().left - scroller.getBoundingClientRect().left + scroller.scrollLeft
+    scroller.scrollTo({ left: left - 16, behavior: reduced ? 'auto' : 'smooth' })
+  }
+
+  return (
+    <nav aria-label="Board columns" className="-mx-4 overflow-x-auto px-4 sm:hidden">
+      <ul className="flex w-max gap-1.5 pb-1">
+        {counts.map(({ status, count }) => (
+          <li key={status}>
+            <button
+              type="button"
+              aria-current={inView === status ? 'true' : undefined}
+              onClick={() => jump(status)}
+              className={`press inline-flex h-9 items-center gap-1.5 rounded-full border px-3 text-xs font-medium whitespace-nowrap transition-colors ${
+                inView === status
+                  ? 'border-ink/15 bg-surface text-ink shadow-xs'
+                  : 'border-transparent bg-canvas-strong text-ink-muted hover:text-ink'
+              }`}
+            >
+              <StatusIcon status={status} className="size-3" />
+              {STATUS_LABELS[status]}
+              <span className="text-ink-subtle tabular-nums">{count}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </nav>
   )
 }
 
@@ -122,19 +216,23 @@ function BoardColumn({ status, tickets, total, renderTicket }: BoardColumnProps)
       ref={ref}
       aria-labelledby={headingId}
       data-board-column={status}
-      className={`${BOARD_COLUMN} ${receiving ? 'border-accent bg-accent-subtle outline-2 outline-accent' : ''}`}
+      className={`${BOARD_COLUMN} transition-colors duration-150 ${STATUS_TONE[status].rule} ${receiving ? 'border-accent bg-accent-subtle outline-2 outline-accent' : ''}`}
     >
       {receiving && (
         <p
           aria-hidden="true"
-          className="pointer-events-none absolute inset-x-2 top-9 z-10 rounded bg-accent px-2 py-1.5 text-center text-xs font-medium text-white shadow-sm"
+          className="pointer-events-none absolute inset-x-2 top-9 z-10 animate-fade-in rounded-md bg-accent px-2 py-1.5 text-center text-xs font-medium text-white shadow-md"
         >
           Drop to move to {STATUS_LABELS[status]}
         </p>
       )}
-      <h2 id={headingId} className="flex items-center justify-between gap-2 px-1 pt-0.5 text-sm font-semibold text-ink">
-        <span className="truncate">{STATUS_LABELS[status]}</span>
-        <span aria-hidden="true" className="shrink-0 text-xs font-medium text-ink-subtle tabular-nums">
+      <h2 id={headingId} className="flex items-center gap-2 px-1 pt-0.5 text-sm font-semibold text-ink">
+        <StatusIcon status={status} />
+        <span className="min-w-0 truncate">{STATUS_LABELS[status]}</span>
+        <span
+          aria-hidden="true"
+          className={`ml-auto shrink-0 rounded-full px-2 text-xs leading-5 font-semibold tabular-nums ${STATUS_TONE[status].soft}`}
+        >
           {total === null ? count : `${count} of ${total}`}
         </span>
         <span className="sr-only">
@@ -152,7 +250,9 @@ function BoardColumn({ status, tickets, total, renderTicket }: BoardColumnProps)
           ))}
         </ul>
       ) : (
-        <p className="px-1 py-3 text-xs text-ink-subtle">{total ? 'No matching tickets' : 'No tickets'}</p>
+        <p className="flex min-h-20 items-center justify-center rounded-md border border-dashed border-line-strong px-2 text-center text-xs text-ink-subtle">
+          {total ? 'No matching tickets' : 'No tickets'}
+        </p>
       )}
     </section>
   )

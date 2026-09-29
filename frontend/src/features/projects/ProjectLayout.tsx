@@ -1,18 +1,20 @@
+import { FolderSearch } from 'lucide-react'
 import { useMemo } from 'react'
 import { Link, Navigate, Outlet, useLocation, useParams } from 'react-router'
 
 import { isNotFound } from '../../api/errors'
 import { listMembers } from '../../api/members'
 import { getProjectByKey } from '../../api/projects'
+import { buttonLinkClasses } from '../../components/ui/buttonStyles'
 import { LoadError } from '../../components/ui/LoadError'
+import { EmptyState, SkeletonFrame } from '../../components/ui/States'
 import { usePageTitle } from '../../hooks/usePageTitle'
+import { useShellProject } from '../../hooks/useShellProject'
 import { useResource } from '../../lib/useResource'
 import { PROJECTS_PATH } from '../../routes/paths'
 import type { CurrentUser } from '../auth/types'
 import { useAuth } from '../auth/useAuth'
 import { ProjectContext, type ProjectContextValue } from './projectContext'
-
-const BLOCK = 'rounded bg-line motion-safe:animate-pulse'
 
 /**
  * /app/projects/:projectKey and everything below it. Loads the project by
@@ -50,6 +52,9 @@ function ProjectContextLoader({ user }: { user: CurrentUser }) {
   const project = projectState.status === 'ready' ? projectState.data : null
   const members = membersState.status === 'ready' ? membersState.data : null
 
+  // The breadcrumbs show the project's name as soon as it is known.
+  useShellProject(project)
+
   const context = useMemo<ProjectContextValue | null>(() => {
     if (!project || !members) {
       return null
@@ -63,12 +68,20 @@ function ProjectContextLoader({ user }: { user: CurrentUser }) {
       return <ProjectNotFound />
     }
     return (
-      <LoadError message="The project could not be loaded." reason={projectState.reason} onRetry={projectResource.retry} />
+      <LoadError
+        message="The project could not be loaded."
+        reason={projectState.reason}
+        onRetry={projectResource.retry}
+      />
     )
   }
   if (membersState.status === 'error') {
     return (
-      <LoadError message="The project could not be loaded." reason={membersState.reason} onRetry={membersResource.retry} />
+      <LoadError
+        message="The project could not be loaded."
+        reason={membersState.reason}
+        onRetry={membersResource.retry}
+      />
     )
   }
   if (!context) {
@@ -93,41 +106,45 @@ function ProjectContextLoader({ user }: { user: CurrentUser }) {
 function ProjectNotFound() {
   usePageTitle('Project not found')
   return (
-    <section aria-labelledby="project-not-found" className="max-w-lg rounded-md border border-line bg-surface px-5 py-4">
-      <h2 id="project-not-found" className="text-sm font-semibold text-ink">
-        Project not found
-      </h2>
-      <p className="mt-1.5 text-sm leading-6 text-ink-muted">
-        There is no project with this key in your workspace.{' '}
-        <Link to={PROJECTS_PATH} className="font-medium text-accent underline-offset-4 hover:underline">
+    <EmptyState
+      as="h1"
+      icon={FolderSearch}
+      title="Project not found"
+      action={
+        <Link to={PROJECTS_PATH} className={buttonLinkClasses('secondary')}>
           Back to Projects
         </Link>
-      </p>
-    </section>
+      }
+      className="max-w-xl"
+    >
+      There is no project with this key in your workspace.
+    </EmptyState>
   )
 }
 
 /**
- * A project page loading: also shown by the router while a lazily loaded
- * project page (the board) arrives on a direct visit or a refresh.
+ * A project page loading: its header and a few rows. Also shown by the
+ * router while a lazily loaded project page (the board) arrives on a
+ * direct visit or a refresh.
  */
 export function ProjectSkeleton() {
   return (
-    <div aria-busy="true" className="max-w-6xl">
-      <span className="sr-only" role="status">
-        Loading project…
-      </span>
-      <div aria-hidden="true" className="flex flex-col gap-4">
-        <div className={`h-4 w-56 max-w-full ${BLOCK}`} />
-        <div className="divide-y divide-line rounded-md border border-line bg-surface">
-          {[60, 45, 52].map((width) => (
-            <div key={width} className="flex items-center gap-3 px-4 py-3">
-              <div className={`h-3 w-14 shrink-0 ${BLOCK}`} />
-              <div className={`h-3 ${BLOCK}`} style={{ width: `${width}%` }} />
+    <SkeletonFrame label="Loading project…" className="max-w-7xl">
+      <div className="flex flex-col gap-5">
+        <div className="flex flex-col gap-2.5">
+          <div className="skeleton h-4 w-12" />
+          <div className="skeleton h-7 w-56 max-w-full" />
+        </div>
+        <div className="skeleton h-9 w-full max-w-md" />
+        <div className="divide-y divide-line rounded-lg border border-line bg-surface shadow-xs">
+          {[60, 45, 52, 38].map((width) => (
+            <div key={width} className="flex h-12 items-center gap-3 px-4">
+              <div className="skeleton h-3 w-14 shrink-0" />
+              <div className="skeleton h-3" style={{ width: `${width}%` }} />
             </div>
           ))}
         </div>
       </div>
-    </div>
+    </SkeletonFrame>
   )
 }

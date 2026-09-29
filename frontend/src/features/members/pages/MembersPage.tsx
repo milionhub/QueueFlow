@@ -1,8 +1,12 @@
+import { UserPlus } from 'lucide-react'
 import { useState, type MouseEvent } from 'react'
 
 import { listMembers, type Member } from '../../../api/members'
 import { Button } from '../../../components/ui/Button'
+import { Alert } from '../../../components/ui/Alert'
 import { LoadError } from '../../../components/ui/LoadError'
+import { PageHeader } from '../../../components/ui/PageHeader'
+import { StaleNotice } from '../../../components/ui/States'
 import { useResource } from '../../../lib/useResource'
 import { useAuth } from '../../auth/useAuth'
 import type { CurrentUser } from '../../auth/types'
@@ -57,35 +61,13 @@ function Members({ user }: { user: CurrentUser }) {
     case 'error':
       content = <LoadError message="The members could not be loaded." reason={state.reason} onRetry={retry} />
       break
-    case 'ready': {
-      const count = state.data.length
+    case 'ready':
       content = (
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-            <p className="text-sm text-ink-muted">
-              <WorkspaceName />
-              {' · '}
-              {count} {count === 1 ? 'member' : 'members'}
-            </p>
-            {isAdmin && <Button onClick={openDialog}>Add member</Button>}
-          </div>
-          <p className="text-xs leading-5 text-ink-muted">
-            Admins can create and edit projects and add members. Everyone can work on tickets, the board, labels and
-            comments.
-          </p>
+        <div className="flex flex-col gap-3">
           {state.refreshFailed && !state.refreshing && (
-            <p className="text-sm text-ink-muted">
-              The list could not be refreshed and may be out of date.{' '}
-              <button
-                type="button"
-                onClick={reload}
-                className="font-medium text-accent underline-offset-4 hover:underline"
-              >
-                Refresh
-              </button>
-            </p>
+            <StaleNotice onRefresh={reload}>The list could not be refreshed and may be out of date.</StaleNotice>
           )}
-          {count === 0 ? (
+          {state.data.length === 0 ? (
             <p className="text-sm text-ink-subtle">No members found.</p>
           ) : (
             <MemberList members={state.data} currentUserId={user.id} />
@@ -93,20 +75,52 @@ function Members({ user }: { user: CurrentUser }) {
         </div>
       )
       break
-    }
   }
 
+  const count = state.status === 'ready' ? state.data.length : null
   return (
-    <div className="max-w-4xl">
-      {/* Always mounted, so the message is announced when it appears; styled like Alert's info tone. */}
-      <div role="status">
-        {added && (
-          <p className="mb-4 rounded-md border border-accent/25 bg-accent/5 px-3 py-2.5 text-sm leading-5 text-ink">
-            {added}
-          </p>
-        )}
+    <div className="flex max-w-4xl flex-col gap-6">
+      <PageHeader
+        title="Members"
+        description={
+          <>
+            <p>
+              <WorkspaceName />
+              {count !== null && (
+                <>
+                  {' · '}
+                  {count} {count === 1 ? 'member' : 'members'}
+                </>
+              )}
+            </p>
+            <p className="mt-1 text-xs leading-5">
+              Admins can create and edit projects and add members. Everyone can work on tickets, the board, labels and
+              comments.
+            </p>
+          </>
+        }
+        actions={
+          isAdmin && (
+            <Button onClick={openDialog}>
+              <UserPlus aria-hidden="true" className="size-4" strokeWidth={2} />
+              Add member
+            </Button>
+          )
+        }
+      />
+      <div>
+        {/* Always mounted, so the message is announced when it appears. It stays: it carries an instruction. */}
+        <div role="status">
+          {added && (
+            <div className="mb-4 animate-enter">
+              <Alert tone="info" announce={false}>
+                {added}
+              </Alert>
+            </div>
+          )}
+        </div>
+        {content}
       </div>
-      {content}
       {isAdmin && dialogOpen && (
         <AddMemberDialog
           workspaceId={user.workspaceId}

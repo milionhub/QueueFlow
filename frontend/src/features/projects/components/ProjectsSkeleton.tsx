@@ -1,26 +1,20 @@
-const BLOCK = 'rounded bg-line motion-safe:animate-pulse'
+import { SkeletonFrame } from '../../../components/ui/States'
 
-/** The page's shape while the projects load: context line and a few rows. */
+/** The list's shape while the projects load: a few rows as tall as the real ones. */
 export function ProjectsSkeleton() {
   return (
-    <div aria-busy="true" className="flex flex-col gap-4">
-      <span className="sr-only" role="status">
-        Loading projects…
-      </span>
-      <div aria-hidden="true" className="flex flex-col gap-4">
-        <div className={`h-4 w-48 max-w-full ${BLOCK}`} />
-        <div className="divide-y divide-line rounded-md border border-line bg-surface">
-          {[64, 48, 56].map((width) => (
-            <div key={width} className="flex items-start gap-3 px-4 py-3.5">
-              <div className={`h-3 w-12 shrink-0 ${BLOCK}`} />
-              <div className="flex flex-1 flex-col gap-2">
-                <div className={`h-3 ${BLOCK}`} style={{ width: `${width}%` }} />
-                <div className={`h-3 ${BLOCK}`} style={{ width: `${width - 16}%` }} />
-              </div>
+    <SkeletonFrame label="Loading projects…">
+      <div className="divide-y divide-line rounded-lg border border-line bg-surface shadow-xs">
+        {[64, 48, 56].map((width) => (
+          <div key={width} className="flex min-h-16 items-center gap-3 px-4 py-3">
+            <div className="skeleton h-5 w-14 shrink-0" />
+            <div className="flex flex-1 flex-col gap-2">
+              <div className="skeleton h-3" style={{ width: `${width}%` }} />
+              <div className="skeleton h-3" style={{ width: `${width - 16}%` }} />
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
-    </div>
+    </SkeletonFrame>
   )
 }

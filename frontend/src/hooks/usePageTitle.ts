@@ -2,8 +2,9 @@ import { createContext, useContext, useEffect } from 'react'
 
 /**
  * A title a page sets for itself (e.g. a project's name), replacing its
- * route's static `handle.title` in the shell header. `document` is the
- * browser tab title, when it should say more than the header.
+ * route's static `handle.title` as the browser tab's title. `document`,
+ * when given, is used instead of `heading` for the tab. (The page's own
+ * PageHeader shows its heading; the shell shows breadcrumbs.)
  */
 export interface PageTitle {
   heading: string
@@ -12,7 +13,7 @@ export interface PageTitle {
 
 export const PageTitleContext = createContext<((title: PageTitle | null) => void) | null>(null)
 
-/** Sets the header and tab title while the page is shown; null keeps the route's own title. */
+/** Sets the tab title while the page is shown; null keeps the route's own title. */
 export function usePageTitle(heading: string | null, documentTitle?: string) {
   const setPageTitle = useContext(PageTitleContext)
   useEffect(() => {

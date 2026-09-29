@@ -1,9 +1,10 @@
+import { Info, UserPlus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 
 import { createMember, type Member } from '../../../api/members'
 import { Alert } from '../../../components/ui/Alert'
 import { Button } from '../../../components/ui/Button'
-import { Dialog, DialogFooter } from '../../../components/ui/Dialog'
+import { Dialog, DialogBody, DialogFieldGroup, DialogFooter } from '../../../components/ui/Dialog'
 import { PasswordField } from '../../../components/ui/PasswordField'
 import { TextField } from '../../../components/ui/TextField'
 import type { FormErrors } from '../../../lib/formErrors'
@@ -97,13 +98,14 @@ export function AddMemberDialog({ workspaceId, onClose, onAdded, returnFocus }: 
   return (
     <Dialog
       title="Add member"
+      icon={UserPlus}
       description="Create an account for a teammate. They'll join this workspace as a member."
       onClose={onClose}
       dismissible={!pending}
       returnFocus={returnFocus}
     >
       <form ref={formRef} noValidate aria-busy={pending} onSubmit={handleSubmit}>
-        <div className="flex flex-col gap-5 px-5 py-5">
+        <DialogBody>
           {errors.form && <Alert tone="error">{errors.form}</Alert>}
           <TextField
             label="Name"
@@ -117,53 +119,58 @@ export function AddMemberDialog({ workspaceId, onClose, onAdded, returnFocus }: 
             required
             data-autofocus
           />
-          <TextField
-            label="Email"
-            type="email"
-            name="email"
-            autoComplete="off"
-            inputMode="email"
-            autoCapitalize="none"
-            spellCheck={false}
-            maxLength={EMAIL_MAX_LENGTH}
-            value={values.email}
-            onChange={update('email')}
-            hint="They'll use it to sign in."
-            error={errors.fields.email}
-            disabled={pending}
-            required
-          />
-          <PasswordField
-            label="Password"
-            name="new-member-password"
-            autoComplete="new-password"
-            value={values.password}
-            onChange={update('password')}
-            hint={PASSWORD_HINT}
-            error={errors.fields.password}
-            disabled={pending}
-            required
-          />
-          <PasswordField
-            label="Confirm password"
-            name="new-member-password-confirmation"
-            autoComplete="new-password"
-            value={values.confirmPassword}
-            onChange={update('confirmPassword')}
-            error={errors.fields.confirmPassword}
-            disabled={pending}
-            required
-          />
-          <p className="rounded-md border border-line bg-canvas px-3 py-2.5 text-xs leading-5 text-ink-muted">
-            QueueFlow doesn't send emails. Share the email and password with your teammate yourself, through a channel
-            you trust. The password can't be shown again or changed in QueueFlow later.
+          <DialogFieldGroup title="Sign-in details">
+            <TextField
+              label="Email"
+              type="email"
+              name="email"
+              autoComplete="off"
+              inputMode="email"
+              autoCapitalize="none"
+              spellCheck={false}
+              maxLength={EMAIL_MAX_LENGTH}
+              value={values.email}
+              onChange={update('email')}
+              hint="They'll use it to sign in."
+              error={errors.fields.email}
+              disabled={pending}
+              required
+            />
+            <PasswordField
+              label="Password"
+              name="new-member-password"
+              autoComplete="new-password"
+              value={values.password}
+              onChange={update('password')}
+              hint={PASSWORD_HINT}
+              error={errors.fields.password}
+              disabled={pending}
+              required
+            />
+            <PasswordField
+              label="Confirm password"
+              name="new-member-password-confirmation"
+              autoComplete="new-password"
+              value={values.confirmPassword}
+              onChange={update('confirmPassword')}
+              error={errors.fields.confirmPassword}
+              disabled={pending}
+              required
+            />
+          </DialogFieldGroup>
+          <p className="flex gap-2 text-xs leading-5 text-ink-muted">
+            <Info aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-ink-subtle" strokeWidth={2} />
+            <span>
+              QueueFlow doesn't send emails. Share the email and password with your teammate yourself, through a
+              channel you trust. The password can't be shown again or changed in QueueFlow later.
+            </span>
           </p>
-        </div>
+        </DialogBody>
         <DialogFooter>
           <Button variant="secondary" onClick={onClose} disabled={pending}>
             Cancel
           </Button>
-          <Button type="submit" disabled={pending}>
+          <Button type="submit" disabled={pending} loading={pending}>
             {pending ? 'Adding…' : 'Add member'}
           </Button>
         </DialogFooter>

@@ -1,6 +1,9 @@
+import { Pencil, Plus } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react'
 
 import { Button } from '../../../components/ui/Button'
+import { IconButton } from '../../../components/ui/IconButton'
+import { focusAtEnd } from '../../../lib/focusAtEnd'
 
 interface EditableTicketTextProps {
   /** The field's name, for the Edit button's label and the error ("title", "description"). */
@@ -26,14 +29,25 @@ interface EditableTicketTextProps {
   saving: boolean
   /** True while any change of the ticket is being saved (one at a time). */
   busy: boolean
-  /** Where the Edit button sits: next to the text, or above it. */
-  layout?: 'inline' | 'stacked'
+  /**
+   * A heading above the text (the description's). The Edit button sits at
+   * its end; without one, it sits next to the text.
+   */
+  heading?: ReactNode
+  /** Shown instead of the edit form's own content, e.g. a hidden h1 while the title is edited. */
+  whileEditing?: ReactNode
+  /** With no value: a quiet button with this text starts editing, instead of Edit. */
+  emptyPrompt?: string
+  /** Ctrl/⌘+Enter also saves (for multi-line text, where Enter is a new line). */
+  saveShortcut?: boolean
 }
 
+const IS_MAC = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/.test(navigator.userAgent)
+
 /**
- * A text field of the ticket shown as text with an Edit button, edited in
- * place: Save or Cancel (Escape) returns focus to Edit. A failed save stays
- * in editing with the typed text and the error.
+ * A text field of the ticket shown as text with an Edit (pencil) button,
+ * edited in place: Save or Cancel (Escape) returns focus to Edit. A failed
+ * save stays in editing with the typed text and the error.
  */
 export function EditableTicketText({
   field,
@@ -43,7 +57,10 @@ export function EditableTicketText({
   onSave,
   saving,
   busy,
-  layout = 'inline',
+  heading,
+  whileEditing,
+  emptyPrompt,
+  saveShortcut = false,
 }: EditableTicketTextProps) {
   const [draft, setDraft] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -59,7 +76,7 @@ export function EditableTicketText({
     if (focusTarget.to === 'edit') {
       editButtonRef.current?.focus()
     } else {
-      formRef.current?.querySelector<HTMLElement>('input, textarea')?.focus()
+      focusAtEnd(formRef.current?.querySelector<HTMLInputElement | HTMLTextAreaElement>('input, textarea'))
     }
   }, [focusTarget])
 
@@ -102,53 +119,96 @@ export function EditableTicketText({
     if (event.key === 'Escape') {
       event.preventDefault()
       cancel()
+    } else if (
+      saveShortcut &&
+      event.key === 'Enter' &&
+      (event.ctrlKey || event.metaKey) &&
+      !event.nativeEvent.isComposing
+    ) {
+      event.preventDefault()
+      ;(event.target as HTMLTextAreaElement | HTMLInputElement).form?.requestSubmit()
     }
   }
 
+  const empty = value === '' && emptyPrompt !== undefined
+  const editButton = !empty && (
+    <IconButton
+      ref={editButtonRef}
+      icon={Pencil}
+      label={`Edit ${field}`}
+      onClick={startEditing}
+      disabled={busy || editing}
+      className={editing ? 'invisible' : ''}
+    />
+  )
+
+  let body: ReactNode
   if (editing) {
-    return (
-      <form ref={formRef} noValidate aria-busy={saving} onSubmit={handleSubmit} className="flex flex-col gap-3">
-        {renderInput({
-          value: draft,
-          onChange: setDraft,
-          onKeyDown: handleKeyDown,
-          error: error ?? undefined,
-          disabled: saving,
-        })}
-        <div className="flex gap-2">
-          <Button type="submit" size="sm" disabled={busy}>
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-          <Button variant="secondary" size="sm" onClick={cancel} disabled={saving}>
-            Cancel
-          </Button>
-        </div>
-      </form>
+    body = (
+      <>
+        {whileEditing}
+        <form
+          ref={formRef}
+          noValidate
+          aria-busy={saving}
+          onSubmit={handleSubmit}
+          className="flex animate-fade-in flex-col gap-3"
+        >
+          {renderInput({
+            value: draft,
+            onChange: setDraft,
+            onKeyDown: handleKeyDown,
+            error: error ?? undefined,
+            disabled: saving,
+          })}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button type="submit" size="sm" disabled={busy} loading={saving}>
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={cancel} disabled={saving}>
+              Cancel
+            </Button>
+            <span aria-hidden="true" className="ml-auto hidden text-xs text-ink-subtle sm:inline">
+              {saveShortcut ? `${IS_MAC ? '⌘' : 'Ctrl'}+Enter to save · ` : 'Enter to save · '}Esc to cancel
+            </span>
+          </div>
+        </form>
+      </>
+    )
+  } else if (empty) {
+    body = (
+      <button
+        ref={editButtonRef}
+        type="button"
+        onClick={startEditing}
+        disabled={busy}
+        className="press flex w-full items-center gap-2 rounded-lg border border-dashed border-line-strong px-3 py-3 text-left text-sm text-ink-subtle transition-colors hover:border-ink-subtle/60 hover:bg-surface hover:text-ink-muted disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <Plus aria-hidden="true" className="size-4" strokeWidth={2} />
+        {emptyPrompt}
+      </button>
+    )
+  } else {
+    body = heading ? (
+      display
+    ) : (
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">{display}</div>
+        <div className="shrink-0 pt-0.5 sm:pt-1">{editButton}</div>
+      </div>
     )
   }
 
-  const editButton = (
-    <Button
-      ref={editButtonRef}
-      variant="secondary"
-      size="sm"
-      onClick={startEditing}
-      disabled={busy}
-      aria-label={`Edit ${field}`}
-      className="shrink-0"
-    >
-      Edit
-    </Button>
-  )
-  return layout === 'inline' ? (
-    <div className="flex items-start justify-between gap-3">
-      <div className="min-w-0 flex-1">{display}</div>
-      {editButton}
-    </div>
-  ) : (
+  if (!heading) {
+    return body
+  }
+  return (
     <div className="flex flex-col gap-2">
-      {display}
-      <div>{editButton}</div>
+      <div className="flex min-h-8 items-center justify-between gap-3">
+        {heading}
+        {editButton}
+      </div>
+      {body}
     </div>
   )
 }

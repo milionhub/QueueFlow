@@ -1,5 +1,5 @@
 import { useRef, useState, type FormEvent } from 'react'
-import { Link, useLocation } from 'react-router'
+import { Link } from 'react-router'
 
 import { Alert } from '../../../components/ui/Alert'
 import { Button } from '../../../components/ui/Button'
@@ -16,13 +16,12 @@ interface MissingFields {
 }
 
 /**
- * On success the session starts and GuestRoute moves the user on (to the
- * page they originally asked for, or /app) - this page does not navigate.
+ * On success the session starts and GuestRoute moves the user on to /app -
+ * this page does not navigate.
  */
 export function LoginPage() {
   useDocumentTitle('Sign in')
   const { login, signOutReason } = useAuth()
-  const location = useLocation()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -65,7 +64,10 @@ export function LoginPage() {
       footer={
         <>
           New to QueueFlow?{' '}
-          <Link to="/register" state={location.state} className="font-medium text-accent underline-offset-4 hover:underline">
+          <Link
+            to="/register"
+            className="font-medium text-accent underline-offset-4 hover:underline"
+          >
             Create a workspace
           </Link>
         </>
@@ -75,7 +77,9 @@ export function LoginPage() {
         {formError ? (
           <Alert tone="error">{formError}</Alert>
         ) : (
-          signOutReason === 'session-expired' && <Alert tone="info">Your session has ended. Please sign in again.</Alert>
+          signOutReason === 'session-expired' && (
+            <Alert tone="info">Your session has ended. Please sign in again.</Alert>
+          )
         )}
         <TextField
           label="Email"
@@ -99,7 +103,7 @@ export function LoginPage() {
           error={missing.password}
           required
         />
-        <Button type="submit" size="lg" disabled={pending} className="mt-1 w-full">
+        <Button type="submit" size="lg" disabled={pending} loading={pending} className="mt-1 w-full">
           {pending ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>
