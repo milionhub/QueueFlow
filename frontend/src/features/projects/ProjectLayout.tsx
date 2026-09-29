@@ -60,7 +60,9 @@ function ProjectContextLoader({ user }: { user: CurrentUser }) {
       return null
     }
     const names = new Map(members.map((member) => [member.id, member.name]))
-    return { project, members, memberName: (userId) => names.get(userId) ?? 'Unknown user' }
+    // An id from this workspace's tickets that is not in the member list belongs to someone an
+    // ADMIN has removed: the tickets they created and history they appear in stay.
+    return { project, members, memberName: (userId) => names.get(userId) ?? 'Former member' }
   }, [project, members])
 
   if (projectState.status === 'error') {

@@ -42,3 +42,33 @@ export function createMember(
 ): Promise<Member> {
   return request<Member>(`/api/workspaces/${encodeURIComponent(workspaceId)}/members`, { method: 'POST', body })
 }
+
+/** PATCH /api/workspaces/{id}/members/{userId}: the name is the only thing that can change. */
+export interface UpdateMemberRequest {
+  /** Trimmed by the backend, at most 255 characters. */
+  name: string
+}
+
+function memberPath(workspaceId: string, userId: string): string {
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`
+}
+
+/** ADMIN only (403 otherwise); a user who is not (or no longer) in the workspace is 404. */
+export function updateMember(
+  request: AuthorizedRequest,
+  workspaceId: string,
+  userId: string,
+  body: UpdateMemberRequest,
+): Promise<Member> {
+  return request<Member>(memberPath(workspaceId, userId), { method: 'PATCH', body })
+}
+
+/**
+ * ADMIN only (403 otherwise), for a MEMBER other than the caller (400
+ * otherwise). The member loses access at once - their password and any
+ * token they hold stop working - and their assigned tickets become
+ * unassigned; what they created, wrote and did stays.
+ */
+export function removeMember(request: AuthorizedRequest, workspaceId: string, userId: string): Promise<void> {
+  return request<void>(memberPath(workspaceId, userId), { method: 'DELETE' })
+}

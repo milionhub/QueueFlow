@@ -7,11 +7,14 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.queueflow.common.exception.BusinessRuleViolationException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.security.AuthenticatedUser;
 import com.queueflow.security.RoleAccess;
+import com.queueflow.ticket.TicketService;
 import com.queueflow.user.dto.CreateMemberRequest;
+import com.queueflow.user.dto.UpdateMemberRequest;
 import com.queueflow.user.dto.UserResponse;
 import com.queueflow.workspace.Workspace;
 import com.queueflow.workspace.WorkspaceAccess;
@@ -23,12 +26,14 @@ public class UserService {
     private final UserRepository userRepository;
     private final WorkspaceRepository workspaceRepository;
     private final PasswordEncoder passwordEncoder;
+    private final TicketService ticketService;
 
     public UserService(UserRepository userRepository, WorkspaceRepository workspaceRepository,
-            PasswordEncoder passwordEncoder) {
+            PasswordEncoder passwordEncoder, TicketService ticketService) {
         this.userRepository = userRepository;
         this.workspaceRepository = workspaceRepository;
         this.passwordEncoder = passwordEncoder;
+        this.ticketService = ticketService;
     }
 
     /**
@@ -65,6 +70,54 @@ public class UserService {
         return UserResponse.from(member);
     }
 
+    /**
+     * An ADMIN renames a user of their own workspace. Only the name can
+     * change (UpdateMemberRequest has nothing else), under the same rules
+     * as registration and member creation.
+     *
+     * Same order as every operation on an existing resource: another
+     * workspace, and a user not (or no longer) in this one, are not found
+     * (404) before the role is looked at, so a MEMBER's 403 only ever
+     * concerns a real member of their own workspace.
+     */
+    @Transactional
+    public UserResponse updateMember(AuthenticatedUser actor, UUID workspaceId, UUID userId,
+            UpdateMemberRequest request) {
+        User member = memberOfOwnWorkspace(actor, workspaceId, userId);
+        RoleAccess.requireAdmin(actor, "edit members");
+
+        member.rename(UserAccountRules.validatedName("name", request.name()));
+        return UserResponse.from(member);
+    }
+
+    /**
+     * An ADMIN removes a MEMBER from their own workspace. Same 404-then-403
+     * order as updateMember; then only a MEMBER other than the caller can be
+     * removed (V1 has no way to hand over a workspace, so its ADMIN stays).
+     *
+     * The user's row is kept and marked removed (User.markRemoved, see V6):
+     * the tickets they created, their comments and the activity they caused
+     * keep pointing at it, under their name. From then on they are not a
+     * member: not listed, not assignable, and neither their password nor a
+     * token issued before the removal is accepted (UserRepository). Tickets
+     * assigned to them become unassigned, each with its activity entry.
+     * One transaction: nothing of this is half done.
+     */
+    @Transactional
+    public void removeMember(AuthenticatedUser actor, UUID workspaceId, UUID userId) {
+        User member = memberOfOwnWorkspace(actor, workspaceId, userId);
+        RoleAccess.requireAdmin(actor, "remove members");
+        if (member.getId().equals(actor.userId())) {
+            throw new BusinessRuleViolationException("You cannot remove yourself from the workspace");
+        }
+        if (member.getRole() != UserRole.MEMBER) {
+            throw new BusinessRuleViolationException("Only members can be removed, not admins");
+        }
+
+        ticketService.unassignRemovedMember(actor, member);
+        member.markRemoved();
+    }
+
     /** Users of other workspaces are not found. */
     @Transactional(readOnly = true)
     public UserResponse getById(AuthenticatedUser actor, UUID userId) {
@@ -96,5 +149,12 @@ public class UserService {
         return userRepository.findAllInWorkspaceSortedByName(actor.workspaceId()).stream()
                 .map(UserResponse::from)
                 .toList();
+    }
+
+    /** The own-workspace check, then a current member of it; anything else is not found. */
+    private User memberOfOwnWorkspace(AuthenticatedUser actor, UUID workspaceId, UUID userId) {
+        WorkspaceAccess.requireOwnWorkspace(actor, workspaceId);
+        return userRepository.findByIdAndWorkspaceId(userId, actor.workspaceId())
+                .orElseThrow(() -> new ResourceNotFoundException("User not found: " + userId));
     }
 }

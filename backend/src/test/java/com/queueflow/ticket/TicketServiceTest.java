@@ -969,4 +969,32 @@ class TicketServiceTest {
 
         verify(ticketRepository, never()).findByProjectIdOrderByTicketNumberAsc(any());
     }
+
+    @Test
+    void unassignRemovedMemberUnassignsTheirTicketsInTheWorkspaceWithOneActivityEach() {
+        Workspace workspace = persistedWorkspace(UUID.randomUUID());
+        Project project = persistedProject(UUID.randomUUID(), "ECOM", workspace, 3L);
+        User admin = persistedUser(UUID.randomUUID(), workspace);
+        User removed = persistedUser(UUID.randomUUID(), workspace);
+        Ticket first = persistedTicket(UUID.randomUUID(), 1L, "First", null, TicketStatus.TODO, TicketPriority.LOW,
+                project, admin, removed, OffsetDateTime.now());
+        Ticket second = persistedTicket(UUID.randomUUID(), 2L, "Second", null, TicketStatus.DONE,
+                TicketPriority.HIGH, project, removed, removed, OffsetDateTime.now());
+        AuthenticatedUser actor = actorOf(admin);
+        when(ticketRepository.findByAssigneeIdAndProjectWorkspaceId(removed.getId(), workspace.getId()))
+                .thenReturn(List.of(first, second));
+        when(userRepository.getReferenceById(admin.getId())).thenReturn(admin);
+
+        ticketService.unassignRemovedMember(actor, removed);
+
+        assertThat(first.getAssignee()).isNull();
+        assertThat(second.getAssignee()).isNull();
+        // Nothing else about the tickets changes - the creator in particular stays the removed member.
+        assertThat(second.getCreator()).isSameAs(removed);
+        assertThat(second.getStatus()).isEqualTo(TicketStatus.DONE);
+        for (Ticket ticket : List.of(first, second)) {
+            verify(activityService).recordActivity(ActivityType.ASSIGNEE_CHANGED, removed.getId().toString(), null,
+                    ticket, admin);
+        }
+    }
 }

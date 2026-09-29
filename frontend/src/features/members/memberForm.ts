@@ -88,3 +88,40 @@ export function addMemberErrors(error: unknown): FormErrors<MemberField> {
   }
   return { form: genericErrorMessage(error), fields: {} }
 }
+
+/** The member no longer exists in this workspace (removed meanwhile, or never here): 404. */
+export function isMemberGone(error: unknown): boolean {
+  return error instanceof ApiError && error.kind === 'http' && error.status === 404
+}
+
+/** A failed rename, mapped to what the admin can act on. The typed name is kept by the dialog. */
+export function editMemberErrors(error: unknown): FormErrors<'name'> {
+  if (error instanceof ApiError && error.kind === 'http') {
+    switch (error.status) {
+      case 400:
+        return error.body
+          ? fieldValidationErrors(error.body.message, { name: 'Name' })
+          : { form: 'Please check the name and try again.', fields: {} }
+      case 403:
+        return { form: 'Only workspace admins can edit members.', fields: {} }
+      case 404:
+        return { form: 'This member is no longer part of the workspace.', fields: {} }
+    }
+  }
+  return { form: genericErrorMessage(error), fields: {} }
+}
+
+/** Why a removal failed, as one sentence for the confirmation dialog. */
+export function removeMemberError(error: unknown): string {
+  if (error instanceof ApiError && error.kind === 'http') {
+    switch (error.status) {
+      case 400:
+        return error.body?.message ? `${error.body.message}.` : 'This member cannot be removed.'
+      case 403:
+        return 'Only workspace admins can remove members.'
+      case 404:
+        return 'This member is no longer part of the workspace.'
+    }
+  }
+  return genericErrorMessage(error)
+}

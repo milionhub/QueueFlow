@@ -202,6 +202,24 @@ public class TicketService {
         return TicketResponse.from(ticket);
     }
 
+    /**
+     * Unassigns every ticket of the caller's workspace assigned to a member
+     * who is being removed from it (UserService.removeMember, same
+     * transaction). Each one records an ordinary ASSIGNEE_CHANGED activity by
+     * the acting ADMIN, so the ticket's history says who unassigned it; the
+     * tickets are otherwise untouched.
+     */
+    @Transactional
+    public void unassignRemovedMember(AuthenticatedUser actor, User member) {
+        User actingUser = actingUser(actor);
+        for (Ticket ticket : ticketRepository.findByAssigneeIdAndProjectWorkspaceId(member.getId(),
+                actor.workspaceId())) {
+            ticket.changeAssignee(null);
+            activityService.recordActivity(
+                    ActivityType.ASSIGNEE_CHANGED, member.getId().toString(), null, ticket, actingUser);
+        }
+    }
+
     /** A ticket of the caller's workspace; any other is not found. */
     private Ticket visibleTicket(AuthenticatedUser actor, UUID ticketId) {
         return ticketRepository.findByIdAndProjectWorkspaceId(ticketId, actor.workspaceId())

@@ -57,7 +57,7 @@ class OpenApiContractTest {
         Map<String, Object> paths = doc.read("$.paths");
         assertThat(paths.keySet()).allMatch(path -> path.startsWith("/api/"));
         List<String> operationIds = doc.read("$.paths.*.*.operationId");
-        assertThat(operationIds).hasSize(31).doesNotHaveDuplicates();
+        assertThat(operationIds).hasSize(33).doesNotHaveDuplicates();
     }
 
     @Test
@@ -174,7 +174,7 @@ class OpenApiContractTest {
         List<Map<String, Object>> protectedOperations = operations.stream()
                 .filter(operation -> !operation.containsKey("security"))
                 .toList();
-        assertThat(protectedOperations).hasSize(29);
+        assertThat(protectedOperations).hasSize(31);
         assertThat(protectedOperations).allSatisfy(operation ->
                 assertThat(JsonPath.<String>read(operation, "$.responses['401'].$ref"))
                         .isEqualTo(OpenApiConfig.UNAUTHORIZED));
@@ -195,7 +195,7 @@ class OpenApiContractTest {
             }
         });
         List<Map<String, Object>> workspaceParameters = doc.read("$.paths.*.*.parameters[?(@.name == 'workspaceId')]");
-        assertThat(workspaceParameters).hasSize(6).allSatisfy(parameter -> {
+        assertThat(workspaceParameters).hasSize(8).allSatisfy(parameter -> {
             assertThat(parameter).containsEntry("in", "path");
             assertThat((String) parameter.get("description")).contains("own workspace");
         });
@@ -226,7 +226,8 @@ class OpenApiContractTest {
                 .map(operation -> (String) operation.get("operationId"))
                 .toList();
         assertThat(forbidding).containsExactlyInAnyOrder("createProject", "updateProject",
-                "createWorkspaceMember", "updateComment", "deleteComment");
+                "createWorkspaceMember", "updateWorkspaceMember", "removeWorkspaceMember", "updateComment",
+                "deleteComment");
 
         assertThat(doc.read("$.paths['/api/projects'].post.responses['403'].$ref", String.class))
                 .isEqualTo(OpenApiConfig.FORBIDDEN);
@@ -247,6 +248,17 @@ class OpenApiContractTest {
         assertThat(fields).containsOnlyKeys("name", "email", "password");
         assertThat(doc.read("$.components.schemas.CreateMemberRequest.properties.password.writeOnly", Boolean.class))
                 .isTrue();
+
+        // Editing a member changes the name and nothing else; removing answers 204 with no body.
+        String member = "$.paths['/api/workspaces/{workspaceId}/members/{userId}']";
+        assertThat(doc.read(member + ".patch.description", String.class)).startsWith("ADMIN only.");
+        assertThat(doc.read(member + ".patch.requestBody.content['application/json'].schema.$ref", String.class))
+                .isEqualTo("#/components/schemas/UpdateMemberRequest");
+        Map<String, Object> updateFields = doc.read("$.components.schemas.UpdateMemberRequest.properties");
+        assertThat(updateFields).containsOnlyKeys("name");
+        assertThat(doc.read(member + ".delete.description", String.class)).startsWith("ADMIN only");
+        Map<String, Object> removeResponses = doc.read(member + ".delete.responses");
+        assertThat(removeResponses).containsKeys("204", "400", "401", "403", "404");
     }
 
     @Test

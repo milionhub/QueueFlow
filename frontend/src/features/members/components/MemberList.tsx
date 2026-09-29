@@ -1,30 +1,52 @@
 import { ShieldCheck } from 'lucide-react'
+import type { Ref } from 'react'
 
 import type { Member } from '../../../api/members'
 import { Avatar } from '../../../components/ui/Avatar'
 import { SkeletonFrame } from '../../../components/ui/States'
 import { ROLE_LABELS } from '../../auth/userDisplay'
+import { MemberActionsMenu } from './MemberActionsMenu'
 
 interface MemberListProps {
+  ref?: Ref<HTMLUListElement>
   members: Member[]
   /** The signed-in user's id: their row says "You". */
   currentUserId: string
+  /**
+   * Given only to an ADMIN: every row that can be managed - another
+   * MEMBER - gets a ⋯ menu with Edit and Remove. `opener` is that ⋯ button.
+   */
+  actions?: {
+    onEdit: (member: Member, opener: HTMLElement) => void
+    onRemove: (member: Member, opener: HTMLElement) => void
+  }
+}
+
+/** The members an ADMIN can edit and remove: MEMBERs other than themselves (never an ADMIN in V1). */
+function isManageable(member: Member, currentUserId: string): boolean {
+  return member.role === 'MEMBER' && member.id !== currentUserId
 }
 
 /**
  * The workspace's members in the backend's order: who they are, their
  * email and their role, as text (an Admin also gets a shield icon, so the
- * role never rests on colour). Read-only - V1 has no member management
- * beyond adding one.
+ * role never rests on colour). For an ADMIN, a quiet ⋯ menu at the end of
+ * each manageable row; the other rows keep its space, so the role badges
+ * stay in one column.
+ *
+ * Focusable from script only (tabIndex -1): focus lands on the list when
+ * the row it was on has just been removed.
  */
-export function MemberList({ members, currentUserId }: MemberListProps) {
+export function MemberList({ ref, members, currentUserId, actions }: MemberListProps) {
   return (
     <ul
+      ref={ref}
+      tabIndex={-1}
       aria-label="Workspace members"
-      className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-surface shadow-xs"
+      className="divide-y divide-line rounded-lg border border-line bg-surface shadow-xs"
     >
       {members.map((member) => (
-        <li key={member.id} className="flex min-h-16 items-center gap-3 px-4 py-3">
+        <li key={member.id} className={`flex min-h-16 items-center gap-3 py-3 ${actions ? 'pr-2 pl-4' : 'px-4'}`}>
           <Avatar name={member.name} seed={member.id} size="md" />
           <div className="min-w-0 flex-1">
             <p className="flex min-w-0 items-center gap-2 text-sm font-medium text-ink">
@@ -50,6 +72,16 @@ export function MemberList({ members, currentUserId }: MemberListProps) {
             <span className="sr-only">Role: </span>
             {ROLE_LABELS[member.role]}
           </span>
+          {actions &&
+            (isManageable(member, currentUserId) ? (
+              <MemberActionsMenu
+                memberName={member.name}
+                onEdit={(opener) => actions.onEdit(member, opener)}
+                onRemove={(opener) => actions.onRemove(member, opener)}
+              />
+            ) : (
+              <span aria-hidden="true" className="size-8 shrink-0 pointer-coarse:size-10" />
+            ))}
         </li>
       ))}
     </ul>

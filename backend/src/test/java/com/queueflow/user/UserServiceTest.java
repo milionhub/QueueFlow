@@ -29,7 +29,9 @@ import com.queueflow.common.exception.ForbiddenOperationException;
 import com.queueflow.common.exception.ResourceAlreadyExistsException;
 import com.queueflow.common.exception.ResourceNotFoundException;
 import com.queueflow.security.AuthenticatedUser;
+import com.queueflow.ticket.TicketService;
 import com.queueflow.user.dto.CreateMemberRequest;
+import com.queueflow.user.dto.UpdateMemberRequest;
 import com.queueflow.user.dto.UserResponse;
 import com.queueflow.workspace.Workspace;
 import com.queueflow.workspace.WorkspaceRepository;
@@ -57,6 +59,9 @@ class UserServiceTest {
     @Mock
     private WorkspaceRepository workspaceRepository;
 
+    @Mock
+    private TicketService ticketService;
+
     /** The real production encoder: member passwords must be genuine BCrypt. */
     private final PasswordEncoder passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
 
@@ -64,7 +69,7 @@ class UserServiceTest {
 
     @BeforeEach
     void setUp() {
-        userService = new UserService(userRepository, workspaceRepository, passwordEncoder);
+        userService = new UserService(userRepository, workspaceRepository, passwordEncoder, ticketService);
     }
 
     private static User persistedUser(UUID id, String name, String email, String passwordHash, UserRole role,
@@ -282,5 +287,181 @@ class UserServiceTest {
     void createMemberRequestNeverPrintsThePassword() {
         assertThat(new CreateMemberRequest("Pedro", "pedro@example.com", PASSWORD).toString())
                 .doesNotContain(PASSWORD).contains("<redacted>");
+    }
+
+    // ------------------------------------------------------------------
+    // updateMember
+    // ------------------------------------------------------------------
+
+    /** A current member of the ADMIN's (and ACTOR's) workspace, as the repository returns it. */
+    private User memberInWorkspace(UUID id, String name, UserRole role) {
+        OffsetDateTime created = OffsetDateTime.parse("2026-01-01T10:00:00Z");
+        User user = persistedUser(id, name, name.toLowerCase() + "@example.com", "{bcrypt}hash", role,
+                ADMIN.workspaceId(), created);
+        when(userRepository.findByIdAndWorkspaceId(id, ADMIN.workspaceId())).thenReturn(Optional.of(user));
+        return user;
+    }
+
+    @Test
+    void anAdminRenamesAMemberWithTheTrimmedNameAndNothingElseChanges() {
+        UUID id = UUID.randomUUID();
+        User member = memberInWorkspace(id, "Pedro", UserRole.MEMBER);
+        OffsetDateTime before = member.getUpdatedAt();
+
+        UserResponse response = userService.updateMember(ADMIN, ADMIN.workspaceId(), id,
+                new UpdateMemberRequest("  Pedro Gómez  "));
+
+        assertThat(member.getName()).isEqualTo("Pedro Gómez");
+        assertThat(member.getUpdatedAt()).isAfter(before);
+        assertThat(member.getEmail()).isEqualTo("pedro@example.com");
+        assertThat(member.getRole()).isEqualTo(UserRole.MEMBER);
+        assertThat(member.getPasswordHash()).isEqualTo("{bcrypt}hash");
+        assertThat(response.name()).isEqualTo("Pedro Gómez");
+        assertThat(response.updatedAt()).isEqualTo(member.getUpdatedAt());
+    }
+
+    @Test
+    void renamingToTheSameNameChangesNothing() {
+        UUID id = UUID.randomUUID();
+        User member = memberInWorkspace(id, "Pedro", UserRole.MEMBER);
+        OffsetDateTime before = member.getUpdatedAt();
+
+        userService.updateMember(ADMIN, ADMIN.workspaceId(), id, new UpdateMemberRequest(" Pedro "));
+
+        assertThat(member.getUpdatedAt()).isEqualTo(before);
+    }
+
+    /** The request type itself is the guarantee that nothing but the name can be sent. */
+    @Test
+    void updateMemberRequestCarriesOnlyTheName() {
+        assertThat(UpdateMemberRequest.class.getRecordComponents()).extracting(RecordComponent::getName)
+                .containsExactly("name");
+    }
+
+    @Test
+    void aMemberCannotEditMembersOfTheirOwnWorkspace() {
+        UUID id = UUID.randomUUID();
+        User member = memberInWorkspace(id, "Pedro", UserRole.MEMBER);
+
+        assertThatThrownBy(() -> userService.updateMember(ACTOR, ACTOR.workspaceId(), id,
+                new UpdateMemberRequest("Hacked")))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessage("Only workspace admins can edit members");
+        assertThat(member.getName()).isEqualTo("Pedro");
+    }
+
+    /** Another workspace, or a user who is not (or no longer) a member of this one: 404 for every role. */
+    @Test
+    void editingOutsideTheOwnWorkspaceIsNotFoundForEveryRole() {
+        UUID otherWorkspaceId = UUID.randomUUID();
+        UUID unknownUser = UUID.randomUUID();
+        when(userRepository.findByIdAndWorkspaceId(unknownUser, ADMIN.workspaceId())).thenReturn(Optional.empty());
+
+        for (AuthenticatedUser caller : List.of(ADMIN, ACTOR)) {
+            assertThatThrownBy(() -> userService.updateMember(caller, otherWorkspaceId, unknownUser,
+                    new UpdateMemberRequest("Pedro")))
+                    .as(caller.role().name())
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessage("Workspace not found: " + otherWorkspaceId);
+            assertThatThrownBy(() -> userService.updateMember(caller, caller.workspaceId(), unknownUser,
+                    new UpdateMemberRequest("Pedro")))
+                    .as(caller.role().name())
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessage("User not found: " + unknownUser);
+        }
+    }
+
+    @Test
+    void updateMemberAppliesTheNameRules() {
+        UUID id = UUID.randomUUID();
+        User member = memberInWorkspace(id, "Pedro", UserRole.MEMBER);
+
+        assertThatThrownBy(() -> userService.updateMember(ADMIN, ADMIN.workspaceId(), id,
+                new UpdateMemberRequest("   ")))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("name must not be blank");
+        assertThatThrownBy(() -> userService.updateMember(ADMIN, ADMIN.workspaceId(), id,
+                new UpdateMemberRequest("x".repeat(256))))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("name must be at most 255 characters");
+        assertThat(member.getName()).isEqualTo("Pedro");
+    }
+
+    // ------------------------------------------------------------------
+    // removeMember
+    // ------------------------------------------------------------------
+
+    @Test
+    void anAdminRemovesAMemberWhoKeepsTheirNameButLosesEmailAndPassword() {
+        UUID id = UUID.randomUUID();
+        User member = memberInWorkspace(id, "Pedro", UserRole.MEMBER);
+
+        userService.removeMember(ADMIN, ADMIN.workspaceId(), id);
+
+        verify(ticketService).unassignRemovedMember(ADMIN, member);
+        assertThat(member.isRemoved()).isTrue();
+        assertThat(member.getName()).isEqualTo("Pedro");
+        assertThat(member.getEmail()).isEqualTo("removed-" + id + "@removed.invalid");
+        assertThat(member.getPasswordHash()).isEqualTo(User.REMOVED_PASSWORD_HASH);
+        // No password can match: the encoder cannot even interpret the hash (AuthService treats that as no match).
+        assertThatThrownBy(() -> passwordEncoder.matches("anything", member.getPasswordHash()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void aMemberCannotRemoveMembers() {
+        UUID id = UUID.randomUUID();
+        User member = memberInWorkspace(id, "Pedro", UserRole.MEMBER);
+
+        assertThatThrownBy(() -> userService.removeMember(ACTOR, ACTOR.workspaceId(), id))
+                .isInstanceOf(ForbiddenOperationException.class)
+                .hasMessage("Only workspace admins can remove members");
+
+        assertThat(member.isRemoved()).isFalse();
+        verifyNoInteractions(ticketService);
+    }
+
+    @Test
+    void anAdminCannotRemoveThemselves() {
+        User admin = memberInWorkspace(ADMIN.userId(), "Ana", UserRole.ADMIN);
+
+        assertThatThrownBy(() -> userService.removeMember(ADMIN, ADMIN.workspaceId(), ADMIN.userId()))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("You cannot remove yourself from the workspace");
+
+        assertThat(admin.isRemoved()).isFalse();
+        verifyNoInteractions(ticketService);
+    }
+
+    @Test
+    void anotherAdminCannotBeRemoved() {
+        UUID id = UUID.randomUUID();
+        User otherAdmin = memberInWorkspace(id, "Otto", UserRole.ADMIN);
+
+        assertThatThrownBy(() -> userService.removeMember(ADMIN, ADMIN.workspaceId(), id))
+                .isInstanceOf(BusinessRuleViolationException.class)
+                .hasMessage("Only members can be removed, not admins");
+
+        assertThat(otherAdmin.isRemoved()).isFalse();
+        verifyNoInteractions(ticketService);
+    }
+
+    @Test
+    void removingOutsideTheOwnWorkspaceIsNotFoundForEveryRole() {
+        UUID otherWorkspaceId = UUID.randomUUID();
+        UUID unknownUser = UUID.randomUUID();
+        when(userRepository.findByIdAndWorkspaceId(unknownUser, ADMIN.workspaceId())).thenReturn(Optional.empty());
+
+        for (AuthenticatedUser caller : List.of(ADMIN, ACTOR)) {
+            assertThatThrownBy(() -> userService.removeMember(caller, otherWorkspaceId, unknownUser))
+                    .as(caller.role().name())
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessage("Workspace not found: " + otherWorkspaceId);
+            assertThatThrownBy(() -> userService.removeMember(caller, caller.workspaceId(), unknownUser))
+                    .as(caller.role().name())
+                    .isInstanceOf(ResourceNotFoundException.class)
+                    .hasMessage("User not found: " + unknownUser);
+        }
+        verifyNoInteractions(ticketService);
     }
 }

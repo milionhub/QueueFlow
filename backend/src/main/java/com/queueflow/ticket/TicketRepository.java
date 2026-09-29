@@ -23,4 +23,7 @@ public interface TicketRepository extends JpaRepository<Ticket, UUID> {
 
     /** ticketNumber is unique per project (UNIQUE constraint), so no tie-breaker is needed. */
     List<Ticket> findByProjectIdOrderByTicketNumberAsc(UUID projectId);
+
+    /** Tenant-scoped: the tickets of the caller's workspace assigned to one user. */
+    List<Ticket> findByAssigneeIdAndProjectWorkspaceId(UUID assigneeId, UUID workspaceId);
 }

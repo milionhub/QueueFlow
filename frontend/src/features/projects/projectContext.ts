@@ -8,7 +8,7 @@ export interface ProjectContextValue {
   project: Project
   /** The workspace's members, in the backend's order: the possible assignees. */
   members: Member[]
-  /** A member's name by id: "Unknown user" if they are not in the list loaded. */
+  /** A member's name by id: "Former member" if they are not in the list loaded (removed from the workspace). */
   memberName: (userId: string) => string
 }
 

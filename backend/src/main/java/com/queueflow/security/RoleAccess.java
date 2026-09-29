@@ -4,10 +4,11 @@ import com.queueflow.common.exception.ForbiddenOperationException;
 
 /**
  * The one check for ADMIN-only operations (creating and updating projects,
- * creating members). Called by the services - the trust boundary for every
- * business rule - so no controller, present or future, can reach these
- * operations without it, and it is decided from the caller's current
- * database role (AuthenticatedUser), never a token claim.
+ * creating, editing and removing members). Called by the services - the
+ * trust boundary for every business rule - so no controller, present or
+ * future, can reach these operations without it, and it is decided from
+ * the caller's current database role (AuthenticatedUser), never a token
+ * claim.
  *
  * Deliberately a service-level check rather than @PreAuthorize: an
  * operation on an existing resource must first resolve that resource in the
