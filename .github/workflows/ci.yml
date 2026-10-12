@@ -6,6 +6,8 @@
 # repository .env and no secrets are involved: the database credentials below
 # are throwaway values for that disposable database, and the tests use their
 # own public JWT test key (src/test/resources/config/application.yml).
+#
+# Frontend: npm ci, lint and the type-checked production build on Node 24.
 
 name: CI
 
@@ -85,3 +87,42 @@ jobs:
           path: backend/target/surefire-reports/
           if-no-files-found: ignore
           retention-days: 7
+
+  # Independent of the backend job: it runs in parallel and neither waits for
+  # nor blocks the other.
+  frontend:
+    name: Frontend (Node 24, lint and build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node 24 with the npm cache
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # Exactly the lockfile's versions; fails if it and package.json disagree.
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Lint (oxlint)
+        run: npm run lint
+
+      # Type-check (tsc -b) and production bundle (vite build). The API base
+      # is the same-origin "/" the Docker image is built with; there is no
+      # repository .env in CI.
+      - name: Type-check and build
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: /
