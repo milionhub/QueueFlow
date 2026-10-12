@@ -1,0 +1,84 @@
+# QueueFlow - public deployment on a single VM (Oracle Cloud), as an override
+# of the production-style stack. compose.prod.yaml is used unchanged; this
+# file only adds what a public server needs:
+#
+# - Caddy in front, the only container with published ports (80 and 443):
+#   automatic HTTPS certificates for QUEUEFLOW_DOMAIN, HTTP -> HTTPS
+#   redirect, and HTTP/3. It proxies everything to the frontend's nginx,
+#   which keeps routing /api/ and /actuator/health to the backend.
+# - The frontend's port on 127.0.0.1 is removed: on the VM only Caddy is
+#   reachable. Backend and PostgreSQL already have no ports.
+# - Memory limits and log rotation sized for a small VM.
+#
+#   docker compose -f compose.prod.yaml -f compose.oci.yaml up -d --build
+#
+# or, with COMPOSE_FILE=compose.prod.yaml:compose.oci.yaml in the VM's .env,
+# simply `docker compose up -d --build`. See docs/deployment-oci.md.
+#
+# Requires Docker Compose 2.24 or later (the !reset tag).
+
+# Docker's default json-file log driver never rotates: on a small disk the
+# logs would grow until it is full.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2.11-alpine
+    environment:
+      QUEUEFLOW_DOMAIN: ${QUEUEFLOW_DOMAIN:?QUEUEFLOW_DOMAIN must be set - the public host name (see .env.example)}
+      ACME_EMAIL: ${ACME_EMAIL:?ACME_EMAIL must be set - contact email for the certificate authority (see .env.example)}
+    ports:
+      - "80:80"         # ACME HTTP challenge and redirect to HTTPS
+      - "443:443"       # HTTPS
+      - "443:443/udp"   # HTTP/3
+    volumes:
+      - ./deploy/oci/Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates and the ACME account: must survive restarts, or every
+      # restart requests new certificates and runs into rate limits.
+      - caddy-data:/data
+      - caddy-config:/config
+    # Root inside the container only to bind 80/443; every other capability
+    # is dropped.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    healthcheck:
+      # Caddy's admin API, which listens on the container's loopback only.
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      frontend:
+        condition: service_healthy
+    mem_limit: ${CADDY_MEM_LIMIT:-128m}
+    logging: *logging
+    restart: unless-stopped
+
+  frontend:
+    # Reached only by Caddy, over the stack's network.
+    ports: !reset []
+    mem_limit: ${FRONTEND_MEM_LIMIT:-64m}
+    logging: *logging
+
+  backend:
+    environment:
+      # A smaller share of the memory limit for the heap than the image's
+      # default (75%), leaving room for metaspace, threads and buffers so the
+      # container is not killed at its limit.
+      JDK_JAVA_OPTIONS: "-XX:MaxRAMPercentage=60"
+    mem_limit: ${BACKEND_MEM_LIMIT:-768m}
+    logging: *logging
+
+  postgres:
+    mem_limit: ${POSTGRES_MEM_LIMIT:-384m}
+    logging: *logging
+
+volumes:
+  caddy-data:
+  caddy-config:

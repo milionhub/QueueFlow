@@ -1,0 +1,19 @@
+# QueueFlow public entry point (compose.oci.yaml). Caddy obtains and renews
+# the HTTPS certificate for QUEUEFLOW_DOMAIN by itself, redirects HTTP to
+# HTTPS and forwards every request to the frontend's nginx, adding
+# X-Forwarded-For/-Proto/-Host. Both values come from the VM's .env.
+{
+	email {$ACME_EMAIL}
+}
+
+{$QUEUEFLOW_DOMAIN} {
+	reverse_proxy frontend:8080
+
+	header {
+		# Browsers keep using HTTPS for this host for a year. Deliberately
+		# without includeSubDomains or preload: the host may be a subdomain
+		# of a shared or free DNS service.
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}

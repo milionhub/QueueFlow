@@ -451,6 +451,8 @@ Cualquier comando que falle hace fallar su job. No se usan secretos del reposito
 
 QueueFlow **solo se ejecuta en local**: en modo desarrollo o con el stack Docker de `compose.prod.yaml`. No hay ninguna instancia pública ni pipeline de despliegue. Esta sección se actualizará cuando exista un despliegue público verificado.
 
+El repositorio ya incluye la preparación para publicarlo con HTTPS en una VM de Oracle Cloud (override `compose.oci.yaml` con Caddy, backups y guía paso a paso), todavía sin validar en la VM real: ver [`docs/deployment-oci.md`](docs/deployment-oci.md).
+
 ## 18. Solución de problemas
 
 | Síntoma | Causa probable y solución |

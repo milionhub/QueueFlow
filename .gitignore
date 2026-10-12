@@ -40,3 +40,6 @@ out/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# ===== Database backups (deploy/oci/backup.sh) =====
+/backups/
