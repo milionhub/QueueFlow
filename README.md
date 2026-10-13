@@ -1,469 +1,573 @@
+<div align="center">
+
 # QueueFlow
 
-Aplicación web de seguimiento de incidencias y gestión de proyectos para equipos de software pequeños: espacios de trabajo aislados, proyectos, tickets con estados y prioridades, tablero kanban, etiquetas, comentarios, historial de actividad y gestión de miembros con roles.
+**Issue tracking and project management for small software teams.**
 
-> **Estado:** proyecto de portfolio, versión 1.0.0 completada: el alcance de la V1 descrito abajo está implementado y cubierto por la CI. Funciona en local (modo desarrollo y stack Docker de estilo producción). **No está desplegado públicamente.**
+Isolated workspaces, projects with keyed tickets, a drag-and-drop Kanban board, labels, comments,<br>
+an automatic activity history and role-based member management, in English and Spanish.
 
-## Índice
+[![Release](https://img.shields.io/github/v/release/milionhub/QueueFlow)](https://github.com/milionhub/QueueFlow/releases/latest)
+[![CI](https://github.com/milionhub/QueueFlow/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/milionhub/QueueFlow/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/milionhub/QueueFlow)](LICENSE)
+<br>
+![Java 21](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)
+![Spring Boot 4.1](https://img.shields.io/badge/Spring%20Boot-4.1-6DB33F?logo=springboot&logoColor=white)
+![React 19](https://img.shields.io/badge/React-19-149ECA?logo=react&logoColor=white)
+![TypeScript 6](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL 18](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white)
 
-1. [Qué es QueueFlow y alcance de la V1](#1-qué-es-queueflow-y-alcance-de-la-v1)
-2. [Funcionalidades por rol](#2-funcionalidades-por-rol)
-3. [Stack tecnológico](#3-stack-tecnológico)
-4. [Arquitectura](#4-arquitectura)
-5. [Estructura del repositorio](#5-estructura-del-repositorio)
-6. [Modelo de datos](#6-modelo-de-datos)
-7. [Seguridad: autenticación, autorización y aislamiento](#7-seguridad-autenticación-autorización-y-aislamiento)
-8. [API REST](#8-api-rest)
-9. [Tickets: estados, numeración, comentarios y actividad](#9-tickets-estados-numeración-comentarios-y-actividad)
-10. [Internacionalización (EN/ES)](#10-internacionalización-enes)
-11. [Puesta en marcha](#11-puesta-en-marcha)
-12. [Variables de entorno](#12-variables-de-entorno)
-13. [Pruebas](#13-pruebas)
-14. [Integración continua (GitHub Actions)](#14-integración-continua-github-actions)
-15. [Decisiones de diseño y trade-offs](#15-decisiones-de-diseño-y-trade-offs)
-16. [Limitaciones actuales y mejoras futuras](#16-limitaciones-actuales-y-mejoras-futuras)
-17. [Estado del despliegue](#17-estado-del-despliegue)
-18. [Solución de problemas](#18-solución-de-problemas)
+[Demo](#demo) · [Features](#features) · [Screenshots](#screenshots) · [Architecture](#architecture) · [Getting started](#getting-started) · [Quality](#quality-and-testing) · [Deployment](#deployment)
+
+</div>
+
+<p align="center">
+  <img src="docs/assets/dashboard.png" alt="QueueFlow dashboard: tickets assigned to the current user, recently updated tickets across projects, a tickets-by-status breakdown and per-project progress" width="100%">
+</p>
+
+QueueFlow is a full-stack portfolio project built as a production-style application: a React + TypeScript single-page app on top of a stateless Spring Boot REST API and PostgreSQL. Every team works in its own **workspace** and only ever sees its own data. A workspace contains **projects** identified by a short key such as `CORE`, and each project contains numbered **tickets** (`CORE-1`, `CORE-2`, …).
+
+> **Status:** v1.0.0 is complete. The V1 scope described below is implemented and covered by CI. QueueFlow runs locally (development mode or a production-style Docker stack); **there is no public deployment** - see [Deployment](#deployment).
 
 ---
 
-## 1. Qué es QueueFlow y alcance de la V1
+## Demo
 
-QueueFlow es una aplicación *multi-tenant*: cada equipo trabaja en su propio **espacio de trabajo** (*workspace*) y solo ve sus datos. Dentro de un workspace hay **proyectos** (identificados por una clave corta como `CORE`), y dentro de cada proyecto **tickets** numerados (`CORE-1`, `CORE-2`…).
+<p align="center">
+  <img src="docs/assets/kanban-demo.gif" alt="Animated demo: on the Core Platform board, the ticket CORE-5 'Release version 1.0' is dragged from the To do column and dropped into In progress, and the column counters update" width="100%">
+</p>
 
-El alcance de la V1 es deliberadamente acotado:
+On the Core Platform board, `CORE-5` is dragged from **To do** to **In progress**. The target column is highlighted while dragging, the counters update on drop, and the backend records the move in the ticket's activity history, exactly like a status change made from the ticket page.
 
-- Registro de un workspace junto con su primer usuario (ADMIN) e inicio de sesión con JWT.
-- Proyectos, tickets, tablero kanban, etiquetas, comentarios e historial de actividad automático.
-- Gestión de miembros por parte del ADMIN (alta, renombrado y baja).
-- Interfaz completa en inglés y español.
-- Ejecución local: modo desarrollo y stack Docker de estilo producción.
+There is no hosted demo. To try QueueFlow, [run it locally](#getting-started) - the Docker stack needs only Docker and a `.env` file. The screenshots and the animation come from a local instance populated with fictional demo data.
 
-Lo que **no** existe todavía (invitaciones por email, cambio de contraseña, *refresh tokens*, despliegue público, etc.) está listado en [Limitaciones](#16-limitaciones-actuales-y-mejoras-futuras).
+## Features
 
-## 2. Funcionalidades por rol
+**Workspaces and access**
+- Sign up creates a workspace, its first user (the ADMIN) and a starter catalog of 12 labels in one transaction.
+- JWT authentication (HS256, 1-hour tokens); role and workspace are re-read from the database on every request, so removing a member takes effect immediately.
+- Strict workspace isolation: anything outside your workspace answers `404`, exactly like something that does not exist.
+- Role-based permissions (ADMIN / MEMBER), enforced by the backend and mirrored by the UI.
 
-Cada workspace tiene exactamente un **ADMIN** (quien lo registró) y cualquier número de **MEMBER**, que el ADMIN da de alta. En la V1 no se pueden cambiar roles. Fuera de las operaciones de administración, ambos roles colaboran en igualdad de condiciones.
+**Projects and tickets**
+- Projects with a unique, immutable key (2-10 characters `A-Z`/`0-9`).
+- Tickets with title, description, five statuses (`BACKLOG`, `TODO`, `IN_PROGRESS`, `REVIEW`, `DONE`), four priorities (`LOW`-`CRITICAL`), an optional assignee and labels.
+- Concurrency-safe per-project numbering (`CORE-7`), backed by a row lock and a unique constraint.
+- Inline editing of every field on the ticket page.
 
-| Funcionalidad | ADMIN | MEMBER |
+**Board and list views**
+- Kanban board with one column per status; cards move by drag and drop (mouse, touch or keyboard) or with a "Move" menu.
+- Ticket list with search by title or key and filters by status, priority, assignee and label. Filters live in the URL, so they survive reloads and can be shared.
+
+**Collaboration**
+- Plain-text comments; only the author can edit or delete their own.
+- Automatic, read-only activity history: creation and every change of title, description, status, priority, assignee and labels.
+- Dashboard: tickets by status, open tickets assigned to you, recently updated tickets and per-project progress, served by a single request.
+- Member management for the ADMIN: add (name, email, initial password), rename and remove members.
+
+**Interface**
+- Responsive layout, from a desktop sidebar to a mobile navigation drawer.
+- Complete English and Spanish localization, switchable at any time.
+
+### Permissions
+
+Each workspace has exactly one **ADMIN** (whoever registered it) and any number of **MEMBERs** added by the ADMIN. Roles cannot be changed in V1. Outside administration, both roles collaborate on equal terms.
+
+| Capability | ADMIN | MEMBER |
 |---|:---:|:---:|
-| Ver el panel (*dashboard*) del workspace | ✅ | ✅ |
-| Ver proyectos y sus tickets | ✅ | ✅ |
-| Crear proyectos y editar su nombre y descripción | ✅ | ❌ |
-| Crear tickets y editar título, descripción, estado, prioridad y responsable | ✅ | ✅ |
-| Mover tickets en el tablero kanban | ✅ | ✅ |
-| Añadir y quitar etiquetas de un ticket; crear etiquetas nuevas | ✅ | ✅ |
-| Comentar en un ticket | ✅ | ✅ |
-| Editar o borrar un comentario | Solo los suyos | Solo los suyos |
-| Ver la lista de miembros (nombre, email y rol) | ✅ | ✅ |
-| Dar de alta, renombrar y dar de baja miembros | ✅ | ❌ |
+| View the dashboard, projects and tickets | ✅ | ✅ |
+| Create projects; edit their name and description | ✅ | ❌ |
+| Create tickets; edit title, description, status, priority and assignee | ✅ | ✅ |
+| Move tickets on the board | ✅ | ✅ |
+| Create labels; add and remove them on tickets | ✅ | ✅ |
+| Comment on tickets | ✅ | ✅ |
+| Edit or delete a comment | Own only | Own only |
+| View the member list (name, email, role) | ✅ | ✅ |
+| Add, rename and remove members | ✅ | ❌ |
 
-Detalles verificados en el código:
+Details verified in the code:
 
-- **Panel** (`/app`): tickets por estado, tickets abiertos asignados al usuario, cambios recientes y recuento de tickets por proyecto, todo en una sola petición (`GET /api/workspaces/{id}/dashboard`).
-- **Lista de tickets** (`/app/projects/CORE`): búsqueda y filtros por estado, prioridad, responsable y etiqueta. Los filtros viven en la URL (`?q=&status=&priority=&assignee=&label=`), así que sobreviven a recargas y se pueden compartir. El filtrado se hace en el navegador sobre la lista completa del proyecto (el backend no pagina esa lista).
-- **Tablero** (`/app/projects/CORE/board`): una columna por estado; un ticket se mueve arrastrándolo (ratón, táctil o teclado) o con su control «Mover». Aplican los mismos filtros, salvo el de estado (las columnas ya son los estados).
-- **Detalle de ticket** (`/app/projects/CORE/tickets/7`): edición en línea de todos sus campos, etiquetas, comentarios (texto plano) y actividad.
-- **Proyectos**: la clave (2–10 caracteres `A-Z`/`0-9`, normalizada a mayúsculas) es única dentro del workspace y **no se puede cambiar**. Los proyectos **no se pueden borrar**.
-- **Miembros** (`/app/members`): el ADMIN introduce nombre, email y contraseña inicial; la cuenta se crea al momento como MEMBER y puede iniciar sesión inmediatamente. QueueFlow no envía emails: el ADMIN comunica las credenciales por su cuenta. El ADMIN no puede darse de baja ni dar de baja a otro ADMIN.
-- **Baja de un miembro**: deja de poder iniciar sesión, cualquier token que tuviera deja de funcionar en la siguiente petición, sus tickets asignados pasan a «sin asignar» (con su entrada de actividad) y los tickets, comentarios y actividad que creó se conservan.
-- **Etiquetas iniciales**: cada workspace nuevo recibe un catálogo de 12 etiquetas (`frontend`, `backend`, `bug`, `feature`, `enhancement`, `documentation`, `testing`, `security`, `performance`, `ux`, `infrastructure`, `release`).
-- La interfaz solo ofrece lo que el rol actual permite, y el backend aplica las mismas reglas de forma independiente.
+- **Dashboard** (`/app`): one request, `GET /api/workspaces/{id}/dashboard`.
+- **Ticket list** (`/app/projects/CORE`): query parameters `?q=&status=&priority=&assignee=&label=`. Filtering runs in the browser over the project's full ticket list (the backend does not paginate it).
+- **Board** (`/app/projects/CORE/board`): the same filters except status, since the columns are the statuses.
+- **Ticket page** (`/app/projects/CORE/tickets/7`): inline editing, labels, comments and activity.
+- **Projects** cannot be deleted, and their key cannot be changed.
+- **Members** (`/app/members`): a new member is created immediately as MEMBER and can sign in right away. QueueFlow sends no email; the ADMIN shares the credentials. The ADMIN cannot remove themselves or another ADMIN.
+- **Removing a member**: they can no longer sign in, any token they hold stops working on its next request, their assigned tickets become unassigned (with an activity entry), and the tickets, comments and activity they created are kept.
+- **Starter labels**: `frontend`, `backend`, `bug`, `feature`, `enhancement`, `documentation`, `testing`, `security`, `performance`, `ux`, `infrastructure`, `release`.
 
-## 3. Stack tecnológico
+## Screenshots
 
-Versiones tomadas de `backend/pom.xml`, `frontend/package.json`, los `Dockerfile` y los ficheros Compose.
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/projects.png" alt="Projects page listing three projects with their keys and descriptions: Core Platform (CORE), Customer Portal (PORTAL) and Mobile Experience (MOBILE)">
+      <p align="center"><sub><b>Projects</b> - each with a short, unique key</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/ticket-list.png" alt="Core Platform ticket list with search, status, priority, assignee and label filters, showing seven tickets with labels, status, priority and assignee">
+      <p align="center"><sub><b>Ticket list</b> - search and URL-backed filters</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/kanban.png" alt="Core Platform Kanban board with Backlog, To do, In progress, Review and Done columns; cards show key, title, labels, priority and assignee">
+      <p align="center"><sub><b>Kanban board</b> - one column per status</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/ticket-details.png" alt="Ticket CORE-1 'Implement authentication flow': description, two comments, a comment box, the activity history and a details panel with status, priority, assignee and labels">
+      <p align="center"><sub><b>Ticket details</b> - comments, activity and inline editing</sub></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src="docs/assets/members.png" alt="Members page listing six workspace members with their emails and roles, one Admin and five Members, and an Add member button">
+      <p align="center"><sub><b>Members</b> - managed by the workspace ADMIN</sub></p>
+    </td>
+    <td width="50%" valign="top">
+      <img src="docs/assets/login.png" alt="Sign-in page in Spanish: a product panel with a sample board on the left and the email and password form with an English/Español switcher on the right">
+      <p align="center"><sub><b>Sign in</b> - shown with the Spanish locale</sub></p>
+    </td>
+  </tr>
+</table>
 
-| Capa | Tecnología |
+<p align="center">
+  <img src="docs/assets/mobile-dashboard.png" alt="Dashboard on a mobile viewport: assigned tickets and tickets-by-status cards stacked in a single column" width="282">
+  &nbsp;&nbsp;
+  <img src="docs/assets/mobile-ticket.png" alt="Ticket PORTAL-1 on a mobile viewport: status, priority, assignee and labels as compact controls above the description and comments" width="233">
+  <br>
+  <sub><b>Mobile</b> - dashboard and ticket page on a narrow viewport</sub>
+</p>
+
+## Tech stack
+
+Versions taken from `backend/pom.xml`, `frontend/package-lock.json`, the Dockerfiles and the Compose files.
+
+| Area | Technology |
 |---|---|
-| Backend | Java 21, Spring Boot 4.1.1 (Web MVC, Data JPA/Hibernate, Validation, Security, OAuth2 Resource Server, Actuator) |
-| Build backend | Maven 3.9.16 vía Maven Wrapper (`mvnw` / `mvnw.cmd`) |
-| Base de datos | PostgreSQL 18 (imagen `postgres:18-alpine`), migraciones con Flyway |
-| Documentación API | springdoc-openapi 3.1.0 (OpenAPI 3 + Swagger UI) |
-| Frontend | React 19, TypeScript 6, Vite 8, Tailwind CSS 4, React Router 8 |
-| Frontend (otras) | i18next + react-i18next, dnd-kit (arrastrar y soltar), lucide-react (iconos) |
-| Calidad frontend | oxlint (lint) y `tsc -b` (comprobación de tipos) |
-| Contenedores | Docker + Docker Compose v2; `eclipse-temurin:21` (JDK para compilar, JRE para ejecutar), `node:24-alpine` (build), `nginxinc/nginx-unprivileged:1.28-alpine` (servir frontend) |
-| CI | GitHub Actions |
+| **Frontend** | React 19, TypeScript 6, Vite 8, Tailwind CSS 4, React Router 8, i18next + react-i18next, dnd-kit (drag and drop), lucide-react (icons) |
+| **Backend** | Java 21, Spring Boot 4.1.1 (Web MVC, Data JPA/Hibernate, Validation, Security, OAuth2 Resource Server for JWT, Actuator), springdoc-openapi 3.1.0 |
+| **Database** | PostgreSQL 18, schema managed by Flyway |
+| **Infrastructure** | Docker, Docker Compose v2, nginx (`nginxinc/nginx-unprivileged:1.28-alpine`), Caddy 2.11 for the prepared HTTPS deployment |
+| **Tooling** | Maven 3.9.16 via the Maven Wrapper, npm, oxlint, `tsc -b`, JUnit 5 + Spring Boot Test + MockMvc, GitHub Actions |
 
-## 4. Arquitectura
+## Architecture
 
-QueueFlow es una SPA (*single-page application*) React que habla con una API REST JSON *stateless* en Spring Boot, la cual persiste en PostgreSQL. Hay dos formas de ejecutarla:
+QueueFlow is a modular monolith: a React SPA talks to a stateless JSON REST API in Spring Boot, which persists to PostgreSQL. In the production-style Docker stack, the browser only ever sees one origin:
 
-**Stack Docker (estilo producción)** — el navegador solo ve un origen:
-
-```text
-Navegador ──► nginx (contenedor frontend, 127.0.0.1:8088)
-                ├─ /              → ficheros estáticos de la build de Vite (SPA)
-                ├─ /api/          → proxy ──► Spring Boot (contenedor backend, :8080, sin puerto en el host)
-                └─ /actuator/health → proxy ──► Spring Boot
-                                                   │
-                                                   ▼
-                                     PostgreSQL 18 (contenedor, sin puerto en el host)
+```mermaid
+flowchart LR
+    browser(["Browser"])
+    subgraph stack["Docker Compose stack · compose.prod.yaml"]
+        direction LR
+        nginx["nginx<br/>React SPA (Vite build)<br/>reverse proxy"]
+        api["Spring Boot REST API<br/>JWT · Bean Validation<br/>Flyway migrations"]
+        db[("PostgreSQL 18")]
+    end
+    browser -- "127.0.0.1:8088" --> nginx
+    nginx -- "/api/* · /actuator/health" --> api
+    api -- "JDBC" --> db
 ```
 
-**Desarrollo local** — dos orígenes, con CORS:
+- **nginx** serves the static build and proxies `/api/` and `/actuator/health` to the backend over the stack's private network. It is the only container with a published port, bound to `127.0.0.1`. Swagger UI is deliberately not proxied.
+- **Backend and PostgreSQL** publish no host ports. The backend waits for a healthy database, and nginx waits for a healthy backend.
+- **Flyway** applies the migrations at startup; Hibernate only **validates** the schema (`ddl-auto: validate`).
+- For the prepared public deployment, [`compose.oci.yaml`](compose.oci.yaml) adds **Caddy** in front of nginx for automatic HTTPS (see [Deployment](#deployment)).
+
+In **development** there are two origins, with CORS:
 
 ```text
-Navegador ──► Vite dev server (localhost:5173)          ← código React con recarga en caliente
-Navegador ──► Spring Boot (localhost:8080)  ──► PostgreSQL en Docker (localhost:5432)
+Browser ──► Vite dev server (localhost:5173)     React with hot reload
+Browser ──► Spring Boot (localhost:8080) ──► PostgreSQL in Docker (localhost:5432)
 ```
 
-### Flujo de una petición (ejemplo: cambiar el estado de un ticket)
+### Request lifecycle
 
-1. El frontend envía `PATCH /api/tickets/{ticketId}` con `Authorization: Bearer <token>` (en Docker, a través de nginx, que añade las cabeceras `X-Forwarded-*`).
-2. Spring Security valida el JWT (firma HS256, emisor y expiración) y `CurrentUserJwtAuthenticationConverter` carga desde la base de datos el usuario del claim `sub`: su workspace y su rol actuales. Si el usuario ya no existe o fue dado de baja → `401`.
-3. El controlador valida el cuerpo (Bean Validation) y llama al servicio pasando el `AuthenticatedUser`.
-4. El servicio, dentro de una transacción, busca el ticket **en el workspace del usuario** (si no está ahí → `404`), aplica las reglas de negocio y registra una entrada de actividad por cada campo modificado.
-5. Se devuelve un DTO JSON. Cualquier error sale en un formato común (`ApiErrorResponse`) desde `GlobalExceptionHandler`.
+Example: changing a ticket's status.
 
-### Organización del backend
+1. The frontend sends `PATCH /api/tickets/{ticketId}` with `Authorization: Bearer <token>` (in Docker through nginx, which adds the `X-Forwarded-*` headers).
+2. Spring Security validates the JWT (HS256 signature, issuer, expiry). `CurrentUserJwtAuthenticationConverter` loads the user from the `sub` claim, with their current workspace and role. A missing or removed user gets `401`.
+3. The controller validates the body (Bean Validation) and calls the service with the `AuthenticatedUser`.
+4. Inside one transaction, the service looks the ticket up **within the user's workspace** (otherwise `404`), applies the business rules and records one activity entry per changed field.
+5. A JSON DTO is returned. Every error uses one format (`ApiErrorResponse`), produced by `GlobalExceptionHandler`.
 
-El backend está organizado **por funcionalidad** (no por capa técnica): cada paquete (`ticket`, `project`, `comment`…) contiene su entidad JPA, repositorio, servicio, controladores y DTOs. Los servicios son la frontera de confianza: ahí se deciden el aislamiento por workspace y los permisos por rol.
+### Backend organization
 
-## 5. Estructura del repositorio
+The backend is organized **by feature**, not by technical layer: each package (`ticket`, `project`, `comment`, …) holds its JPA entity, repository, service, controllers and DTOs. Services are the trust boundary - workspace isolation and role checks are decided there.
+
+<details>
+<summary><b>Repository structure</b></summary>
 
 ```text
 QueueFlow/
-├── .github/workflows/ci.yml     # CI: jobs backend y frontend
-├── .env.example                 # Plantilla de variables de entorno (copiar a .env)
-├── compose.yaml                 # Solo PostgreSQL, para desarrollo local
-├── compose.prod.yaml            # Stack completo: PostgreSQL + backend + frontend/nginx
-├── dev.ps1                      # Arranque del entorno de desarrollo en Windows
+├── .github/workflows/ci.yml     # CI: backend and frontend jobs
+├── .env.example                 # Environment template (copy to .env)
+├── compose.yaml                 # PostgreSQL only, for local development
+├── compose.prod.yaml            # Full stack: PostgreSQL + backend + frontend/nginx
+├── compose.oci.yaml             # Public-VM override: Caddy (HTTPS), limits, log rotation
+├── dev.ps1                      # Starts the development environment on Windows
+├── deploy/oci/                  # Caddyfile and PostgreSQL backup script
+├── docs/
+│   ├── assets/                  # README screenshots and demo animation
+│   └── deployment-oci.md        # Oracle Cloud deployment guide (Spanish)
 ├── backend/
-│   ├── Dockerfile               # Build multi-etapa (JDK → JRE, usuario no root)
+│   ├── Dockerfile               # Multi-stage build (JDK → JRE, non-root user)
 │   ├── pom.xml, mvnw, mvnw.cmd  # Maven Wrapper
 │   └── src/
 │       ├── main/java/com/queueflow/
-│       │   ├── activity/        # Historial de actividad de tickets
-│       │   ├── auth/            # Registro, login, /me
-│       │   ├── comment/         # Comentarios
-│       │   ├── common/          # Excepciones, manejador global de errores, PatchField
-│       │   ├── config/          # Seguridad, CORS, OpenAPI, MVC
-│       │   ├── dashboard/       # Resumen del workspace
-│       │   ├── label/           # Etiquetas y su asociación con tickets
-│       │   ├── project/         # Proyectos
-│       │   ├── security/        # JWT, contraseñas, usuario autenticado, RoleAccess
-│       │   ├── ticket/          # Tickets, estados, prioridades, numeración
-│       │   ├── user/            # Usuarios y gestión de miembros
-│       │   └── workspace/       # Workspaces y WorkspaceAccess
+│       │   ├── activity/        # Ticket activity history
+│       │   ├── auth/            # Register, login, /me
+│       │   ├── comment/         # Comments
+│       │   ├── common/          # Exceptions, global error handler, PatchField
+│       │   ├── config/          # Security, CORS, OpenAPI, MVC
+│       │   ├── dashboard/       # Workspace summary
+│       │   ├── label/           # Labels and their ticket association
+│       │   ├── project/         # Projects
+│       │   ├── security/        # JWT, passwords, authenticated user, RoleAccess
+│       │   ├── ticket/          # Tickets, statuses, priorities, numbering
+│       │   ├── user/            # Users and member management
+│       │   └── workspace/       # Workspaces and WorkspaceAccess
 │       ├── main/resources/
 │       │   ├── application.yml
-│       │   └── db/migration/    # Migraciones Flyway V1–V6
-│       └── test/                # Tests JUnit (unitarios, de controlador, de repositorio e integración)
+│       │   └── db/migration/    # Flyway migrations V1–V6
+│       └── test/                # JUnit tests (unit, controller, repository, integration)
 └── frontend/
-    ├── Dockerfile               # Build con Node 24 → nginx sin privilegios
-    ├── docker/                  # nginx.conf y fragmentos de cabeceras (proxy y seguridad)
+    ├── Dockerfile               # Node 24 build → unprivileged nginx
+    ├── docker/                  # nginx.conf and header snippets (proxy, security)
     ├── package.json, package-lock.json, vite.config.ts, .oxlintrc.json
     └── src/
-        ├── api/                 # Cliente HTTP y una función por endpoint
-        ├── components/          # Componentes de UI compartidos y layout de la app
-        ├── features/            # Por funcionalidad: auth, board, dashboard, members, projects, tickets, workspace
-        ├── i18n/                # Configuración de i18next y textos en/es
-        ├── layouts/, pages/     # Layouts raíz y páginas sueltas (salud, 404, error)
-        ├── routes/              # Router y construcción de rutas
-        ├── hooks/, lib/         # Utilidades
-        └── styles/              # CSS global (Tailwind)
+        ├── api/                 # HTTP client and one function per endpoint
+        ├── components/          # Shared UI components and app layout
+        ├── features/            # auth, board, dashboard, members, projects, tickets, workspace
+        ├── i18n/                # i18next setup and en/es texts
+        ├── layouts/, pages/     # Root layouts and standalone pages (health, 404, error)
+        ├── routes/              # Router and path builders
+        ├── hooks/, lib/         # Utilities
+        └── styles/              # Global CSS (Tailwind)
 ```
 
-## 6. Modelo de datos
+</details>
 
-El esquema lo define **exclusivamente Flyway** (`backend/src/main/resources/db/migration`); Hibernate solo lo **valida** al arrancar (`ddl-auto: validate`).
+<details>
+<summary><b>Data model and migrations</b></summary>
+
+The schema is defined **only by Flyway** (`backend/src/main/resources/db/migration`); Hibernate validates it at startup.
 
 ```mermaid
 erDiagram
-    WORKSPACES ||--o{ USERS : "tiene"
-    WORKSPACES ||--o{ PROJECTS : "tiene"
-    WORKSPACES ||--o{ LABELS : "tiene"
-    PROJECTS ||--o{ TICKETS : "contiene"
-    USERS ||--o{ TICKETS : "crea (creator_id)"
-    USERS |o--o{ TICKETS : "es responsable (assignee_id)"
+    WORKSPACES ||--o{ USERS : has
+    WORKSPACES ||--o{ PROJECTS : has
+    WORKSPACES ||--o{ LABELS : has
+    PROJECTS ||--o{ TICKETS : contains
+    USERS ||--o{ TICKETS : "creates (creator_id)"
+    USERS |o--o{ TICKETS : "is assigned (assignee_id)"
     TICKETS ||--o{ TICKET_LABELS : ""
     LABELS ||--o{ TICKET_LABELS : ""
-    TICKETS ||--o{ COMMENTS : "tiene"
-    USERS ||--o{ COMMENTS : "escribe"
-    TICKETS ||--o{ ACTIVITIES : "registra"
-    USERS ||--o{ ACTIVITIES : "provoca"
+    TICKETS ||--o{ COMMENTS : has
+    USERS ||--o{ COMMENTS : writes
+    TICKETS ||--o{ ACTIVITIES : records
+    USERS ||--o{ ACTIVITIES : causes
 ```
 
-| Tabla | Contenido y restricciones relevantes |
+| Table | Contents and notable constraints |
 |---|---|
-| `workspaces` | Nombre del espacio de trabajo. |
-| `users` | Nombre, email, hash de contraseña, rol (`ADMIN`/`MEMBER`), workspace y `removed_at` (baja lógica). Email único sin distinguir mayúsculas (índice único sobre `lower(email)`). |
-| `projects` | Nombre, clave, descripción y `next_ticket_number` (contador para numerar tickets). Clave única por workspace. |
-| `tickets` | Número, título, descripción, estado, prioridad, proyecto, creador y responsable opcional. `(project_id, ticket_number)` único. |
-| `labels` | Nombre (máx. 50), único por workspace. |
-| `ticket_labels` | Relación N:M ticket–etiqueta (PK compuesta). |
-| `comments` | Contenido, ticket y autor. |
-| `activities` | Tipo de evento, valor anterior y nuevo, ticket y usuario. Solo inserción (sin `updated_at`). |
+| `workspaces` | Workspace name. |
+| `users` | Name, email, password hash, role (`ADMIN`/`MEMBER`), workspace and `removed_at` (soft removal). Case-insensitive unique email (unique index on `lower(email)`). |
+| `projects` | Name, key, description and `next_ticket_number` (ticket numbering counter). Key unique per workspace. |
+| `tickets` | Number, title, description, status, priority, project, creator and optional assignee. `(project_id, ticket_number)` unique. |
+| `labels` | Name (max. 50), unique per workspace. |
+| `ticket_labels` | Ticket–label many-to-many (composite primary key). |
+| `comments` | Content, ticket and author. |
+| `activities` | Event type, old and new value, ticket and user. Insert-only (no `updated_at`). |
 
-Convenciones: claves primarias UUID generadas por PostgreSQL 18 con `uuidv7()` (ordenadas en el tiempo, no revelan cuántas filas hay y no fragmentan los índices como UUIDv4), timestamps `TIMESTAMPTZ`, índices explícitos solo donde hay un patrón de consulta real (justificados en comentarios de cada migración).
+Conventions: UUID primary keys generated by PostgreSQL 18 with `uuidv7()` (time-ordered, they do not reveal row counts and do not fragment indexes the way UUIDv4 does), `TIMESTAMPTZ` timestamps, and explicit indexes only where a real query pattern needs them (each justified in its migration).
 
-| Migración | Cambio |
+| Migration | Change |
 |---|---|
-| `V1` | `workspaces` y `users` |
+| `V1` | `workspaces` and `users` |
 | `V2` | `projects` |
-| `V3` | `tickets` y contador `next_ticket_number` |
+| `V3` | `tickets` and the `next_ticket_number` counter |
 | `V4` | `labels`, `ticket_labels`, `comments`, `activities` |
-| `V5` | Unicidad de email sin distinguir mayúsculas |
-| `V6` | `users.removed_at` (baja de miembros) |
+| `V5` | Case-insensitive email uniqueness |
+| `V6` | `users.removed_at` (member removal) |
 
-## 7. Seguridad: autenticación, autorización y aislamiento
+</details>
 
-### Autenticación (JWT)
+<details>
+<summary><b>Tickets: statuses, numbering, comments and activity</b></summary>
 
-- `POST /api/auth/register` crea un workspace, sus etiquetas iniciales y su primer usuario (ADMIN) en una sola transacción, y devuelve un token. `POST /api/auth/login` devuelve un token para credenciales válidas.
-- El token es un **JWT HS256** firmado con `JWT_SECRET` (clave Base64 de al menos 32 bytes; el backend **no arranca** sin ella). Contiene solo `sub` (id de usuario), `iss` (`queueflow`), `iat` y `exp`. Duración: **1 hora** (`queueflow.security.jwt.ttl`). El decodificador solo acepta HS256, nunca el algoritmo que diga la cabecera del token.
-- Todas las demás rutas `/api/**` exigen `Authorization: Bearer <token>`. La API es **stateless**: sin sesión ni cookies, y por eso CSRF está desactivado (no hay credenciales que el navegador adjunte automáticamente).
-- El **rol y el workspace no viajan en el token**: se leen de la base de datos en cada petición. Así, la baja de un miembro surte efecto en su siguiente petición, sin esperar a que caduque el token.
-- En el frontend el token se guarda en `sessionStorage` (sobrevive a recargar la pestaña, desaparece al cerrarla) y el usuario actual se obtiene siempre de `GET /api/auth/me`. Cerrar sesión solo olvida el token en el navegador: **no hay logout en servidor**.
+**Statuses:** `BACKLOG` → `TODO` → `IN_PROGRESS` → `REVIEW` → `DONE`. No transition workflow is enforced: any status can move to any other. In filters, "open" means everything except `DONE`.
 
-### Contraseñas
+**Priorities:** `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`.
 
-Mínimo 8 caracteres. Se almacenan con el `DelegatingPasswordEncoder` de Spring Security, que hoy usa **BCrypt** y guarda el algoritmo como prefijo (`{bcrypt}…`), de modo que se podría migrar a otro algoritmo sin invalidar los hashes existentes. Los DTOs de autenticación ocultan la contraseña y el token en su `toString()`.
+Creating a ticket requires project, title (max. 255), status and priority; description and assignee are optional. The assignee must be an active member of the same workspace.
 
-### Autorización (RBAC) y aislamiento por workspace
+**Concurrency-safe numbering.** The visible key (`CORE-7`) is not stored; it is composed on read from the project key and `ticket_number`. Numbers are **not** assigned with `MAX(ticket_number) + 1`, which breaks under concurrent inserts. Each project has a `next_ticket_number` counter, and the service:
 
-Las reglas se aplican en los **servicios**, no con anotaciones en los controladores, y en este orden:
+1. locks the project row (`SELECT … FOR UPDATE`, pessimistic lock),
+2. takes the number and increments the counter in the same transaction,
+3. inserts the ticket.
 
-1. **Aislamiento** (`WorkspaceAccess` y consultas filtradas por workspace): todo recurso se busca dentro del workspace del usuario. Un recurso de otro workspace responde **`404`**, exactamente igual que uno inexistente, así que la API no revela qué existe en otros workspaces.
-2. **Rol** (`RoleAccess.requireAdmin`): crear/editar proyectos y crear/editar/dar de baja miembros exige ADMIN; si no → **`403`**.
-3. **Autoría**: solo el autor de un comentario puede editarlo o borrarlo (también frente al ADMIN) → **`403`**.
+The `UNIQUE (project_id, ticket_number)` constraint is the safety net, and an integration test creates tickets in parallel to prove it.
 
-Ese orden garantiza que un MEMBER que pregunta por un proyecto de otro workspace reciba `404` y no `403`.
+**Comments:** plain text, ordered by date. Any member can comment; only the author can edit or delete.
 
-### Otras medidas
+**Activity:** recorded automatically by the backend, in the same transaction as the change: ticket creation and every change of title, description, status, priority, assignee and labels (`TICKET_CREATED`, `TITLE_CHANGED`, `DESCRIPTION_CHANGED`, `STATUS_CHANGED`, `PRIORITY_CHANGED`, `ASSIGNEE_CHANGED`, `LABEL_ADDED`, `LABEL_REMOVED`). Board moves produce the same activity as a status change. Shown oldest first; it cannot be edited.
 
-- **CORS**: lista explícita de orígenes (`QUEUEFLOW_CORS_ALLOWED_ORIGINS`, por defecto `http://localhost:5173`); los comodines se rechazan. En Docker no hace falta CORS porque todo va por el mismo origen.
-- **Proxy**: el backend confía en las cabeceras `X-Forwarded-*` solo si llegan desde direcciones privadas (`server.forward-headers-strategy: native`).
-- **Contenedores**: backend y nginx se ejecutan con usuarios no root; solo se publica el puerto del frontend y solo en `127.0.0.1`. Swagger UI no se expone a través de nginx.
-- **Errores**: nunca incluyen trazas ni nombres de clases internas.
+**Labels:** belong to the workspace and are shared by all its projects. Any member can create and assign them; in V1 they cannot be renamed or deleted.
 
-## 8. API REST
+</details>
 
-API JSON bajo `/api`. Todas las rutas salvo registro y login requieren token. Los identificadores son UUID; los tickets también se pueden obtener por número dentro de su proyecto.
+### Security
 
-| Recurso | Endpoints |
+**Authentication (JWT)**
+- `POST /api/auth/register` creates a workspace, its starter labels and its first user (ADMIN) in one transaction and returns a token; `POST /api/auth/login` returns a token for valid credentials.
+- Tokens are **HS256 JWTs** signed with `JWT_SECRET` (a Base64 key of at least 32 bytes; the backend **refuses to start** without it). They carry only `sub` (user id), `iss` (`queueflow`), `iat` and `exp`, and last **1 hour** (`queueflow.security.jwt.ttl`). The decoder accepts HS256 only, never whatever algorithm the token header claims.
+- Every other `/api/**` route requires `Authorization: Bearer <token>`. The API is **stateless** - no session, no cookies - which is why CSRF protection is disabled (there are no credentials the browser attaches automatically).
+- **Role and workspace are not in the token**: they are read from the database on every request.
+- The frontend keeps the token in `sessionStorage` (survives a reload, gone when the tab closes) and always gets the current user from `GET /api/auth/me`. Signing out only forgets the token in the browser: **there is no server-side logout**.
+
+**Passwords**: at least 8 characters, stored with Spring Security's `DelegatingPasswordEncoder` - currently **BCrypt**, with the algorithm as a prefix (`{bcrypt}…`), so the algorithm could be migrated without invalidating existing hashes. Authentication DTOs redact the password and the token in `toString()`.
+
+**Authorization and isolation** are applied in the **services**, not with controller annotations, in this order:
+
+1. **Isolation** (`WorkspaceAccess` and workspace-scoped queries): every resource is looked up within the user's workspace. A resource from another workspace answers **`404`**, exactly like a non-existent one, so the API never reveals what exists elsewhere.
+2. **Role** (`RoleAccess.requireAdmin`): creating/editing projects and adding/editing/removing members require ADMIN, otherwise **`403`**.
+3. **Ownership**: only a comment's author can edit or delete it - even against the ADMIN - otherwise **`403`**.
+
+This order guarantees that a MEMBER asking for another workspace's project gets `404`, not `403`.
+
+**Other measures**
+- **CORS**: explicit origin list (`QUEUEFLOW_CORS_ALLOWED_ORIGINS`, default `http://localhost:5173`); wildcards are rejected. The Docker stack needs no CORS because everything is same-origin.
+- **Proxy headers**: the backend trusts `X-Forwarded-*` only from private addresses (`server.forward-headers-strategy: native`).
+- **Containers**: backend and nginx run as non-root users; only the frontend port is published, and only on `127.0.0.1`. nginx adds `X-Content-Type-Options`, `X-Frame-Options` and `Referrer-Policy` headers.
+- **Errors** never include stack traces or internal class names.
+
+<details>
+<summary><b>REST API</b></summary>
+
+JSON API under `/api`. Every route except register and login requires a token. Identifiers are UUIDs; tickets can also be fetched by number within their project.
+
+| Resource | Endpoints |
 |---|---|
-| Autenticación | `POST /api/auth/register` · `POST /api/auth/login` · `GET /api/auth/me` |
+| Authentication | `POST /api/auth/register` · `POST /api/auth/login` · `GET /api/auth/me` |
 | Workspace | `GET /api/workspaces/{workspaceId}` · `GET /api/workspaces/{workspaceId}/dashboard` |
-| Miembros | `GET`, `POST /api/workspaces/{workspaceId}/members` · `PATCH`, `DELETE /api/workspaces/{workspaceId}/members/{userId}` |
-| Usuarios | `GET /api/users/{userId}` · `GET /api/users/by-email?email=` |
-| Proyectos | `GET /api/workspaces/{workspaceId}/projects` · `POST /api/projects` · `GET`, `PATCH /api/projects/{projectId}` · `GET /api/projects/by-key?key=` |
+| Members | `GET`, `POST /api/workspaces/{workspaceId}/members` · `PATCH`, `DELETE /api/workspaces/{workspaceId}/members/{userId}` |
+| Users | `GET /api/users/{userId}` · `GET /api/users/by-email?email=` |
+| Projects | `GET /api/workspaces/{workspaceId}/projects` · `POST /api/projects` · `GET`, `PATCH /api/projects/{projectId}` · `GET /api/projects/by-key?key=` |
 | Tickets | `GET /api/projects/{projectId}/tickets` · `GET /api/projects/{projectId}/tickets/{ticketNumber}` · `POST /api/tickets` · `GET`, `PATCH /api/tickets/{ticketId}` |
-| Etiquetas | `GET /api/workspaces/{workspaceId}/labels` · `POST /api/labels` · `GET /api/labels/{labelId}` · `GET /api/labels/by-name?name=` · `PUT`, `DELETE /api/tickets/{ticketId}/labels/{labelId}` |
-| Comentarios | `GET /api/tickets/{ticketId}/comments` · `POST /api/comments` · `GET`, `PATCH`, `DELETE /api/comments/{commentId}` |
-| Actividad | `GET /api/tickets/{ticketId}/activities` |
-| Salud | `GET /actuator/health` (público; incluye la comprobación de la base de datos) |
+| Labels | `GET /api/workspaces/{workspaceId}/labels` · `POST /api/labels` · `GET /api/labels/{labelId}` · `GET /api/labels/by-name?name=` · `PUT`, `DELETE /api/tickets/{ticketId}/labels/{labelId}` |
+| Comments | `GET /api/tickets/{ticketId}/comments` · `POST /api/comments` · `GET`, `PATCH`, `DELETE /api/comments/{commentId}` |
+| Activity | `GET /api/tickets/{ticketId}/activities` |
+| Health | `GET /actuator/health` (public; includes the database check) |
 
-Convenciones:
+Conventions:
 
-- Las creaciones responden `201 Created` con cabecera `Location`.
-- Las actualizaciones son `PATCH` parciales: solo se modifican los campos enviados.
-- Errores con un cuerpo común: `{ "timestamp", "status", "error", "message", "path" }`. Códigos: `400` (validación o regla de negocio), `401` (sin token, token inválido o credenciales incorrectas), `403` (rol o autoría), `404` (no existe o es de otro workspace), `405`, `409` (conflicto, p. ej. clave de proyecto o email duplicados), `415`.
+- Creation returns `201 Created` with a `Location` header.
+- Updates are partial `PATCH`es: only the fields sent are changed.
+- Errors share one body: `{ "timestamp", "status", "error", "message", "path" }`. Codes: `400` (validation or business rule), `401` (missing/invalid token or wrong credentials), `403` (role or ownership), `404` (missing or in another workspace), `405`, `409` (conflict, e.g. duplicate project key or email), `415`.
 
-### Documentación OpenAPI
-
-Con el backend en marcha en **modo desarrollo**:
+**OpenAPI.** With the backend running in **development mode**:
 
 - Swagger UI: <http://localhost:8080/swagger-ui.html>
-- Documento OpenAPI: <http://localhost:8080/v3/api-docs> (también `/v3/api-docs.yaml`)
+- OpenAPI document: <http://localhost:8080/v3/api-docs> (also `/v3/api-docs.yaml`)
 
-Para probar endpoints protegidos, obtén un token con register o login y pulsa **Authorize** en Swagger UI. En el stack Docker la documentación no es accesible porque nginx no la expone.
+To call protected endpoints, get a token from register or login and use **Authorize** in Swagger UI. In the Docker stack the documentation is not reachable, because nginx does not expose it.
 
-## 9. Tickets: estados, numeración, comentarios y actividad
+</details>
 
-**Estados:** `BACKLOG` → `TODO` → `IN_PROGRESS` → `REVIEW` → `DONE`. No hay un flujo de transiciones impuesto: se puede pasar de cualquier estado a cualquier otro. En los filtros, «abiertos» significa todo salvo `DONE`.
+### Internationalization
 
-**Prioridades:** `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`.
+The whole interface is available in English and Spanish with i18next. Texts live in `frontend/src/i18n/locales/{en,es}/`, split by area (auth, board, tickets, …), and a shared type (`locales/types.ts`) forces both languages to define the same keys. The language is chosen from the user menu or on the sign-in pages, stored in `localStorage` (`queueflow.language`), and defaults to English. The backend is not translated: its error messages are in English and the frontend shows its own translated texts.
 
-Al crear un ticket son obligatorios proyecto, título (máx. 255), estado y prioridad; la descripción y el responsable son opcionales. El responsable debe ser un miembro activo del mismo workspace.
+## Getting started
 
-**Numeración concurrente segura.** La clave visible (`CORE-7`) no se guarda: se compone al leer a partir de la clave del proyecto y `ticket_number`. Para asignar el número **no** se usa `MAX(ticket_number) + 1` (que falla con inserciones concurrentes); cada proyecto tiene un contador `next_ticket_number` y el servicio:
+### Prerequisites
 
-1. bloquea la fila del proyecto (`SELECT … FOR UPDATE`, bloqueo pesimista),
-2. toma el número y lo incrementa en la misma transacción,
-3. inserta el ticket.
+- **JDK 21** (Maven is not needed: the wrapper downloads it).
+- **Node.js 24** and npm (the version used by the Dockerfile and CI).
+- **Docker** with **Docker Compose v2** (Docker Desktop on Windows/macOS).
+- Windows PowerShell for the one-command `dev.ps1` script; the manual steps below work on any OS.
 
-La restricción `UNIQUE (project_id, ticket_number)` actúa como red de seguridad, y hay un test de integración que crea tickets en paralelo para comprobarlo.
+### 1. Configure `.env`
 
-**Comentarios:** texto plano, ordenados por fecha. Cualquier miembro puede comentar; solo el autor puede editar o borrar.
+Both run modes read a single `.env` file in the repository root:
 
-**Actividad:** el backend registra automáticamente, en la misma transacción que el cambio, la creación del ticket y cada cambio de título, descripción, estado, prioridad, responsable y etiquetas (tipos `TICKET_CREATED`, `TITLE_CHANGED`, `DESCRIPTION_CHANGED`, `STATUS_CHANGED`, `PRIORITY_CHANGED`, `ASSIGNEE_CHANGED`, `LABEL_ADDED`, `LABEL_REMOVED`). Los movimientos en el tablero generan la misma actividad que un cambio de estado. Se muestra de la más antigua a la más reciente y no se puede editar.
-
-**Etiquetas:** pertenecen al workspace y se comparten entre todos sus proyectos. Cualquier miembro puede crearlas y asignarlas; en la V1 no se pueden renombrar ni borrar.
-
-## 10. Internacionalización (EN/ES)
-
-Toda la interfaz está disponible en inglés y español con i18next. Los textos están en `frontend/src/i18n/locales/{en,es}/`, separados por área (auth, board, tickets…), y un tipo común (`locales/types.ts`) obliga a que ambos idiomas tengan las mismas claves. El idioma se elige desde el menú de usuario o en las páginas de inicio de sesión, se guarda en `localStorage` (`queueflow.language`) y por defecto es inglés.
-
-El backend no se traduce: sus mensajes de error están en inglés y el frontend muestra sus propios textos traducidos.
-
-## 11. Puesta en marcha
-
-### Requisitos
-
-- Windows con PowerShell (el script de desarrollo `dev.ps1` es PowerShell; el resto de comandos son estándar).
-- JDK 21 (Maven no hace falta: lo descarga el wrapper).
-- Node.js 24 y npm (la versión usada por el `Dockerfile` y la CI).
-- Docker Desktop con Docker Compose v2.
-
-### Configuración (`.env`)
-
-Ambos modos leen un único `.env` en la raíz del repositorio:
-
-```powershell
-Copy-Item .env.example .env
+```bash
+cp .env.example .env            # PowerShell: Copy-Item .env.example .env
 ```
 
-Edita `.env` y define, como mínimo, `POSTGRES_PASSWORD`, el mismo valor en `DB_PASSWORD` y un `JWT_SECRET` propio, por ejemplo con `openssl rand -base64 32`. `.env` está en `.gitignore`: **no lo subas nunca al repositorio**.
+Edit `.env` and set at least `POSTGRES_PASSWORD`, the same value in `DB_PASSWORD`, and your own `JWT_SECRET`, for example from `openssl rand -base64 32`. `.env` is git-ignored: **never commit it**.
 
-### Modo desarrollo (Windows)
+### 2a. Production-style Docker stack (quickest)
+
+```bash
+docker compose -f compose.prod.yaml up -d --build     # build the images and start
+docker compose -f compose.prod.yaml ps                # all three services should become "healthy"
+docker compose -f compose.prod.yaml logs -f backend   # follow one service's logs
+docker compose -f compose.prod.yaml down              # stop (data is kept)
+```
+
+Open <http://localhost:8088> (configurable with `APP_PORT`) and create a workspace.
+
+- The frontend is built with `VITE_API_BASE_URL=/` (same origin), fixed in `compose.prod.yaml`, so the development value from `.env` never ends up in the image.
+- The stack uses its own Compose project (`queueflow-stack`) and volume (`queueflow-stack_postgres-data`), separate from the development database (`queueflow-pgdata`). Both modes can run at the same time (no shared ports), and data survives `down` and restarts.
+
+> [!WARNING]
+> `docker compose -f compose.prod.yaml down -v` removes the stack **and its volume**, permanently deleting all of the stack's data. The development database is not affected.
+
+### 2b. Development mode
+
+**Windows (PowerShell):**
 
 ```powershell
 cd frontend
-npm install        # solo la primera vez o tras cambiar dependencias
+npm install        # first time only, or after dependency changes
 cd ..
 .\dev.ps1
 ```
 
-`dev.ps1` hace cuatro cosas:
+`dev.ps1` does four things:
 
-1. `docker compose up -d`: arranca PostgreSQL (`compose.yaml`, puerto `5432`, volumen `queueflow-pgdata`).
-2. Carga las variables de `.env` en su proceso.
-3. Abre una ventana de PowerShell con el backend (`.\mvnw.cmd spring-boot:run`, puerto `8080`). Flyway aplica las migraciones al arrancar.
-4. Abre otra ventana con el frontend (`npm run dev`, puerto `5173`).
+1. `docker compose up -d`: starts PostgreSQL (`compose.yaml`, port `5432`, volume `queueflow-pgdata`).
+2. Loads the variables from `.env` into its process.
+3. Opens a PowerShell window with the backend (`.\mvnw.cmd spring-boot:run`, port `8080`); Flyway applies the migrations at startup.
+4. Opens another window with the frontend (`npm run dev`, port `5173`).
 
-Abre <http://localhost:5173> y crea un workspace en `/register`. La ruta `/health` muestra si el frontend llega al backend.
+**macOS / Linux** - the same steps by hand, in two terminals:
 
-Para detenerlo: cierra las dos ventanas (o `Ctrl+C` en cada una) y, si quieres parar la base de datos, `docker compose stop` (los datos se conservan en el volumen).
+```bash
+# Terminal 1: database and backend
+docker compose up -d
+set -a; . ./.env; set +a
+cd backend && ./mvnw spring-boot:run
 
-### Stack Docker de estilo producción
-
-```powershell
-docker compose -f compose.prod.yaml up -d --build     # construir imágenes y arrancar
-docker compose -f compose.prod.yaml ps                # los tres servicios deben llegar a "healthy"
-docker compose -f compose.prod.yaml logs -f backend   # seguir los logs de un servicio
-docker compose -f compose.prod.yaml down              # detener (los datos se conservan)
+# Terminal 2: frontend (Vite reads VITE_* from the root .env itself)
+cd frontend && npm install && npm run dev
 ```
 
-Abre <http://localhost:8088> (configurable con `APP_PORT`) y crea un workspace.
+Open <http://localhost:5173> and create a workspace at `/register`. The `/health` page shows whether the frontend reaches the backend. To stop, close the backend and frontend processes (`Ctrl+C`) and, optionally, `docker compose stop` (the data stays in the volume).
 
-- Solo el contenedor `frontend` publica un puerto, y solo en `127.0.0.1`. Backend y PostgreSQL no son accesibles desde el host.
-- El backend espera a que PostgreSQL esté sano, y nginx espera a que el backend esté sano.
-- El frontend se construye con `VITE_API_BASE_URL=/` (mismo origen), fijado en `compose.prod.yaml`, así que el valor de desarrollo de `.env` nunca acaba en la imagen.
+### Environment variables
 
-**Persistencia y volúmenes.** El stack usa su propio proyecto Compose (`queueflow-stack`) y su propio volumen (`queueflow-stack_postgres-data`), independiente de la base de datos de desarrollo (`queueflow-pgdata`). Ambos modos pueden ejecutarse a la vez (no comparten puertos). Los datos sobreviven a `down` y a reinicios.
+The full, commented template is [`.env.example`](.env.example). Real values are never committed.
 
-> ⚠️ **Borrar los datos del stack.** El siguiente comando elimina el stack **y su volumen**, borrando de forma permanente todos los datos del stack Docker (la base de datos de desarrollo no se ve afectada):
->
-> ```powershell
-> docker compose -f compose.prod.yaml down -v
-> ```
-
-## 12. Variables de entorno
-
-Plantilla completa y comentada en [`.env.example`](.env.example). Los valores reales nunca se versionan.
-
-| Variable | Usada por | Obligatoria | Descripción |
+| Variable | Used by | Required | Description |
 |---|---|:---:|---|
-| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Ambos modos | Sí | Base de datos, usuario y contraseña del contenedor PostgreSQL. En Docker también se pasan al backend. |
-| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` | Desarrollo y tests | Sí | Conexión del backend local a PostgreSQL; deben coincidir con `POSTGRES_*`. El stack Docker las define él mismo. |
-| `JWT_SECRET` | Ambos modos | Sí | Clave HS256 en Base64 de al menos 32 bytes. Sin ella ni el backend ni el stack arrancan. |
-| `QUEUEFLOW_CORS_ALLOWED_ORIGINS` | Desarrollo | No | Orígenes permitidos separados por comas (por defecto `http://localhost:5173`). |
-| `VITE_API_BASE_URL` | Frontend en desarrollo | Sí (en desarrollo) | Origen del backend, p. ej. `http://localhost:8080`, o `/` para mismo origen. Se fija en el bundle al compilar; solo las variables `VITE_*` llegan al navegador. |
-| `APP_PORT` | Stack Docker | No | Puerto local del stack (por defecto `8088`). |
+| `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` | Both modes | Yes | Database, user and password of the PostgreSQL container. The Docker stack also passes them to the backend. |
+| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USERNAME`, `DB_PASSWORD` | Development and tests | Yes | How the local backend reaches PostgreSQL; must match `POSTGRES_*`. The Docker stack sets them itself. |
+| `JWT_SECRET` | Both modes | Yes | Base64 HS256 key of at least 32 bytes. Neither the backend nor the stack starts without it. |
+| `QUEUEFLOW_CORS_ALLOWED_ORIGINS` | Development | No | Comma-separated allowed origins (default `http://localhost:5173`). |
+| `VITE_API_BASE_URL` | Frontend in development | Yes (dev) | Backend origin, e.g. `http://localhost:8080`, or `/` for same origin. Fixed into the bundle at build time; only `VITE_*` variables reach the browser. |
+| `APP_PORT` | Docker stack | No | Local port of the stack (default `8088`). |
+| `QUEUEFLOW_DOMAIN`, `ACME_EMAIL`, `*_MEM_LIMIT` | OCI deployment | Server only | See [`docs/deployment-oci.md`](docs/deployment-oci.md). |
 
-## 13. Pruebas
+### Running the checks
 
-### Backend
+```bash
+# Backend: full suite (needs PostgreSQL and the DB_* variables, see below)
+cd backend && ./mvnw verify            # Windows: .\mvnw.cmd verify
 
-La suite (JUnit 5, Spring Boot Test, MockMvc) contiene tests unitarios de servicios, tests de controladores, tests de repositorio y tests de integración contra **PostgreSQL real** (no H2): aislamiento entre workspaces, políticas de rol, flujo completo, concurrencia en la numeración de tickets, *rollbacks*, unicidad de emails y contrato OpenAPI. En la última ejecución completa registrada (29/09/2026) se ejecutaron **589 tests sin fallos**.
+# Frontend: lint, type-check and production build
+cd frontend && npm ci && npm run lint && npm run build
+```
 
-Los tests usan la base de datos configurada en `DB_*` y una clave JWT pública exclusiva de tests (`backend/src/test/resources/config/application.yml`). Localmente usan la base de datos de desarrollo: muchos tests se ejecutan en transacciones que se deshacen al terminar, y los que necesitan un *commit* real borran sus propios datos después.
+Locally, the backend tests use the database configured in `DB_*` - normally the development database from `compose.yaml`. On Windows, load `.env` into the current PowerShell session first, the same way `dev.ps1` does:
 
 ```powershell
-docker compose up -d   # PostgreSQL de desarrollo
-# Cargar las variables de .env en la sesión actual (mismo criterio que dev.ps1):
 Get-Content .env | ForEach-Object { if ($_ -match '^\s*([^#][^=]*)=(.*)$') { [Environment]::SetEnvironmentVariable($matches[1].Trim(), $matches[2].Trim(), 'Process') } }
-cd backend
-.\mvnw.cmd verify
 ```
 
-### Frontend
+## Quality and testing
 
-El frontend **no tiene tests automatizados** todavía. Sus comprobaciones son el lint y la compilación con tipos:
+**Backend.** The suite (JUnit 5, Spring Boot Test, MockMvc) contains service unit tests, controller tests, repository tests and integration tests against a **real PostgreSQL** (not H2): workspace isolation, role policies, the core end-to-end workflow, concurrent ticket numbering, rollbacks, case-insensitive email uniqueness and the OpenAPI contract. A full `./mvnw verify` of v1.0.0 against an empty PostgreSQL 18 database runs **589 tests with no failures**. Tests use a public, test-only JWT key (`backend/src/test/resources/config/application.yml`); many run in transactions that roll back, and those that need a real commit delete their own data afterwards.
 
-```powershell
-cd frontend
-npm ci
-npm run lint    # oxlint
-npm run build   # tsc -b + vite build
-```
+**Frontend.** There are no automated frontend tests yet. Its checks are lint (oxlint) and the type-checked production build (`tsc -b && vite build`).
 
-## 14. Integración continua (GitHub Actions)
+**Continuous integration.** [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push to `main`, on pull requests to `main` and on demand, with two **independent** parallel jobs:
 
-El workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) se ejecuta en cada *push* a `main`, en cada *pull request* hacia `main` y manualmente (`workflow_dispatch`). Tiene dos jobs **independientes** que se ejecutan en paralelo:
-
-| Job | Qué hace |
+| Job | What it does |
 |---|---|
-| **Backend** | Java 21 (Temurin) con caché de Maven; levanta un PostgreSQL 18 desechable como *service container*; ejecuta `./mvnw -B -ntp verify` (compilación, migraciones Flyway sobre una base vacía, validación del esquema por Hibernate y todos los tests). Si falla, sube los informes de Surefire como artefacto durante 7 días. |
-| **Frontend** | Node 24 con caché de npm (basada en `frontend/package-lock.json`); `npm ci`, `npm run lint` y `npm run build` con `VITE_API_BASE_URL=/`. |
+| **Backend** | Java 21 (Temurin) with a Maven cache; a disposable PostgreSQL 18 service container; `./mvnw -B -ntp verify` - compilation, Flyway migrations on an empty database, Hibernate schema validation and every test. On failure, the Surefire reports are uploaded as an artifact for 7 days. |
+| **Frontend** | Node 24 with an npm cache; `npm ci`, `npm run lint` and `npm run build` with `VITE_API_BASE_URL=/`. |
 
-Cualquier comando que falle hace fallar su job. No se usan secretos del repositorio: las credenciales de la base de datos de CI son desechables y la clave JWT es la pública de tests. Permisos del token de GitHub: solo lectura.
+Any failing command fails its job. No repository secrets are used: the CI database credentials are throwaway values and the JWT key is the public test key. The workflow token is read-only.
 
-**Qué no comprueba la CI:** no hay tests automatizados del frontend ni tests end-to-end, no se construyen ni publican las imágenes Docker, no hay análisis de seguridad de dependencias ni de cobertura, y no hay despliegue (no es CD).
+**What CI does not cover:** frontend unit or end-to-end tests, building or publishing the Docker images, dependency or coverage scanning, and deployment (there is no CD).
 
-## 15. Decisiones de diseño y trade-offs
+**Schema and runtime safety.** Flyway owns the schema and Hibernate validates it at startup, so a mismatch between entities and migrations stops the application instead of corrupting data. The backend image has a health check on `/actuator/health` (which includes the database), the frontend image checks that nginx serves the app, and Compose starts each service only when its dependency is healthy.
 
-| Decisión | Motivo | Coste asumido |
+## Deployment
+
+QueueFlow **runs only locally** today: in development mode or with the Docker stack from `compose.prod.yaml`. There is no public instance and no deployment pipeline.
+
+A public deployment on a single Oracle Cloud (OCI) VM is **prepared but not yet performed**: no Always Free ARM capacity was available for the requested VM. The repository already contains:
+
+- [`compose.oci.yaml`](compose.oci.yaml) - an override of the production stack that puts **Caddy** in front of nginx (automatic HTTPS certificates, HTTP→HTTPS redirect, HTTP/3), removes the local port, and adds memory limits and log rotation.
+- [`deploy/oci/Caddyfile`](deploy/oci/Caddyfile) and [`deploy/oci/backup.sh`](deploy/oci/backup.sh) - the reverse proxy configuration and a `pg_dump` backup script with retention.
+- [`docs/deployment-oci.md`](docs/deployment-oci.md) - a step-by-step guide (in Spanish): network rules, VM setup, configuration, health checks, updates, backup/restore and rollback.
+
+The backup and restore procedure was tested locally; the full guide has not yet been validated on a real VM.
+
+## Design decisions and trade-offs
+
+| Decision | Why | Accepted cost |
 |---|---|---|
-| Monolito modular organizado por funcionalidad | Simple de desarrollar, probar y desplegar para el tamaño del producto | Sin escalado independiente por módulo |
-| JWT *stateless* con rol y workspace leídos de la BD en cada petición | Sin estado de sesión en servidor; bajas y cambios efectivos de inmediato | Una consulta extra por petición; sin logout en servidor ni *refresh tokens* |
-| Token en `sessionStorage` | Simple y limitado a la pestaña | Accesible desde JavaScript: depende de no tener XSS (no se usan cookies `HttpOnly`) |
-| Permisos en servicios en lugar de `@PreAuthorize` | Aplicar primero el aislamiento (404) y después el rol (403) | Las reglas no se ven en la firma del controlador |
-| Otro workspace → `404` | No revelar la existencia de datos ajenos | Respuestas menos explícitas al depurar |
-| Flyway como dueño del esquema + `ddl-auto: validate` | Esquema versionado y revisable; el arranque falla si las entidades no coinciden | Cada cambio de esquema exige una migración |
-| UUIDv7 generados por PostgreSQL | Identificadores seguros en URLs y ordenados en el tiempo | Requiere PostgreSQL 18 |
-| Bloqueo pesimista para numerar tickets | Números consecutivos y correctos con concurrencia | Las creaciones en un mismo proyecto se serializan |
-| Baja lógica de miembros (`removed_at`) | Conservar el historial (tickets, comentarios, actividad) con autor real | Las filas de usuarios dados de baja permanecen |
-| Filtrado de tickets en el navegador | Respuesta instantánea y filtros en la URL | No escala a proyectos con muchísimos tickets (no hay paginación) |
-| nginx como único origen en Docker | Sin CORS, backend y BD sin puertos expuestos | Una pieza más en el stack |
-| Tests de integración con PostgreSQL real | Prueban restricciones, bloqueos y SQL reales | Los tests necesitan una base de datos en marcha |
+| Modular monolith organized by feature | Simple to develop, test and deploy at this size | No independent scaling per module |
+| Stateless JWT; role and workspace read from the database on each request | No server session state; removals take effect immediately | One extra query per request; no server-side logout or refresh tokens |
+| Token in `sessionStorage` | Simple and scoped to the tab | Readable from JavaScript: relies on there being no XSS (no `HttpOnly` cookies) |
+| Permissions in services instead of `@PreAuthorize` | Isolation (404) is applied before role (403) | Rules are not visible in controller signatures |
+| Other workspace → `404` | Never reveal that foreign data exists | Less explicit responses when debugging |
+| Flyway owns the schema + `ddl-auto: validate` | Versioned, reviewable schema; startup fails if entities drift | Every schema change needs a migration |
+| UUIDv7 generated by PostgreSQL | Safe identifiers in URLs, time-ordered | Requires PostgreSQL 18 |
+| Pessimistic lock for ticket numbering | Correct consecutive numbers under concurrency | Ticket creation within one project is serialized |
+| Soft removal of members (`removed_at`) | History (tickets, comments, activity) keeps its real author | Removed users' rows remain |
+| Ticket filtering in the browser | Instant results and URL-backed filters | Does not scale to very large projects (no pagination) |
+| nginx as the single origin in Docker | No CORS; backend and database expose no ports | One more component in the stack |
+| Integration tests on real PostgreSQL | Exercise real constraints, locks and SQL | Tests need a running database |
 
-## 16. Limitaciones actuales y mejoras futuras
+## Limitations and possible improvements
 
-**Limitaciones actuales (V1):**
+**Current limitations (V1):**
 
-- Sin invitaciones ni ningún envío de email; el ADMIN comunica las credenciales.
-- Sin cambio ni recuperación de contraseña, sin cambio de roles, sin suspensión de miembros.
-- Un único ADMIN por workspace y sin transferencia de la administración.
-- Sin *refresh tokens* ni cierre de sesión en servidor; sin limitación de intentos (*rate limiting*).
-- Proyectos sin borrado ni cambio de clave; etiquetas sin renombrado ni borrado.
-- Sin paginación en la lista de tickets de un proyecto.
-- Sin adjuntos, notificaciones ni actualizaciones en tiempo real.
-- Frontend sin tests automatizados; el bundle principal supera los 500 kB minificado (Vite lo avisa).
-- Sin HTTPS propio: el stack Docker sirve HTTP en `127.0.0.1`.
+- No invitations or any email; the ADMIN shares credentials.
+- No password change or recovery, no role changes, no member suspension.
+- A single ADMIN per workspace, with no transfer of administration.
+- No refresh tokens or server-side logout; no rate limiting on login or registration.
+- Projects cannot be deleted or re-keyed; labels cannot be renamed or deleted.
+- No pagination of a project's ticket list.
+- No attachments, notifications or real-time updates.
+- No automated frontend tests; the main bundle exceeds 500 kB minified (Vite warns about it).
+- The local Docker stack serves plain HTTP on `127.0.0.1` (HTTPS is part of the prepared OCI deployment).
 
-**Posibles mejoras futuras (no implementadas):** despliegue público con TLS, tests del frontend y end-to-end, *refresh tokens* y logout en servidor, *rate limiting* en login y registro, invitaciones por email, paginación en servidor y división del bundle del frontend.
+**Possible improvements (not implemented):** a public deployment, frontend and end-to-end tests, refresh tokens and server-side logout, rate limiting on login and registration, email invitations, server-side pagination and code-splitting of the frontend bundle.
 
-## 17. Estado del despliegue
+<details>
+<summary><b>Troubleshooting</b></summary>
 
-QueueFlow **solo se ejecuta en local**: en modo desarrollo o con el stack Docker de `compose.prod.yaml`. No hay ninguna instancia pública ni pipeline de despliegue. Esta sección se actualizará cuando exista un despliegue público verificado.
-
-El repositorio ya incluye la preparación para publicarlo con HTTPS en una VM de Oracle Cloud (override `compose.oci.yaml` con Caddy, backups y guía paso a paso), todavía sin validar en la VM real: ver [`docs/deployment-oci.md`](docs/deployment-oci.md).
-
-## 18. Solución de problemas
-
-| Síntoma | Causa probable y solución |
+| Symptom | Likely cause and fix |
 |---|---|
-| El backend no arranca y menciona `JWT_SECRET` | Falta o no es Base64 de al menos 32 bytes. Genera una con `openssl rand -base64 32` y ponla en `.env`. |
-| `docker compose -f compose.prod.yaml up` falla con «… must be set» | Falta una variable obligatoria en `.env` (`POSTGRES_*` o `JWT_SECRET`). |
-| `failed to connect to the docker API` | Docker Desktop no está arrancado. |
-| El backend no conecta con PostgreSQL en desarrollo | PostgreSQL no está en marcha (`docker compose ps`) o `DB_*` no coincide con `POSTGRES_*`. Otro PostgreSQL local puede estar ocupando el puerto `5432`. |
-| Fallo de autenticación de PostgreSQL tras cambiar `POSTGRES_PASSWORD` | La contraseña solo se aplica al crear el volumen. Vuelve a la contraseña original o recrea el volumen (esto borra sus datos). |
-| La interfaz indica un error de configuración de la API | `VITE_API_BASE_URL` falta o no es válida en `.env` (debe ser una URL `http(s)` o `/`). Reinicia `npm run dev` tras cambiarla. |
-| Errores de CORS en desarrollo | Abre la app en `http://localhost:5173` (no `127.0.0.1`) o añade tu origen a `QUEUEFLOW_CORS_ALLOWED_ORIGINS`. |
-| Te devuelve a la pantalla de login | El token caduca a la hora y se pierde al cerrar la pestaña. Vuelve a iniciar sesión. |
-| El stack Docker no llega a `healthy` | Revisa `docker compose -f compose.prod.yaml logs backend`; el backend tiene 60 s de margen inicial para arrancar y migrar. |
-| El puerto `8088` está ocupado | Define otro `APP_PORT` en `.env`. |
+| The backend does not start and mentions `JWT_SECRET` | Missing, or not Base64 of at least 32 bytes. Generate one with `openssl rand -base64 32` and put it in `.env`. |
+| `docker compose -f compose.prod.yaml up` fails with "… must be set" | A required variable is missing from `.env` (`POSTGRES_*` or `JWT_SECRET`). |
+| `failed to connect to the docker API` | Docker Desktop is not running. |
+| The backend cannot reach PostgreSQL in development | PostgreSQL is not running (`docker compose ps`) or `DB_*` does not match `POSTGRES_*`. Another local PostgreSQL may be using port `5432`. |
+| PostgreSQL authentication fails after changing `POSTGRES_PASSWORD` | The password only applies when the volume is created. Restore the original password or recreate the volume (this deletes its data). |
+| The UI reports an API configuration error | `VITE_API_BASE_URL` is missing or invalid in `.env` (must be an `http(s)` URL or `/`). Restart `npm run dev` after changing it. |
+| CORS errors in development | Open the app at `http://localhost:5173` (not `127.0.0.1`) or add your origin to `QUEUEFLOW_CORS_ALLOWED_ORIGINS`. |
+| You are sent back to the sign-in page | The token expires after one hour and is lost when the tab closes. Sign in again. |
+| The Docker stack never becomes `healthy` | Check `docker compose -f compose.prod.yaml logs backend`; the backend has a 60 s start period to boot and migrate. |
+| Port `8088` is already in use | Set another `APP_PORT` in `.env`. |
+
+</details>
+
+## Project status
+
+**v1.0.0** - feature-complete for the V1 scope, with CI passing on `main`. See the [v1.0.0 release](https://github.com/milionhub/QueueFlow/releases/tag/v1.0.0).
+
+## License
+
+Released under the [MIT License](LICENSE).
+
+## Author
+
+**Juan Marín Escolano** - [GitHub @milionhub](https://github.com/milionhub)
