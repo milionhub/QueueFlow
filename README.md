@@ -2,7 +2,7 @@
 
 Aplicación web de seguimiento de incidencias y gestión de proyectos para equipos de software pequeños: espacios de trabajo aislados, proyectos, tickets con estados y prioridades, tablero kanban, etiquetas, comentarios, historial de actividad y gestión de miembros con roles.
 
-> **Estado:** proyecto de portfolio en desarrollo activo. Funciona en local (modo desarrollo y stack Docker de estilo producción). **No está desplegado públicamente.**
+> **Estado:** proyecto de portfolio, versión 1.0.0 completada: el alcance de la V1 descrito abajo está implementado y cubierto por la CI. Funciona en local (modo desarrollo y stack Docker de estilo producción). **No está desplegado públicamente.**
 
 ## Índice
 

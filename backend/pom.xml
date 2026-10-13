@@ -10,7 +10,7 @@
 	</parent>
 	<groupId>com.queueflow</groupId>
 	<artifactId>queueflow-backend</artifactId>
-	<version>0.0.1-SNAPSHOT</version>
+	<version>1.0.0</version>
 	<name>queueflow-backend</name>
 	<description>QueueFlow backend service</description>
 	<url/>
